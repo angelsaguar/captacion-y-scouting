@@ -1,0 +1,8 @@
+{
+  "name": "Remix Captacion y Scouting",
+  "description": "Plataforma premium de scouting y captación de futbolistas para el club La Poveda. Gestión de informes, comparador de jugadores y analítica avanzada.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

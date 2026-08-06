@@ -1,0 +1,89 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme {
+  --color-background: var(--slate-950);
+  --color-foreground: var(--slate-200);
+  
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+  --radius-3xl: 2rem;
+}
+
+@layer base {
+  body {
+    @apply bg-slate-950 text-slate-200;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .glass-card {
+    background-color: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(30, 41, 59, 0.5);
+    border-radius: 2rem;
+  }
+  
+  .premium-card {
+    background-color: rgb(15, 23, 42);
+    border: 1px solid rgb(30, 41, 59);
+    border-radius: 2rem;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* Custom styles for professional feel */
+.radar-grid path {
+  stroke: #1e293b !important;
+}
+
+.scouting-card-gradient {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+}
+
+.kpi-value {
+  @apply text-4xl font-black text-white italic tracking-tighter;
+}
+
+/* Force layout state separation under 1024px wide screens */
+@media (max-width: 1023px) {
+  .desktop-sidebar-container {
+    display: none !important;
+  }
+  .mobile-header-container {
+    display: flex !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .desktop-sidebar-container {
+    display: block !important;
+  }
+  .mobile-header-container {
+    display: none !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .mobile-hide {
+    display: none !important;
+  }
+}
+
+/* Base UI Portal and dropdown background overlay patches */
+[data-slot="select-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="dropdown-menu-sub-content"] {
+  background-color: #090d16 !important;
+  border: 1px solid #1e293b !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8) !important;
+  z-index: 10000 !important;
+}
+

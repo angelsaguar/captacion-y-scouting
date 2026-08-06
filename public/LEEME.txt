@@ -1,0 +1,1 @@
+Sube aquí tu archivo de escudo con el nombre exacto "escudo.png" para que la aplicación web lo cargue automáticamente. Si no hay ningún archivo, la aplicación utilizará el escudo vectorial de reserva que hemos programado.
