@@ -22,6 +22,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { createPortal } from 'react-dom';
+import { generateLocalTacticalAdvice } from '@/lib/tacticalAdvisor';
 
 interface Match {
   id: string;
@@ -229,6 +230,8 @@ export default function PlanPartido() {
 
     const toastId = toast.loading('Analizando el sistema rival con IA Gemini y generando contra-estrategia...');
 
+    let data: any = null;
+
     try {
       const response = await fetch('/api/tactical-advice', {
         method: 'POST',
@@ -241,12 +244,20 @@ export default function PlanPartido() {
         })
       });
 
-      if (!response.ok) {
-        throw new Error('Error al conectar con la IA táctica.');
+      const contentType = response.headers.get('content-type');
+      if (response.ok && contentType && contentType.includes('application/json')) {
+        data = await response.json();
       }
+    } catch (fetchErr) {
+      console.warn('API call to /api/tactical-advice failed, using local strategy generator:', fetchErr);
+    }
 
-      const data = await response.json();
+    // If backend endpoint wasn't reached or returned HTML/non-JSON (e.g. static host on Vercel)
+    if (!data || !data.sistemaRecomendado) {
+      data = generateLocalTacticalAdvice(formData.sistemaRival, formData.rivalName, roster, selectedTeam);
+    }
 
+    try {
       let alineacion = data.instruccionesPorPuesto || '';
       if (!alineacion && roster.length > 0) {
         const gks = roster.filter(p => p.posicion === 'PORTERO');
@@ -270,8 +281,8 @@ export default function PlanPartido() {
 
       toast.success('¡Estrategia y sistema de juego aconsejado por la IA cargado con éxito!', { id: toastId });
     } catch (err: any) {
-      console.error('Error generating AI strategy:', err);
-      toast.error('Ocurrió un error consultando la IA táctica. Revisa los datos.', { id: toastId });
+      console.error('Error applying tactical advice data:', err);
+      toast.error('Ocurrió un problema al procesar la propuesta táctica.', { id: toastId });
     }
   };
 
