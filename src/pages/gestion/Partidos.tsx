@@ -45,6 +45,7 @@ import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { generateLocalTacticalAdvice } from '@/lib/tacticalAdvisor';
 
 interface MatchPlayerStat {
   playerId: string;
@@ -224,6 +225,8 @@ export default function Partidos() {
     setIsAnalyzingTactics(true);
     const toastId = toast.loading('Consultando a la IA Gemini el sistema idóneo para contra-restar al rival...');
 
+    let data: any = null;
+
     try {
       const res = await fetch('/api/tactical-advice', {
         method: 'POST',
@@ -237,17 +240,32 @@ export default function Partidos() {
         })
       });
 
-      if (!res.ok) throw new Error('Error al conectar con la IA');
-      const data = await res.json();
+      const contentType = res.headers.get('content-type');
+      if (res.ok && contentType && contentType.includes('application/json')) {
+        data = await res.json();
+      }
+    } catch (fetchErr) {
+      console.warn('API call to /api/tactical-advice failed, using local strategy generator:', fetchErr);
+    }
 
+    if (!data || !data.sistemaRecomendado) {
+      data = generateLocalTacticalAdvice(
+        planRivalSystem,
+        planRivalName || showPlanPartidoModal?.rival || 'Equipo Rival',
+        players,
+        selectedTeam
+      );
+    }
+
+    try {
       setPlanTacticalAdvice(data);
       if (data.sistemaRecomendado) {
         setPlanMySystem(data.sistemaRecomendado);
       }
-      toast.success('¡Análisis táctico y sistema recomendado por Gemini cargados con éxito!', { id: toastId });
+      toast.success('¡Análisis táctico y sistema recomendado cargados con éxito!', { id: toastId });
     } catch (err) {
-      console.error('Error generating tactics:', err);
-      toast.error('Ocurrió un error al consultar la IA táctica.', { id: toastId });
+      console.error('Error applying tactics:', err);
+      toast.error('Ocurrió un error al procesar la propuesta táctica.', { id: toastId });
     } finally {
       setIsAnalyzingTactics(false);
     }
