@@ -45,7 +45,7 @@ import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { generateLocalTacticalAdvice } from '@/lib/tacticalAdvisor';
+import { generateLocalTacticalAdvice, getTacticalAdvice } from '@/lib/tacticalAdvisor';
 
 interface MatchPlayerStat {
   playerId: string;
@@ -223,49 +223,33 @@ export default function Partidos() {
     }
 
     setIsAnalyzingTactics(true);
-    const toastId = toast.loading('Consultando a la IA Gemini el sistema idóneo para contra-restar al rival...');
-
-    let data: any = null;
+    const toastId = toast.loading('Calculando contra-estrategia e informes tácticos para el partido...');
 
     try {
-      const res = await fetch('/api/tactical-advice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          teamName: selectedTeam,
-          rivalName: planRivalName || showPlanPartidoModal?.rival || 'Equipo Rival',
-          rivalSystem: planRivalSystem,
-          rivalNotes: planRivalNotes,
-          myRoster: players
-        })
+      const data = await getTacticalAdvice({
+        teamName: selectedTeam,
+        rivalName: planRivalName || showPlanPartidoModal?.rival || 'Equipo Rival',
+        rivalSystem: planRivalSystem,
+        rivalNotes: planRivalNotes,
+        myRoster: players
       });
 
-      const contentType = res.headers.get('content-type');
-      if (res.ok && contentType && contentType.includes('application/json')) {
-        data = await res.json();
+      setPlanTacticalAdvice(data);
+      if (data?.sistemaRecomendado) {
+        setPlanMySystem(data.sistemaRecomendado);
       }
-    } catch (fetchErr) {
-      console.warn('API call to /api/tactical-advice failed, using local strategy generator:', fetchErr);
-    }
-
-    if (!data || !data.sistemaRecomendado) {
-      data = generateLocalTacticalAdvice(
+      toast.success('¡Análisis táctico y sistema recomendado cargados con éxito!', { id: toastId });
+    } catch (err) {
+      console.warn('Fallback tactical advice generated:', err);
+      const fallback = generateLocalTacticalAdvice(
         planRivalSystem,
         planRivalName || showPlanPartidoModal?.rival || 'Equipo Rival',
         players,
         selectedTeam
       );
-    }
-
-    try {
-      setPlanTacticalAdvice(data);
-      if (data.sistemaRecomendado) {
-        setPlanMySystem(data.sistemaRecomendado);
-      }
-      toast.success('¡Análisis táctico y sistema recomendado cargados con éxito!', { id: toastId });
-    } catch (err) {
-      console.error('Error applying tactics:', err);
-      toast.error('Ocurrió un error al procesar la propuesta táctica.', { id: toastId });
+      setPlanTacticalAdvice(fallback);
+      setPlanMySystem(fallback.sistemaRecomendado);
+      toast.success('¡Análisis táctico cargado!', { id: toastId });
     } finally {
       setIsAnalyzingTactics(false);
     }

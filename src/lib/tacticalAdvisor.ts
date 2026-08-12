@@ -127,3 +127,93 @@ export function generateLocalTacticalAdvice(
     estrategiaBalonParado
   };
 }
+
+export async function getTacticalAdvice(params: {
+  teamName: string;
+  rivalName: string;
+  rivalSystem: string;
+  rivalNotes?: string;
+  myRoster?: any[];
+}): Promise<TacticalAdviceResult> {
+  const { teamName, rivalName, rivalSystem, rivalNotes, myRoster } = params;
+
+  // 1. Try server route with a 3.5s timeout
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+    const res = await fetch('/api/tactical-advice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify(params)
+    });
+    clearTimeout(timeoutId);
+
+    const contentType = res.headers.get('content-type');
+    if (res.ok && contentType && contentType.includes('application/json')) {
+      const data = await res.json();
+      if (data && data.sistemaRecomendado) {
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('Server /api/tactical-advice call skipped/failed:', err);
+  }
+
+  // 2. Try client-side Gemini if API key exists in environment
+  try {
+    const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || (typeof process !== 'undefined' ? process.env?.GEMINI_API_KEY : undefined);
+    if (apiKey) {
+      const { GoogleGenAI, Type } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `Eres el Director Técnico y Analista Táctico Máster de fútbol para el equipo ${teamName || 'U.D. La Poveda'}.
+Nos enfrentamos al rival "${rivalName || 'Rival'}" que juega habitualmente con el sistema de juego: ${rivalSystem}.
+${rivalNotes ? `Información/Notas sobre el juego del rival: ${rivalNotes}` : ''}
+${myRoster && myRoster.length > 0 ? `Nuestra plantilla disponible incluye a: ${myRoster.map((p: any) => `${p.nombre} (${p.posicion || 'Jugadora'})`).join(', ')}.` : ''}
+
+Recomienda la mejor contra-estrategia táctica para que nuestro equipo venza a este rival. Proporciona la respuesta estrictamente en JSON con los campos:
+{
+  "sistemaRecomendado": "Sistema sugerido para nuestro equipo (ej. 1-4-3-3, 1-4-2-3-1, 1-3-5-2)",
+  "razonamientoSistema": "Explicación táctica detallada de por qué este sistema neutraliza específicamente el ${rivalSystem} del rival",
+  "objetivosTacticos": ["Objetivo 1", "Objetivo 2", "Objetivo 3"],
+  "puntosFuertesRival": ["Punto fuerte 1", "Punto fuerte 2"],
+  "instruccionesPorPuesto": "Instrucciones de alineación o roles clave para nuestras líneas",
+  "estrategiaBalonParado": "Sugerencias tácticas para córners y faltas a balón parado"
+}`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.6-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              sistemaRecomendado: { type: Type.STRING },
+              razonamientoSistema: { type: Type.STRING },
+              objetivosTacticos: { type: Type.ARRAY, items: { type: Type.STRING } },
+              puntosFuertesRival: { type: Type.ARRAY, items: { type: Type.STRING } },
+              instruccionesPorPuesto: { type: Type.STRING },
+              estrategiaBalonParado: { type: Type.STRING }
+            },
+            required: ['sistemaRecomendado', 'razonamientoSistema', 'objetivosTacticos', 'puntosFuertesRival', 'instruccionesPorPuesto', 'estrategiaBalonParado']
+          }
+        }
+      });
+
+      if (response.text) {
+        const parsed = JSON.parse(response.text);
+        if (parsed && parsed.sistemaRecomendado) {
+          return parsed;
+        }
+      }
+    }
+  } catch (geminiClientErr) {
+    console.warn('Client-side Gemini call failed, using local generator:', geminiClientErr);
+  }
+
+  // 3. Fallback to local tactical engine (Instant and guaranteed)
+  return generateLocalTacticalAdvice(rivalSystem, rivalName, myRoster, teamName);
+}
+
