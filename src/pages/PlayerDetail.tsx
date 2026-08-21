@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { Player, PlayerAttribute, POSITION_ATTRIBUTES, POSITION_STRUCTURED_ATTRIBUTES, COMMON_ATTRIBUTES } from '@/types';
+import { Player, PlayerAttribute, PlayerStatus, POSITION_ATTRIBUTES, POSITION_STRUCTURED_ATTRIBUTES, COMMON_ATTRIBUTES } from '@/types';
 import { 
   Card, 
   CardContent, 
@@ -212,7 +212,8 @@ export default function PlayerDetail() {
 
       const updatedObj = {
         ...player,
-        ...payload
+        ...payload,
+        foto_url: payload.foto_url || ''
       };
       setPlayer(updatedObj);
 
@@ -226,37 +227,53 @@ export default function PlayerDetail() {
       );
 
       if (localIdx >= 0) {
-        localScoutingList[localIdx] = { ...localScoutingList[localIdx], ...updatedObj };
+        localScoutingList[localIdx] = { 
+          ...localScoutingList[localIdx], 
+          ...updatedObj, 
+          foto_url: payload.foto_url || '' 
+        };
       } else {
         localScoutingList.push(updatedObj);
       }
       localStorage.setItem('scouting_local_players', JSON.stringify(localScoutingList));
 
-      // Sync to local team roster if applicable
-      const team = updatedObj.equipo_asignado || 'SENIOR FEMENINO';
-      const rosterKey = `team_roster_${team}`;
-      const savedRoster = localStorage.getItem(rosterKey);
-      if (savedRoster) {
-        try {
-          const rosterArr = JSON.parse(savedRoster);
-          const updatedRoster = rosterArr.map((p: any) => {
-            if (p.id === updatedObj.id || (p.nombre.trim().toLowerCase() === player.nombre.trim().toLowerCase() && p.apellidos.trim().toLowerCase() === player.apellidos.trim().toLowerCase())) {
-              return {
-                ...p,
-                nombre: updatedObj.nombre,
-                apellidos: updatedObj.apellidos,
-                posicion: updatedObj.posicion || p.posicion,
-                dorsal: updatedObj.dorsal || p.dorsal,
-                foto_url: updatedObj.foto_url || p.foto_url,
-                telefono: updatedObj.telefono || p.telefono,
-                email: updatedObj.email || p.email,
-                estado: updatedObj.estado
-              };
+      // Sync to ALL local team rosters
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('team_roster_')) {
+          try {
+            const rawRoster = localStorage.getItem(k);
+            if (rawRoster) {
+              const rosterArr = JSON.parse(rawRoster);
+              let rosterChanged = false;
+              const updatedRoster = rosterArr.map((p: any) => {
+                if (p.id === updatedObj.id || 
+                    (p.nombre?.trim().toLowerCase() === player.nombre.trim().toLowerCase() && 
+                     p.apellidos?.trim().toLowerCase() === player.apellidos.trim().toLowerCase()) ||
+                    normalizePlayerNameKey(p.nombre, p.apellidos) === normKey) {
+                  rosterChanged = true;
+                  return {
+                    ...p,
+                    nombre: updatedObj.nombre,
+                    apellidos: updatedObj.apellidos,
+                    posicion: updatedObj.posicion || p.posicion,
+                    dorsal: updatedObj.dorsal || p.dorsal,
+                    foto_url: payload.foto_url || '',
+                    telefono: updatedObj.telefono || p.telefono,
+                    email: updatedObj.email || p.email,
+                    estado: updatedObj.estado,
+                    anio_nacimiento: updatedObj.anio_nacimiento || p.anio_nacimiento,
+                    fecha_nacimiento: updatedObj.fecha_nacimiento || p.fecha_nacimiento
+                  };
+                }
+                return p;
+              });
+              if (rosterChanged) {
+                localStorage.setItem(k, JSON.stringify(updatedRoster));
+              }
             }
-            return p;
-          });
-          localStorage.setItem(rosterKey, JSON.stringify(updatedRoster));
-        } catch {}
+          } catch {}
+        }
       }
 
       toast.success('¡Datos personales guardados y sincronizados correctamente!');
@@ -286,13 +303,41 @@ export default function PlayerDetail() {
           console.warn('Supabase fetch error:', e);
         }
 
+        // Check local scouting storage
+        const localScoutingSaved = localStorage.getItem('scouting_local_players');
+        let localPlayerRecord: any = null;
+        if (localScoutingSaved) {
+          try {
+            const list = JSON.parse(localScoutingSaved);
+            localPlayerRecord = list.find((p: any) => 
+              p.id === id || 
+              (p.id && id && p.id.toLowerCase() === id.toLowerCase()) ||
+              normalizePlayerNameKey(p.nombre, p.apellidos) === normalizePlayerNameKey(id, '')
+            );
+          } catch {}
+        }
+
+        if (localPlayerRecord) {
+          loaded = loaded ? { ...loaded, ...localPlayerRecord } : localPlayerRecord;
+        }
+
+        // Check team rosters if not found
         if (!loaded) {
-          const localScoutingSaved = localStorage.getItem('scouting_local_players');
-          if (localScoutingSaved) {
-            try {
-              const list = JSON.parse(localScoutingSaved);
-              loaded = list.find((p: any) => p.id === id || normalizePlayerNameKey(p.nombre, p.apellidos) === normalizePlayerNameKey(id, ''));
-            } catch {}
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith('team_roster_')) {
+              try {
+                const r = JSON.parse(localStorage.getItem(k) || '[]');
+                const match = r.find((p: any) => 
+                  p.id === id || 
+                  normalizePlayerNameKey(p.nombre, p.apellidos) === normalizePlayerNameKey(id, '')
+                );
+                if (match) {
+                  loaded = { ...match, estado: 'Fichado' };
+                  break;
+                }
+              } catch {}
+            }
           }
         }
 

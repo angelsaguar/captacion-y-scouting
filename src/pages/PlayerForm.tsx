@@ -49,7 +49,7 @@ import { cn, normalizePlayerNameKey } from '@/lib/utils';
 import { getObservers, addObserver } from '@/lib/observers';
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 
-  const playerSchema = z.object({
+const playerSchema = z.object({
   nombre: z.string().min(1, 'Nombre requerido'),
   apellidos: z.string().min(1, 'Apellidos requeridos'),
   apodo: z.string().nullable().optional(),
@@ -61,13 +61,13 @@ import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
   dorsal: z.string().nullable().optional(),
   posicion: z.string().min(1, 'Posición requerida'),
   lateralidad: z.string().nullable().optional(),
-  anio_nacimiento: z.union([z.number(), z.string(), z.null(), z.undefined()]).transform(v => (v ? Number(v) || undefined : undefined)).optional(),
+  anio_nacimiento: z.union([z.number(), z.string()]).nullable().optional(),
   fecha_nacimiento: z.string().nullable().optional(),
   foto_url: z.string().nullable().optional(),
   observaciones: z.string().nullable().optional(),
   motivos_rechazo: z.string().nullable().optional(),
   fecha_seguimiento: z.string().nullable().optional(),
-  potencial: z.union([z.number(), z.string(), z.null(), z.undefined()]).transform(v => (v ? Number(v) || 3 : 3)).optional(),
+  potencial: z.union([z.number(), z.string()]).nullable().optional(),
   estado: z.string().nullable().optional(),
   observador: z.string().nullable().optional(),
 });
@@ -160,13 +160,41 @@ export default function PlayerForm() {
             console.warn('Could not fetch player from remote Supabase:', e);
           }
 
+          // Check local scouting players for latest edits
+          const localScoutingSaved = localStorage.getItem('scouting_local_players');
+          let localPlayerRecord: any = null;
+          if (localScoutingSaved) {
+            try {
+              const list = JSON.parse(localScoutingSaved);
+              localPlayerRecord = list.find((p: any) => 
+                p.id === id || 
+                (p.id && id && p.id.toLowerCase() === id.toLowerCase()) ||
+                normalizePlayerNameKey(p.nombre, p.apellidos) === normalizePlayerNameKey(id, '')
+              );
+            } catch {}
+          }
+
+          if (localPlayerRecord) {
+            loadedPlayer = loadedPlayer ? { ...loadedPlayer, ...localPlayerRecord } : localPlayerRecord;
+          }
+
+          // Check team rosters if not found yet
           if (!loadedPlayer) {
-            const localScoutingSaved = localStorage.getItem('scouting_local_players');
-            if (localScoutingSaved) {
-              try {
-                const list = JSON.parse(localScoutingSaved);
-                loadedPlayer = list.find((p: any) => p.id === id || normalizePlayerNameKey(p.nombre, p.apellidos) === normalizePlayerNameKey(id, ''));
-              } catch {}
+            for (let i = 0; i < localStorage.length; i++) {
+              const k = localStorage.key(i);
+              if (k && k.startsWith('team_roster_')) {
+                try {
+                  const r = JSON.parse(localStorage.getItem(k) || '[]');
+                  const match = r.find((p: any) => 
+                    p.id === id || 
+                    normalizePlayerNameKey(p.nombre, p.apellidos) === normalizePlayerNameKey(id, '')
+                  );
+                  if (match) {
+                    loadedPlayer = { ...match, estado: 'Fichado' };
+                    break;
+                  }
+                } catch {}
+              }
             }
           }
 
@@ -304,7 +332,7 @@ export default function PlayerForm() {
     }
     setLoading(true);
     try {
-      let finalFotoUrl = values.foto_url;
+      let finalFotoUrl: string | null = null;
 
       if (photo) {
         toast.info('Subiendo imagen...');
@@ -323,6 +351,7 @@ export default function PlayerForm() {
         if (uploadError) {
           console.warn('Storage Upload Error, using Base64 local fallback:', uploadError);
           // If storage upload fails, we fall back to storing the compressed base64 string securely in the DB!
+          finalFotoUrl = values.foto_url?.trim() || null;
           toast.success('Imagen guardada en formato optimizado local');
         } else {
           const { data: { publicUrl } } = supabase.storage
@@ -332,22 +361,25 @@ export default function PlayerForm() {
           finalFotoUrl = publicUrl;
           toast.success('Imagen subida al servidor correctamente');
         }
+      } else {
+        // If user cleared the URL or typed a new one without uploading file
+        finalFotoUrl = values.foto_url?.trim() ? values.foto_url.trim() : null;
       }
 
       const playerPayload = {
         ...values,
-        apodo: values.apodo || null,
-        foto_url: finalFotoUrl || null,
+        apodo: values.apodo?.trim() || null,
+        foto_url: finalFotoUrl,
         fecha_seguimiento: values.fecha_seguimiento || null,
-        telefono: values.telefono || null,
-        email: values.email || null,
-        equipo_actual: values.equipo_actual || null,
-        dorsal: values.dorsal || null,
+        telefono: values.telefono?.trim() || null,
+        email: values.email?.trim() || null,
+        equipo_actual: values.equipo_actual?.trim() || null,
+        dorsal: values.dorsal?.trim() || null,
         observaciones: values.observaciones || null,
         motivos_rechazo: values.motivos_rechazo || null,
         anio_nacimiento: values.anio_nacimiento || null,
-        fecha_nacimiento: values.fecha_nacimiento || null,
-        observador: values.observador || null,
+        fecha_nacimiento: values.fecha_nacimiento?.trim() || null,
+        observador: values.observador?.trim() || null,
         es_plantilla: false,
         origen: 'scouting',
       };
@@ -404,6 +436,7 @@ export default function PlayerForm() {
       const finalPlayerRecord = {
         id: targetId,
         ...playerPayload,
+        foto_url: finalFotoUrl || '',
         created_at: new Date().toISOString()
       };
       
@@ -455,17 +488,54 @@ export default function PlayerForm() {
         }
       }
 
+      // Sync to ALL local team rosters
+      const pId = playerId || id || finalPlayerRecord.id;
+      const isMatchingPlayer = (p: any) => 
+        p.id === pId || 
+        (p.nombre?.trim().toLowerCase() === playerPayload.nombre.trim().toLowerCase() && 
+         p.apellidos?.trim().toLowerCase() === playerPayload.apellidos.trim().toLowerCase()) ||
+        normalizePlayerNameKey(p.nombre, p.apellidos) === normKey;
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('team_roster_')) {
+          try {
+            const rawRoster = localStorage.getItem(k);
+            if (rawRoster) {
+              const currentR = JSON.parse(rawRoster);
+              let rChanged = false;
+              const mappedR = currentR.map((p: any) => {
+                if (isMatchingPlayer(p)) {
+                  rChanged = true;
+                  return {
+                    ...p,
+                    nombre: playerPayload.nombre,
+                    apellidos: playerPayload.apellidos,
+                    posicion: playerPayload.posicion || p.posicion,
+                    dorsal: playerPayload.dorsal || p.dorsal,
+                    foto_url: finalFotoUrl || '',
+                    telefono: playerPayload.telefono || p.telefono,
+                    email: playerPayload.email || p.email,
+                    estado: playerPayload.estado,
+                    anio_nacimiento: playerPayload.anio_nacimiento || p.anio_nacimiento,
+                    fecha_nacimiento: playerPayload.fecha_nacimiento || p.fecha_nacimiento
+                  };
+                }
+                return p;
+              });
+              if (rChanged) {
+                localStorage.setItem(k, JSON.stringify(mappedR));
+              }
+            }
+          } catch {}
+        }
+      }
+
       // Sync to local team roster strictly according to estado ('Fichado')
       const targetTeam = playerPayload.equipo_asignado || 'SENIOR FEMENINO';
       const rosterKey = `team_roster_${targetTeam}`;
       const savedRoster = localStorage.getItem(rosterKey);
       let rosterArr: any[] = savedRoster ? JSON.parse(savedRoster) : [];
-      
-      const pId = playerId || id || finalPlayerRecord.id;
-      const isMatchingPlayer = (p: any) => 
-        p.id === pId || 
-        (p.nombre?.trim().toLowerCase() === playerPayload.nombre.trim().toLowerCase() && 
-         p.apellidos?.trim().toLowerCase() === playerPayload.apellidos.trim().toLowerCase());
 
       if (playerPayload.estado === 'Fichado') {
         // Clear any previous deletion record for this player in the team's roster deletion list
@@ -493,7 +563,7 @@ export default function PlayerForm() {
                 apellidos: playerPayload.apellidos,
                 posicion: playerPayload.posicion || p.posicion,
                 dorsal: playerPayload.dorsal || p.dorsal,
-                foto_url: playerPayload.foto_url || p.foto_url,
+                foto_url: finalFotoUrl || '',
                 telefono: playerPayload.telefono || p.telefono,
                 email: playerPayload.email || p.email,
                 origen: 'scouting'
@@ -508,7 +578,7 @@ export default function PlayerForm() {
             apellidos: playerPayload.apellidos,
             dorsal: playerPayload.dorsal || (rosterArr.length + 1).toString(),
             posicion: playerPayload.posicion,
-            foto_url: playerPayload.foto_url || '',
+            foto_url: finalFotoUrl || '',
             anio_nacimiento: playerPayload.anio_nacimiento || 2005,
             lateralidad: playerPayload.lateralidad || 'Derecho',
             telefono: playerPayload.telefono || '',

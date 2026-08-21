@@ -4,7 +4,12 @@ import { CLUB_TEAMS } from '@/types';
 
 export async function syncJugadorasToDatabaseAndLocalStorage() {
   try {
-    console.log('Iniciando sincronización de las 15 jugadoras adjuntas...');
+    const isAlreadySeeded = localStorage.getItem('app_seeded_jugadoras_init');
+    if (isAlreadySeeded) {
+      return;
+    }
+
+    console.log('Iniciando inicialización de las 15 jugadoras...');
 
     const officialRoster = JUGADORAS_ADJUNTAS.map((j) => ({
       id: j.id,
@@ -31,47 +36,61 @@ export async function syncJugadorasToDatabaseAndLocalStorage() {
 
     for (const team of teamsToPopulate) {
       const rosterKey = `team_roster_${team}`;
-      // Set the clean roster of 15 players
-      localStorage.setItem(rosterKey, JSON.stringify(officialRoster));
-    }
-
-    // 2. Sync to Supabase `players` table
-    const { data: { user } } = await supabase.auth.getUser();
-
-    const payloads = JUGADORAS_ADJUNTAS.map((j) => ({
-      id: j.id,
-      nombre: j.nombre,
-      apellidos: j.apellidos,
-      posicion: j.posicion,
-      dorsal: j.dorsal,
-      lateralidad: j.lateralidad || 'Derecho',
-      anio_nacimiento: j.anio_nacimiento,
-      fecha_nacimiento: j.fecha_nacimiento,
-      foto_url: j.foto_url,
-      estado: 'Fichado',
-      potencial: j.potencial,
-      equipo_actual: j.equipo_actual || 'UD La Poveda',
-      equipo_asignado: 'SENIOR FEMENINO',
-      created_by: user?.id || undefined,
-      observaciones: `Posición principal: ${j.posicion_detalle}. Fecha nacimiento: ${j.fecha_nacimiento}`
-    }));
-
-    for (const payload of payloads) {
-      try {
-        const { error } = await supabase.from('players').upsert(payload);
-        if (error) {
-          // Retry without optional schema columns if missing in older database schema
-          const { fecha_nacimiento, equipo_asignado, ...fallback } = payload;
-          await supabase.from('players').upsert(fallback);
-        }
-      } catch (err) {
-        console.warn('Error syncing player to Supabase:', payload.nombre, err);
+      const existing = localStorage.getItem(rosterKey);
+      if (!existing || JSON.parse(existing).length === 0) {
+        localStorage.setItem(rosterKey, JSON.stringify(officialRoster));
       }
     }
 
-    console.log('Sincronización completada con éxito para las 15 jugadoras.');
+    // 2. Sync initial records to Supabase `players` table only if empty
+    try {
+      const { data: existingDbPlayers } = await supabase
+        .from('players')
+        .select('id')
+        .limit(1);
+
+      if (!existingDbPlayers || existingDbPlayers.length === 0) {
+        const { data: { user } } = await supabase.auth.getUser();
+
+        const payloads = JUGADORAS_ADJUNTAS.map((j) => ({
+          id: j.id,
+          nombre: j.nombre,
+          apellidos: j.apellidos,
+          posicion: j.posicion,
+          dorsal: j.dorsal,
+          lateralidad: j.lateralidad || 'Derecho',
+          anio_nacimiento: j.anio_nacimiento,
+          fecha_nacimiento: j.fecha_nacimiento,
+          foto_url: j.foto_url,
+          estado: 'Fichado',
+          potencial: j.potencial,
+          equipo_actual: j.equipo_actual || 'UD La Poveda',
+          equipo_asignado: 'SENIOR FEMENINO',
+          created_by: user?.id || undefined,
+          observaciones: `Posición principal: ${j.posicion_detalle}. Fecha nacimiento: ${j.fecha_nacimiento}`
+        }));
+
+        for (const payload of payloads) {
+          try {
+            const { error } = await supabase.from('players').upsert(payload);
+            if (error) {
+              const { fecha_nacimiento, equipo_asignado, ...fallback } = payload;
+              await supabase.from('players').upsert(fallback);
+            }
+          } catch (err) {
+            console.warn('Error seeding player to Supabase:', payload.nombre, err);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Supabase initial seed check failover:', e);
+    }
+
+    localStorage.setItem('app_seeded_jugadoras_init', 'true');
+    console.log('Inicialización completada con éxito.');
   } catch (err) {
-    console.error('Error durante la sincronización de jugadoras:', err);
+    console.error('Error durante la inicialización de jugadoras:', err);
   }
 }
+
 
