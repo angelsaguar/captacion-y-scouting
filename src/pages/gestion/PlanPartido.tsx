@@ -516,8 +516,12 @@ export default function PlanPartido() {
               >
                 <option value="1-4-3-3">1-4-3-3</option>
                 <option value="1-4-4-2">1-4-4-2</option>
+                <option value="1-4-4-2 (en rombo)">1-4-4-2 (en rombo)</option>
+                <option value="1-4-2-3-1">1-4-2-3-1</option>
+                <option value="1-3-2-3-2">1-3-2-3-2</option>
                 <option value="1-3-4-3">1-3-4-3</option>
                 <option value="1-3-5-2">1-3-5-2</option>
+                <option value="1-5-3-2">1-5-3-2</option>
               </select>
             </div>
 
@@ -530,8 +534,12 @@ export default function PlanPartido() {
               >
                 <option value="1-4-3-3">1-4-3-3</option>
                 <option value="1-4-4-2">1-4-4-2</option>
+                <option value="1-4-4-2 (en rombo)">1-4-4-2 (en rombo)</option>
+                <option value="1-4-2-3-1">1-4-2-3-1</option>
+                <option value="1-3-2-3-2">1-3-2-3-2</option>
                 <option value="1-3-4-3">1-3-4-3</option>
                 <option value="1-3-5-2">1-3-5-2</option>
+                <option value="1-5-3-2">1-5-3-2</option>
               </select>
             </div>
 

@@ -28,6 +28,8 @@ import {
   CloudOff,
   Database,
   Pencil,
+  RotateCcw,
+  Move,
   X
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -104,6 +106,45 @@ const SYSTEMS_F11: Record<string, TacticalPosition[]> = {
     { id: 'MCD', label: 'Medio Derecho', shortLabel: 'MD', x: 82, y: 48 },
     { id: 'DC1', label: 'Delantero Centro Izquierdo', shortLabel: 'DC1', x: 33, y: 20 },
     { id: 'DC2', label: 'Delantero Centro Derecho', shortLabel: 'DC2', x: 67, y: 20 }
+  ],
+  '1-4-4-2 (en rombo)': [
+    { id: 'GK', label: 'Portero', shortLabel: 'POR', x: 50, y: 88 },
+    { id: 'LI', label: 'Lateral Izquierdo', shortLabel: 'LI', x: 15, y: 70 },
+    { id: 'DFC1', label: 'Central Izquierdo', shortLabel: 'CTI', x: 38, y: 75 },
+    { id: 'DFC2', label: 'Central Derecho', shortLabel: 'CTD', x: 62, y: 75 },
+    { id: 'LD', label: 'Lateral Derecho', shortLabel: 'LD', x: 85, y: 70 },
+    { id: 'MCD', label: 'Pivote Defensivo', shortLabel: 'MCD', x: 50, y: 58 },
+    { id: 'MC1', label: 'Interior Izquierdo', shortLabel: 'MCI', x: 26, y: 44 },
+    { id: 'MC2', label: 'Interior Derecho', shortLabel: 'MCD', x: 74, y: 44 },
+    { id: 'MCO', label: 'Mediapunta / Enganche', shortLabel: 'MCO', x: 50, y: 30 },
+    { id: 'DC1', label: 'Delantero Izquierdo', shortLabel: 'DC1', x: 35, y: 16 },
+    { id: 'DC2', label: 'Delantero Derecho', shortLabel: 'DC2', x: 65, y: 16 }
+  ],
+  '1-4-2-3-1': [
+    { id: 'GK', label: 'Portero', shortLabel: 'POR', x: 50, y: 88 },
+    { id: 'LI', label: 'Lateral Izquierdo', shortLabel: 'LI', x: 15, y: 70 },
+    { id: 'DFC1', label: 'Central Izquierdo', shortLabel: 'CTI', x: 38, y: 75 },
+    { id: 'DFC2', label: 'Central Derecho', shortLabel: 'CTD', x: 62, y: 75 },
+    { id: 'LD', label: 'Lateral Derecho', shortLabel: 'LD', x: 85, y: 70 },
+    { id: 'MCD1', label: 'Pivote Izquierdo', shortLabel: 'PIV I', x: 35, y: 56 },
+    { id: 'MCD2', label: 'Pivote Derecho', shortLabel: 'PIV D', x: 65, y: 56 },
+    { id: 'MI', label: 'Mediapunta Izquierda', shortLabel: 'MI', x: 18, y: 34 },
+    { id: 'MCO', label: 'Mediapunta Centro', shortLabel: 'MCO', x: 50, y: 32 },
+    { id: 'MD', label: 'Mediapunta Derecha', shortLabel: 'MD', x: 82, y: 34 },
+    { id: 'DC', label: 'Delantero Centro', shortLabel: 'DC', x: 50, y: 15 }
+  ],
+  '1-3-2-3-2': [
+    { id: 'GK', label: 'Portero', shortLabel: 'POR', x: 50, y: 88 },
+    { id: 'DFC1', label: 'Central Izquierdo', shortLabel: 'DFC I', x: 25, y: 74 },
+    { id: 'DFC_C', label: 'Central Líbero', shortLabel: 'LIB', x: 50, y: 78 },
+    { id: 'DFC2', label: 'Central Derecho', shortLabel: 'DFC D', x: 75, y: 74 },
+    { id: 'MCD1', label: 'Pivote Izquierdo', shortLabel: 'PIV I', x: 35, y: 58 },
+    { id: 'MCD2', label: 'Pivote Derecho', shortLabel: 'PIV D', x: 65, y: 58 },
+    { id: 'MI', label: 'Interior / Extremo Izq', shortLabel: 'MI', x: 18, y: 38 },
+    { id: 'MCO', label: 'Mediapunta / Enganche', shortLabel: 'MCO', x: 50, y: 34 },
+    { id: 'MD', label: 'Interior / Extremo Der', shortLabel: 'MD', x: 82, y: 38 },
+    { id: 'DC1', label: 'Delantero Izquierdo', shortLabel: 'DC1', x: 35, y: 16 },
+    { id: 'DC2', label: 'Delantero Derecho', shortLabel: 'DC2', x: 65, y: 16 }
   ],
   '1-3-5-2': [
     { id: 'GK', label: 'Portero', shortLabel: 'POR', x: 50, y: 88 },
@@ -299,6 +340,102 @@ export default function Campograma() {
   const isF11Mode = TEAMS_F11.includes(selectedTeam);
   const currentSystems = isF11Mode ? SYSTEMS_F11 : SYSTEMS_F7;
   const currentPositions = currentSystems[selectedFormation] || [];
+
+  // Custom manual coordinates for player markers on the pitch
+  const [customCoords, setCustomCoords] = useState<Record<string, { x: number; y: number }>>({});
+  const pitchRef = useRef<HTMLDivElement>(null);
+  const [draggingPosId, setDraggingPosId] = useState<string | null>(null);
+  const dragTrackerRef = useRef<{ startX: number; startY: number; moved: boolean; posId: string | null }>({
+    startX: 0,
+    startY: 0,
+    moved: false,
+    posId: null
+  });
+
+  // Load custom coordinates whenever season, team or formation changes
+  useEffect(() => {
+    const coordsKey = `ud_lapoveda_custom_coords_v1_${selectedSeason}_${selectedTeam}_${selectedFormation}`;
+    const saved = localStorage.getItem(coordsKey);
+    if (saved) {
+      try {
+        setCustomCoords(JSON.parse(saved));
+      } catch (e) {
+        setCustomCoords({});
+      }
+    } else {
+      setCustomCoords({});
+    }
+  }, [selectedSeason, selectedTeam, selectedFormation]);
+
+  // Pointer drag handlers for repositioning players freely on the pitch
+  const handlePointerDown = (e: React.PointerEvent, posId: string) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    dragTrackerRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+      posId
+    };
+    setDraggingPosId(posId);
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {}
+  };
+
+  const handlePointerMove = (e: React.PointerEvent, posId: string) => {
+    if (draggingPosId !== posId || !pitchRef.current) return;
+    const dx = Math.abs(e.clientX - dragTrackerRef.current.startX);
+    const dy = Math.abs(e.clientY - dragTrackerRef.current.startY);
+    if (dx > 3 || dy > 3) {
+      dragTrackerRef.current.moved = true;
+    }
+    if (dragTrackerRef.current.moved) {
+      const rect = pitchRef.current.getBoundingClientRect();
+      const rawX = ((e.clientX - rect.left) / rect.width) * 100;
+      const rawY = ((e.clientY - rect.top) / rect.height) * 100;
+      const clampedX = Math.max(6, Math.min(94, Math.round(rawX * 10) / 10));
+      const clampedY = Math.max(6, Math.min(94, Math.round(rawY * 10) / 10));
+      setCustomCoords(prev => ({
+        ...prev,
+        [posId]: { x: clampedX, y: clampedY }
+      }));
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent, posId: string) => {
+    if (draggingPosId !== posId) return;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+
+    if (dragTrackerRef.current.moved && pitchRef.current) {
+      const coordsKey = `ud_lapoveda_custom_coords_v1_${selectedSeason}_${selectedTeam}_${selectedFormation}`;
+      const rect = pitchRef.current.getBoundingClientRect();
+      const rawX = ((e.clientX - rect.left) / rect.width) * 100;
+      const rawY = ((e.clientY - rect.top) / rect.height) * 100;
+      const clampedX = Math.max(6, Math.min(94, Math.round(rawX * 10) / 10));
+      const clampedY = Math.max(6, Math.min(94, Math.round(rawY * 10) / 10));
+      setCustomCoords(prev => {
+        const next = { ...prev, [posId]: { x: clampedX, y: clampedY } };
+        localStorage.setItem(coordsKey, JSON.stringify(next));
+        return next;
+      });
+    } else if (!dragTrackerRef.current.moved) {
+      setActiveSlotId(prev => prev === posId ? null : posId);
+    }
+
+    setDraggingPosId(null);
+    dragTrackerRef.current = { startX: 0, startY: 0, moved: false, posId: null };
+  };
+
+  const handleResetPositions = () => {
+    setCustomCoords({});
+    const coordsKey = `ud_lapoveda_custom_coords_v1_${selectedSeason}_${selectedTeam}_${selectedFormation}`;
+    localStorage.removeItem(coordsKey);
+    toast.success('Posiciones restablecidas a la formación base');
+  };
+
+  const hasCustomPositions = Object.keys(customCoords).length > 0;
 
   // Load from local storage on mount or when season changes
   useEffect(() => {
@@ -1251,28 +1388,53 @@ export default function Campograma() {
         {/* LEFT COLUMN: Visual Football Field */}
         <div className="lg:col-span-7 flex flex-col gap-4">
           <Card className="glass-card overflow-hidden">
-            <CardHeader className="pb-3 border-b border-slate-900 flex flex-row items-center justify-between">
+            <CardHeader className="pb-3 border-b border-slate-900 flex flex-row items-center justify-between flex-wrap gap-2">
               <div>
-                <CardTitle className="text-white text-base font-black uppercase tracking-tight">
-                  Pizarra de Juego ({selectedFormation})
-                </CardTitle>
-                <CardDescription className="text-slate-400 text-xs">
-                  Haz clic en un círculo para adjudicar un jugador de la plantilla.
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-white text-base font-black uppercase tracking-tight">
+                    Pizarra de Juego ({selectedFormation})
+                  </CardTitle>
+                  {hasCustomPositions && (
+                    <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/30 text-[9px] font-bold uppercase">
+                      Posiciones Personalizadas
+                    </Badge>
+                  )}
+                </div>
+                <CardDescription className="text-slate-400 text-xs mt-0.5">
+                  Arrastra los círculos para mover las fichas manualmente. Haz clic para asignar jugador.
                 </CardDescription>
               </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={handleClearLineup}
-                className="h-8 px-2.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-950/20 cursor-pointer font-bold uppercase rounded-lg"
-              >
-                Limpiar Pizarra
-              </Button>
+              <div className="flex items-center gap-1.5">
+                {hasCustomPositions && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleResetPositions}
+                    className="h-8 px-2.5 text-xs text-amber-400 border-amber-500/30 hover:bg-amber-950/20 cursor-pointer font-bold uppercase rounded-lg flex items-center gap-1"
+                    title="Restablecer fichas a las coordenadas estándar de la formación"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Restablecer
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleClearLineup}
+                  className="h-8 px-2.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-950/20 cursor-pointer font-bold uppercase rounded-lg"
+                >
+                  Limpiar Pizarra
+                </Button>
+              </div>
             </CardHeader>
-            <CardContent className="p-4 md:p-6 flex justify-center">
+            <CardContent className="p-4 md:p-6 flex flex-col items-center gap-3">
               
               {/* THE PITCH CONTAINER */}
-              <div className="w-full max-w-[430px] aspect-[1/1.38] bg-emerald-950 border-4 border-slate-900 rounded-2xl relative shadow-2xl select-none overflow-hidden" style={{ minHeight: '440px' }}>
+              <div 
+                ref={pitchRef}
+                className="w-full max-w-[430px] aspect-[1/1.38] bg-emerald-950 border-4 border-slate-900 rounded-2xl relative shadow-2xl select-none overflow-hidden touch-none" 
+                style={{ minHeight: '440px' }}
+              >
                 
                 {/* Visual grass pattern (horizontal stripes) */}
                 <div className="absolute inset-0 pointer-events-none" style={{
@@ -1305,26 +1467,39 @@ export default function Campograma() {
                   
                   const players = currentRoster.filter(p => assignedIds.includes(p.id));
                   const isSlotActive = activeSlotId === pos.id;
+                  const isDraggingThis = draggingPosId === pos.id;
+
+                  const curCoord = customCoords[pos.id];
+                  const posX = curCoord?.x ?? pos.x;
+                  const posY = curCoord?.y ?? pos.y;
 
                   // Dynamic alignment classes to prevent the selector box from getting clipped near the pitch edges
                   let alignmentHClass = "left-1/2 -translate-x-1/2";
-                  if (pos.x < 30) {
+                  if (posX < 30) {
                     alignmentHClass = "left-0 translate-x-2"; // align left and move slightly right to stay on pitch
-                  } else if (pos.x > 70) {
+                  } else if (posX > 70) {
                     alignmentHClass = "right-0 -translate-x-2"; // align right and move slightly left to stay on pitch
                   }
 
                   let alignmentVClass = "bottom-12 animate-in slide-in-from-bottom-2";
-                  if (pos.y < 25) {
+                  if (posY < 25) {
                     alignmentVClass = "top-12 animate-in slide-in-from-top-2"; // show below the circle if too close to the top of pitch
                   }
 
                   return (
                     <div
                       key={pos.id}
-                      className={`absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group cursor-pointer transition-all duration-300 ${isSlotActive ? 'z-50' : 'z-10 hover:z-20'}`}
-                      style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
-                      onClick={() => setActiveSlotId(isSlotActive ? null : pos.id)}
+                      className={`absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group touch-none select-none transition-[transform,shadow] ${
+                        isDraggingThis 
+                          ? 'z-50 cursor-grabbing scale-125' 
+                          : isSlotActive 
+                            ? 'z-40 cursor-grab scale-110' 
+                            : 'z-10 hover:z-30 cursor-grab duration-150'
+                      }`}
+                      style={{ left: `${posX}%`, top: `${posY}%` }}
+                      onPointerDown={(e) => handlePointerDown(e, pos.id)}
+                      onPointerMove={(e) => handlePointerMove(e, pos.id)}
+                      onPointerUp={(e) => handlePointerUp(e, pos.id)}
                     >
                       {/* Player Circle/Jersey */}
                       <div 
@@ -1332,7 +1507,9 @@ export default function Campograma() {
                           players.length > 0
                             ? 'bg-gradient-to-br from-blue-600 to-blue-800 text-white border-white scale-105 group-hover:scale-110' 
                             : 'bg-red-950/20 text-red-400/80 border-dashed border-red-500/40 hover:border-red-400 hover:text-red-350 hover:bg-red-900/10'
-                        } ${isSlotActive ? ' ring-4 ring-yellow-400 border-yellow-400 scale-110' : ''}`}
+                        } ${isSlotActive ? ' ring-4 ring-yellow-400 border-yellow-400 scale-110' : ''} ${
+                          isDraggingThis ? ' ring-4 ring-cyan-400 border-cyan-300 shadow-cyan-500/50 shadow-2xl' : ''
+                        }`}
                       >
                         {players.length > 0 ? (
                           <span className="text-[11px] font-black leading-none">
@@ -1351,7 +1528,7 @@ export default function Campograma() {
                       </div>
 
                       {/* Display Label below circle */}
-                      <div className="mt-1 flex flex-col items-center gap-0.5 z-10">
+                      <div className="mt-1 flex flex-col items-center gap-0.5 z-10 pointer-events-none">
                         {players.length > 0 ? (
                           players.map((p) => {
                             const dText = getDisplayDorsal(p);
@@ -1372,9 +1549,10 @@ export default function Campograma() {
                       </div>
 
                       {/* Selector Bubble Overlay triggered on click */}
-                      {isSlotActive && (
+                      {isSlotActive && !isDraggingThis && (
                         <div 
-                          className={`absolute ${alignmentVClass} ${alignmentHClass} bg-slate-900 border-2 border-slate-700 rounded-xl p-2.5 shadow-2xl w-[210px] z-50 fade-in duration-200`}
+                          className={`absolute ${alignmentVClass} ${alignmentHClass} bg-slate-900 border-2 border-slate-700 rounded-xl p-2.5 shadow-2xl w-[210px] z-50 fade-in duration-200 pointer-events-auto`}
+                          onPointerDown={(e) => e.stopPropagation()}
                           onClick={(e) => e.stopPropagation()} // stop parent click
                         >
                           <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-1.5">
@@ -1414,7 +1592,7 @@ export default function Campograma() {
                                     {isAssignedToThis ? (
                                       <span className="text-[8px] bg-blue-500 text-white font-bold px-1 rounded uppercase">Puesto</span>
                                     ) : isAssignedElsewhere ? (
-                                      <span className="text-[8px] bg-slate-900 text-slate-500 border border-slate-800 px-1 rounded uppercase">Otro</span>
+                                      <span className="text-[8px] bg-slate-900 text-slate-500 border border-slate-850 px-1 rounded uppercase">Otro</span>
                                     ) : (
                                       <span className="text-[8px] bg-slate-950 text-slate-400 border border-slate-850 px-1 rounded uppercase">Libre</span>
                                     )}
@@ -1430,6 +1608,12 @@ export default function Campograma() {
                   );
                 })}
 
+              </div>
+
+              {/* Informative helper below the pitch */}
+              <div className="flex items-center gap-2 text-[11px] text-slate-400 bg-slate-900/60 border border-slate-800/80 px-3 py-1.5 rounded-lg w-full max-w-[430px] justify-center">
+                <Move className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <span><strong>Arrastre activo:</strong> Mantén pulsado y mueve a cualquier jugador a la posición deseada.</span>
               </div>
             </CardContent>
           </Card>
