@@ -24,3 +24,23 @@ export function normalizePlayerNameKey(nombre?: string, apellidos?: string): str
   return `${n} ${a}`.trim();
 }
 
+export function isDummyUnsplashPhoto(url?: string | null): boolean {
+  if (!url) return false;
+  return url.includes('images.unsplash.com/photo-') && (
+    url.includes('1534528741775') ||
+    url.includes('1517841905240') ||
+    url.includes('1524504388940') ||
+    url.includes('1544005313') ||
+    url.includes('1494790108377') ||
+    url.includes('1508214751196') ||
+    url.includes('1529626455594') ||
+    url.includes('1531746020798')
+  );
+}
+
+export function cleanPhotoUrl(url?: string | null): string {
+  if (!url) return '';
+  if (isDummyUnsplashPhoto(url)) return '';
+  return url.trim();
+}
+

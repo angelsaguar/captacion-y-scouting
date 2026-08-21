@@ -52,7 +52,7 @@ import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
-import { cn, normalizePlayerNameKey } from '@/lib/utils';
+import { cn, normalizePlayerNameKey, cleanPhotoUrl } from '@/lib/utils';
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 import { useAuthStore } from '@/store/useAuthStore';
 import {
@@ -309,9 +309,11 @@ export default function PlayerDetail() {
         if (localScoutingSaved) {
           try {
             const list = JSON.parse(localScoutingSaved);
+            const loadedKey = loaded ? normalizePlayerNameKey(loaded.nombre, loaded.apellidos) : '';
             localPlayerRecord = list.find((p: any) => 
               p.id === id || 
               (p.id && id && p.id.toLowerCase() === id.toLowerCase()) ||
+              (loadedKey && normalizePlayerNameKey(p.nombre, p.apellidos) === loadedKey) ||
               normalizePlayerNameKey(p.nombre, p.apellidos) === normalizePlayerNameKey(id, '')
             );
           } catch {}
@@ -353,7 +355,10 @@ export default function PlayerDetail() {
         }
 
         if (loaded) {
-          setPlayer(loaded);
+          setPlayer({
+            ...loaded,
+            foto_url: cleanPhotoUrl(loaded.foto_url)
+          });
         } else {
           toast.error('No se pudo encontrar el jugador');
         }

@@ -24,7 +24,7 @@ import {
   Star,
   Users
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, normalizePlayerNameKey, cleanPhotoUrl } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { 
   DropdownMenu, 
@@ -217,7 +217,8 @@ export default function Players() {
           deduped.push({
             ...p,
             nombre: p.nombre.trim(),
-            apellidos: p.apellidos.trim() === 'Marta Pulido' ? 'Pulido' : p.apellidos.trim()
+            apellidos: p.apellidos.trim() === 'Marta Pulido' ? 'Pulido' : p.apellidos.trim(),
+            foto_url: cleanPhotoUrl(p.foto_url)
           });
         }
       });
@@ -233,7 +234,7 @@ export default function Players() {
         lateralidad: j.lateralidad || 'Derecho',
         anio_nacimiento: j.anio_nacimiento,
         fecha_nacimiento: j.fecha_nacimiento,
-        foto_url: j.foto_url,
+        foto_url: cleanPhotoUrl(j.foto_url),
         estado: 'Fichado',
         potencial: j.potencial,
         equipo_actual: j.equipo_actual || 'UD La Poveda',

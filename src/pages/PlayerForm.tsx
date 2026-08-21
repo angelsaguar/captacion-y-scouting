@@ -40,12 +40,13 @@ import {
   Loader2,
   Calendar as CalendarIcon,
   Plus,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Slider } from '@/components/ui/slider';
 import { useAuthStore } from '@/store/useAuthStore';
-import { cn, normalizePlayerNameKey } from '@/lib/utils';
+import { cn, normalizePlayerNameKey, cleanPhotoUrl } from '@/lib/utils';
 import { getObservers, addObserver } from '@/lib/observers';
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 
@@ -166,9 +167,11 @@ export default function PlayerForm() {
           if (localScoutingSaved) {
             try {
               const list = JSON.parse(localScoutingSaved);
+              const loadedKey = loadedPlayer ? normalizePlayerNameKey(loadedPlayer.nombre, loadedPlayer.apellidos) : '';
               localPlayerRecord = list.find((p: any) => 
                 p.id === id || 
                 (p.id && id && p.id.toLowerCase() === id.toLowerCase()) ||
+                (loadedKey && normalizePlayerNameKey(p.nombre, p.apellidos) === loadedKey) ||
                 normalizePlayerNameKey(p.nombre, p.apellidos) === normalizePlayerNameKey(id, '')
               );
             } catch {}
@@ -210,6 +213,7 @@ export default function PlayerForm() {
           }
 
           if (loadedPlayer) {
+            const sanitizedFotoUrl = cleanPhotoUrl(loadedPlayer.foto_url);
             form.reset({
               nombre: loadedPlayer.nombre,
               apellidos: loadedPlayer.apellidos,
@@ -224,7 +228,7 @@ export default function PlayerForm() {
               lateralidad: loadedPlayer.lateralidad as any || 'Derecho',
               anio_nacimiento: loadedPlayer.anio_nacimiento,
               fecha_nacimiento: loadedPlayer.fecha_nacimiento || '',
-              foto_url: loadedPlayer.foto_url || '',
+              foto_url: sanitizedFotoUrl,
               observaciones: loadedPlayer.observaciones || '',
               fecha_seguimiento: loadedPlayer.fecha_seguimiento || '',
               potencial: loadedPlayer.potencial || 3,
@@ -778,7 +782,7 @@ export default function PlayerForm() {
                     )}
                   </div>
                   
-                  <div className="w-full">
+                  <div className="w-full space-y-2">
                     <label className="flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold rounded-xl cursor-pointer transition-all duration-200 shadow-md text-center w-full">
                       <Upload className="w-4 h-4 text-white" />
                       <span className="text-xs uppercase tracking-wider">Subir desde Galería</span>
@@ -789,6 +793,24 @@ export default function PlayerForm() {
                         onChange={handlePhotoChange} 
                       />
                     </label>
+                    
+                    {(photo || form.watch('foto_url')) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setPhoto(null);
+                          form.setValue('foto_url', '');
+                          toast.info('Foto eliminada. Guarda los cambios para aplicar.');
+                        }}
+                        className="w-full h-9 border-red-500/30 text-red-400 hover:text-red-300 hover:bg-red-500/10 text-xs font-semibold gap-1.5"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Quitar Foto Actual
+                      </Button>
+                    )}
+
                     <p className="text-[10px] text-slate-500 text-center mt-1.5 italic">
                       Pulsa para seleccionar de tu carrete o galería de fotos
                     </p>

@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+import { cn, cleanPhotoUrl } from '@/lib/utils';
 import UDLaPovedaLogo from '@/components/layout/UDLaPovedaLogo';
 import TeamMonthlyCalendar from '@/components/gestion/TeamMonthlyCalendar';
 import {
@@ -2365,7 +2365,7 @@ function normalizePlayerNameKey(nombre?: string, apellidos?: string): string {
       apellidos: j.apellidos,
       dorsal: j.dorsal,
       posicion: j.posicion,
-      foto_url: j.foto_url,
+      foto_url: cleanPhotoUrl(j.foto_url),
       anio_nacimiento: j.anio_nacimiento,
       fecha_nacimiento: j.fecha_nacimiento,
       lateralidad: j.lateralidad || 'Derecho',
@@ -2414,7 +2414,7 @@ function normalizePlayerNameKey(nombre?: string, apellidos?: string): string {
           if (scPlayer) {
             return {
               ...p,
-              foto_url: scPlayer.foto_url !== undefined ? (scPlayer.foto_url || '') : (p.foto_url || ''),
+              foto_url: scPlayer.foto_url !== undefined ? cleanPhotoUrl(scPlayer.foto_url) : cleanPhotoUrl(p.foto_url),
               dorsal: scPlayer.dorsal || p.dorsal,
               posicion: scPlayer.posicion || p.posicion,
               telefono: scPlayer.telefono || p.telefono,
@@ -2422,7 +2422,10 @@ function normalizePlayerNameKey(nombre?: string, apellidos?: string): string {
               anio_nacimiento: scPlayer.anio_nacimiento || p.anio_nacimiento,
             };
           }
-          return p;
+          return {
+            ...p,
+            foto_url: cleanPhotoUrl(p.foto_url)
+          };
         });
       } catch {}
     }
@@ -2438,7 +2441,8 @@ function normalizePlayerNameKey(nombre?: string, apellidos?: string): string {
         cleanDeduplicatedRoster.push({
           ...p,
           nombre: p.nombre.trim(),
-          apellidos: p.apellidos.trim() === 'Marta Pulido' ? 'Pulido' : p.apellidos.trim()
+          apellidos: p.apellidos.trim() === 'Marta Pulido' ? 'Pulido' : p.apellidos.trim(),
+          foto_url: cleanPhotoUrl(p.foto_url)
         });
       }
     });
