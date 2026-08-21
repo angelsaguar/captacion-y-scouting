@@ -24,7 +24,7 @@ import {
   Star,
   Users
 } from 'lucide-react';
-import { cn, normalizePlayerNameKey, cleanPhotoUrl } from '@/lib/utils';
+import { cn, normalizePlayerNameKey, cleanPhotoUrl, isPlayerMatch } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { 
   DropdownMenu, 
@@ -137,62 +137,43 @@ export default function Players() {
       if (error) throw error;
       let rawList: Player[] = data || [];
 
-      // Collect IDs and normalized name keys of all players created in Plantilla (Gestión de Equipo)
-      const plantillaPlayerIds = new Set<string>();
-      const plantillaPlayerKeys = new Set<string>();
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('team_roster_')) {
-          try {
-            const roster: any[] = JSON.parse(localStorage.getItem(k) || '[]');
-            roster.forEach(item => {
-              if (item.origen === 'plantilla' || item.es_plantilla) {
-                if (item.id) plantillaPlayerIds.add(item.id);
-                plantillaPlayerKeys.add(normalizePlayerNameKey(item.nombre, item.apellidos));
-                plantillaPlayerKeys.add(`${(item.nombre||'').trim()} ${(item.apellidos||'').trim()}`.toLowerCase());
-              }
-            });
-          } catch {}
-        }
-      }
-
       // Merge local scouting players
       const localScoutingSaved = localStorage.getItem('scouting_local_players');
       if (localScoutingSaved) {
         try {
           const localScoutingList: Player[] = JSON.parse(localScoutingSaved);
-          const cleanedScoutingList = localScoutingList.filter(lp => {
-            if ((lp as any).es_plantilla || (lp as any).origen === 'plantilla') return false;
-            if (plantillaPlayerIds.has(lp.id)) return false;
-            const normKey = normalizePlayerNameKey(lp.nombre, lp.apellidos);
-            const simpleName = `${(lp.nombre||'').trim()} ${(lp.apellidos||'').trim()}`.toLowerCase();
-            if (plantillaPlayerKeys.has(normKey) || plantillaPlayerKeys.has(simpleName)) return false;
-            return true;
-          });
-          cleanedScoutingList.forEach(lp => {
-            const lpKey = normalizePlayerNameKey(lp.nombre, lp.apellidos);
-            const idx = rawList.findIndex(r => r.id === lp.id || normalizePlayerNameKey(r.nombre, r.apellidos) === lpKey);
+          localScoutingList.forEach(lp => {
+            const idx = rawList.findIndex(r => isPlayerMatch(r, lp));
             if (idx >= 0) {
-              rawList[idx] = { ...rawList[idx], ...lp };
+              rawList[idx] = { 
+                ...rawList[idx], 
+                ...lp,
+                foto_url: lp.foto_url ? cleanPhotoUrl(lp.foto_url) : cleanPhotoUrl(rawList[idx].foto_url)
+              };
             } else {
               rawList.push(lp);
             }
           });
-          if (cleanedScoutingList.length !== localScoutingList.length) {
-            localStorage.setItem('scouting_local_players', JSON.stringify(cleanedScoutingList));
-          }
         } catch {}
       }
 
-      // Strictly exclude players created in Gestión de Equipo -> Plantilla
-      rawList = rawList.filter(p => {
-        if ((p as any).es_plantilla || (p as any).origen === 'plantilla') return false;
-        if (plantillaPlayerIds.has(p.id)) return false;
-        const normKey = normalizePlayerNameKey(p.nombre, p.apellidos);
-        const simpleName = `${(p.nombre||'').trim()} ${(p.apellidos||'').trim()}`.toLowerCase();
-        if (plantillaPlayerKeys.has(normKey) || plantillaPlayerKeys.has(simpleName)) return false;
-        return true;
-      });
+      // Check team rosters for any updated photo
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('team_roster_')) {
+          try {
+            const roster: any[] = JSON.parse(localStorage.getItem(k) || '[]');
+            roster.forEach(rp => {
+              const idx = rawList.findIndex(r => isPlayerMatch(r, rp));
+              if (idx >= 0) {
+                if (rp.foto_url && !rawList[idx].foto_url) {
+                  rawList[idx].foto_url = cleanPhotoUrl(rp.foto_url);
+                }
+              }
+            });
+          } catch {}
+        }
+      }
 
       // Deleted players lists for scouting
       const scoutingDelSaved = localStorage.getItem('scouting_deleted_players');
@@ -244,12 +225,13 @@ export default function Players() {
 
       officialConverted.forEach(oj => {
         if (!isDeletedPlayer(oj.id, oj.nombre, oj.apellidos)) {
-          const ojKey = normalizePlayerNameKey(oj.nombre, oj.apellidos);
-          const exists = currentList.some(p => 
-            p.id === oj.id || normalizePlayerNameKey(p.nombre, p.apellidos) === ojKey
-          );
-          if (!exists) {
+          const existingIdx = currentList.findIndex(p => isPlayerMatch(p, oj));
+          if (existingIdx === -1) {
             currentList.push(oj);
+          } else {
+            if (!currentList[existingIdx].foto_url && oj.foto_url) {
+              currentList[existingIdx].foto_url = cleanPhotoUrl(oj.foto_url);
+            }
           }
         }
       });
@@ -282,17 +264,17 @@ export default function Players() {
     }
   };
 
-  function normalizePlayerNameKey(nombre?: string, apellidos?: string): string {
-    const n = (nombre || '').toLowerCase().trim().replace(/\s+/g, ' ');
-    const a = (apellidos || '').toLowerCase().trim().replace(/\s+/g, ' ');
-    const full = `${n} ${a}`.trim();
-    const words = full.split(' ');
-    const uniqueWords = words.filter((w, idx) => words.indexOf(w) === idx);
-    return uniqueWords.join(' ');
-  }
-
   useEffect(() => {
     fetchPlayers();
+    const handleSync = () => {
+      fetchPlayers();
+    };
+    window.addEventListener('player-updated', handleSync);
+    window.addEventListener('storage', handleSync);
+    return () => {
+      window.removeEventListener('player-updated', handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
   }, [search, filterStatus, filterPosition, filterLateralidad, filterBirthYear, filterEquipoAsignado, filterEquipoActual, filterObservador]);
 
   const requestDelete = (id: string) => {

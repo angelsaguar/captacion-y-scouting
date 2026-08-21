@@ -18,10 +18,34 @@ export function generateUUID(): string {
 }
 
 export function normalizePlayerNameKey(nombre?: string, apellidos?: string): string {
-  const n = (nombre || '').trim().toLowerCase();
-  let a = (apellidos || '').trim().toLowerCase();
-  if (a === 'marta pulido') a = 'pulido';
-  return `${n} ${a}`.trim();
+  const cleanStr = (str?: string) =>
+    (str || '')
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .replace(/\s+/g, ' ');
+
+  const n = cleanStr(nombre);
+  let a = cleanStr(apellidos);
+  if (a === 'marta pulido' || a === 'marta pulido ') a = 'pulido';
+
+  const combined = `${n} ${a}`.trim();
+  const words = combined.split(' ').filter(Boolean);
+  const uniqueWords = words.filter((w, idx) => words.indexOf(w) === idx);
+  return uniqueWords.join(' ');
+}
+
+export function isPlayerMatch(
+  p1?: { id?: string | null; nombre?: string | null; apellidos?: string | null } | null,
+  p2?: { id?: string | null; nombre?: string | null; apellidos?: string | null } | null
+): boolean {
+  if (!p1 || !p2) return false;
+  if (p1.id && p2.id && p1.id === p2.id) return true;
+  const k1 = normalizePlayerNameKey(p1.nombre || '', p1.apellidos || '');
+  const k2 = normalizePlayerNameKey(p2.nombre || '', p2.apellidos || '');
+  if (k1 && k2 && k1 === k2) return true;
+  return false;
 }
 
 export function isDummyUnsplashPhoto(url?: string | null): boolean {

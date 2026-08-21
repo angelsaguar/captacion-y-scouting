@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { cn, cleanPhotoUrl } from '@/lib/utils';
+import { cn, cleanPhotoUrl, normalizePlayerNameKey, isPlayerMatch } from '@/lib/utils';
 import UDLaPovedaLogo from '@/components/layout/UDLaPovedaLogo';
 import TeamMonthlyCalendar from '@/components/gestion/TeamMonthlyCalendar';
 import {
@@ -2331,17 +2331,7 @@ export default function Plantilla() {
     setEditingRosterPlayer(null);
   };
 
-function normalizePlayerNameKey(nombre?: string, apellidos?: string): string {
-  const n = (nombre || '').toLowerCase().trim().replace(/\s+/g, ' ');
-  const a = (apellidos || '').toLowerCase().trim().replace(/\s+/g, ' ');
-  const full = `${n} ${a}`.trim();
-  const words = full.split(' ');
-  const uniqueWords = words.filter((w, idx) => words.indexOf(w) === idx);
-  return uniqueWords.join(' ');
-}
-
-  // Load team roster from localStorage on team change
-  useEffect(() => {
+  const loadTeamRoster = () => {
     const key = `team_roster_${selectedTeam}`;
     const saved = localStorage.getItem(key);
 
@@ -2390,10 +2380,7 @@ function normalizePlayerNameKey(nombre?: string, apellidos?: string): string {
     // Merge missing non-deleted official players if missing
     officialTeamPlayers.forEach(oj => {
       if (!isDeletedPlayer(oj.id, oj.nombre, oj.apellidos)) {
-        const ojKey = normalizePlayerNameKey(oj.nombre, oj.apellidos);
-        const exists = currentRoster.some(p => 
-          p.id === oj.id || normalizePlayerNameKey(p.nombre, p.apellidos) === ojKey
-        );
+        const exists = currentRoster.some(p => isPlayerMatch(p, oj));
         if (!exists) {
           currentRoster.push(oj);
         }
@@ -2406,15 +2393,11 @@ function normalizePlayerNameKey(nombre?: string, apellidos?: string): string {
       try {
         const scList: any[] = JSON.parse(localScoutingSaved);
         currentRoster = currentRoster.map(p => {
-          const scNormKey = normalizePlayerNameKey(p.nombre, p.apellidos);
-          const scPlayer = scList.find((sp: any) => 
-            sp.id === p.id || 
-            normalizePlayerNameKey(sp.nombre, sp.apellidos) === scNormKey
-          );
+          const scPlayer = scList.find((sp: any) => isPlayerMatch(sp, p));
           if (scPlayer) {
             return {
               ...p,
-              foto_url: scPlayer.foto_url !== undefined ? cleanPhotoUrl(scPlayer.foto_url) : cleanPhotoUrl(p.foto_url),
+              foto_url: scPlayer.foto_url !== undefined && scPlayer.foto_url !== '' ? cleanPhotoUrl(scPlayer.foto_url) : cleanPhotoUrl(p.foto_url),
               dorsal: scPlayer.dorsal || p.dorsal,
               posicion: scPlayer.posicion || p.posicion,
               telefono: scPlayer.telefono || p.telefono,
@@ -2460,7 +2443,25 @@ function normalizePlayerNameKey(nombre?: string, apellidos?: string): string {
     
     // Load signed players from scouting database
     fetchSignedScoutingPlayers();
+  };
 
+  // Load team roster from localStorage on team change and listen for updates
+  useEffect(() => {
+    loadTeamRoster();
+
+    const handleSync = () => {
+      loadTeamRoster();
+    };
+
+    window.addEventListener('player-updated', handleSync);
+    window.addEventListener('storage', handleSync);
+    return () => {
+      window.removeEventListener('player-updated', handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
+  }, [selectedTeam]);
+
+  useEffect(() => {
     // Background pre-fetch matches and sessions from Supabase to sync the player stats
     const syncData = async () => {
       try {
@@ -2647,24 +2648,28 @@ function normalizePlayerNameKey(nombre?: string, apellidos?: string): string {
       let dataList: any[] = [];
       const { data, error } = await supabase
         .from('players')
-        .select('*')
-        .eq('estado', 'Fichado');
+        .select('*');
       
       if (!error && data) {
         dataList = data;
       }
 
-      // Merge local scouting players
+      // Merge local scouting players into dataList
       const localScoutingSaved = localStorage.getItem('scouting_local_players');
+      let localList: any[] = [];
       if (localScoutingSaved) {
         try {
-          const localList: any[] = JSON.parse(localScoutingSaved);
+          localList = JSON.parse(localScoutingSaved);
           localList.forEach(lp => {
-            if (lp.estado === 'Fichado') {
-              const exists = dataList.some(d => d.id === lp.id || (d.nombre === lp.nombre && d.apellidos === lp.apellidos));
-              if (!exists) {
-                dataList.push(lp);
-              }
+            const idx = dataList.findIndex(d => isPlayerMatch(d, lp));
+            if (idx >= 0) {
+              dataList[idx] = {
+                ...dataList[idx],
+                ...lp,
+                foto_url: lp.foto_url ? cleanPhotoUrl(lp.foto_url) : cleanPhotoUrl(dataList[idx].foto_url)
+              };
+            } else {
+              dataList.push(lp);
             }
           });
         } catch {}
@@ -2689,6 +2694,35 @@ function normalizePlayerNameKey(nombre?: string, apellidos?: string): string {
         );
       };
 
+      const key = `team_roster_${selectedTeam}`;
+      const saved = localStorage.getItem(key);
+      let roster: TeamPlayer[] = saved ? JSON.parse(saved) : [];
+      let changed = false;
+
+      // Reconcile ALL players currently in roster with dataList and localList
+      roster = roster.map(p => {
+        const match = localList.find(lp => isPlayerMatch(lp, p)) || dataList.find(d => isPlayerMatch(d, p));
+        if (match) {
+          const latestFoto = match.foto_url ? cleanPhotoUrl(match.foto_url) : cleanPhotoUrl(p.foto_url);
+          if (latestFoto && latestFoto !== cleanPhotoUrl(p.foto_url)) {
+            changed = true;
+            return {
+              ...p,
+              foto_url: latestFoto,
+              dorsal: match.dorsal || p.dorsal,
+              posicion: match.posicion || p.posicion,
+              telefono: match.telefono || p.telefono,
+              email: match.email || p.email,
+              anio_nacimiento: match.anio_nacimiento || p.anio_nacimiento
+            };
+          }
+        }
+        return {
+          ...p,
+          foto_url: cleanPhotoUrl(p.foto_url)
+        };
+      });
+
       // Auto-sync signed players assigned to selectedTeam
       const teamSigned = scoutingSigned.filter(p => {
         const matchTeam = p.equipo_asignado ? (p.equipo_asignado.toUpperCase() === selectedTeam.toUpperCase()) : (selectedTeam === 'SENIOR FEMENINO');
@@ -2696,20 +2730,12 @@ function normalizePlayerNameKey(nombre?: string, apellidos?: string): string {
         return !isDeletedPlayer(p.id, p.nombre, p.apellidos);
       });
 
-      const key = `team_roster_${selectedTeam}`;
-      const saved = localStorage.getItem(key);
-      let roster: TeamPlayer[] = saved ? JSON.parse(saved) : [];
-      let changed = false;
-
       // Add or update signed players from scouting
       teamSigned.forEach(sp => {
-        const spNormKey = normalizePlayerNameKey(sp.nombre, sp.apellidos);
-        const existingIdx = roster.findIndex(p => 
-          p.id === sp.id || normalizePlayerNameKey(p.nombre, p.apellidos) === spNormKey
-        );
+        const existingIdx = roster.findIndex(p => isPlayerMatch(p, sp));
         if (existingIdx >= 0) {
           const existing = roster[existingIdx];
-          const latestFoto = sp.foto_url !== undefined ? (sp.foto_url || '') : (existing.foto_url || '');
+          const latestFoto = sp.foto_url ? cleanPhotoUrl(sp.foto_url) : cleanPhotoUrl(existing.foto_url);
           if (existing.foto_url !== latestFoto || 
               (sp.dorsal && existing.dorsal !== sp.dorsal) || 
               (sp.posicion && existing.posicion !== sp.posicion) ||
@@ -2733,7 +2759,7 @@ function normalizePlayerNameKey(nombre?: string, apellidos?: string): string {
             apellidos: sp.apellidos.trim() === 'Marta Pulido' ? 'Pulido' : sp.apellidos.trim(),
             dorsal: sp.dorsal || (roster.length + 1).toString(),
             posicion: sp.posicion,
-            foto_url: sp.foto_url || '',
+            foto_url: cleanPhotoUrl(sp.foto_url) || '',
             anio_nacimiento: sp.anio_nacimiento || 2005,
             lateralidad: sp.lateralidad || 'Derecho',
             telefono: sp.telefono || '',
@@ -2770,7 +2796,12 @@ function normalizePlayerNameKey(nombre?: string, apellidos?: string): string {
         const k = normalizePlayerNameKey(p.nombre, p.apellidos);
         if (!seenKeys.has(k) && !isDeletedPlayer(p.id, p.nombre, p.apellidos)) {
           seenKeys.add(k);
-          cleanDeduplicatedRoster.push(p);
+          cleanDeduplicatedRoster.push({
+            ...p,
+            nombre: p.nombre.trim(),
+            apellidos: p.apellidos.trim() === 'Marta Pulido' ? 'Pulido' : p.apellidos.trim(),
+            foto_url: cleanPhotoUrl(p.foto_url)
+          });
         } else {
           changed = true;
         }
@@ -2778,7 +2809,15 @@ function normalizePlayerNameKey(nombre?: string, apellidos?: string): string {
 
       if (changed) {
         localStorage.setItem(key, JSON.stringify(cleanDeduplicatedRoster));
-        setPlayers(cleanDeduplicatedRoster);
+      }
+      setPlayers(cleanDeduplicatedRoster);
+
+      // Keep active profile in sync if open
+      if (selectedPlayerProfile) {
+        const updatedProfile = cleanDeduplicatedRoster.find(p => isPlayerMatch(p, selectedPlayerProfile));
+        if (updatedProfile && (updatedProfile.foto_url !== selectedPlayerProfile.foto_url || updatedProfile.dorsal !== selectedPlayerProfile.dorsal)) {
+          setSelectedPlayerProfile(updatedProfile);
+        }
       }
     } catch (e) {
       console.error(e);

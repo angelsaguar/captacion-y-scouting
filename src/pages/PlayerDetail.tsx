@@ -52,7 +52,7 @@ import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
-import { cn, normalizePlayerNameKey, cleanPhotoUrl } from '@/lib/utils';
+import { cn, normalizePlayerNameKey, cleanPhotoUrl, isPlayerMatch } from '@/lib/utils';
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 import { useAuthStore } from '@/store/useAuthStore';
 import {
@@ -247,10 +247,7 @@ export default function PlayerDetail() {
               const rosterArr = JSON.parse(rawRoster);
               let rosterChanged = false;
               const updatedRoster = rosterArr.map((p: any) => {
-                if (p.id === updatedObj.id || 
-                    (p.nombre?.trim().toLowerCase() === player.nombre.trim().toLowerCase() && 
-                     p.apellidos?.trim().toLowerCase() === player.apellidos.trim().toLowerCase()) ||
-                    normalizePlayerNameKey(p.nombre, p.apellidos) === normKey) {
+                if (isPlayerMatch(p, updatedObj) || isPlayerMatch(p, player)) {
                   rosterChanged = true;
                   return {
                     ...p,
@@ -275,6 +272,9 @@ export default function PlayerDetail() {
           } catch {}
         }
       }
+
+      window.dispatchEvent(new CustomEvent('player-updated', { detail: updatedObj }));
+      window.dispatchEvent(new Event('storage'));
 
       toast.success('¡Datos personales guardados y sincronizados correctamente!');
       setShowEditPersonalModal(false);

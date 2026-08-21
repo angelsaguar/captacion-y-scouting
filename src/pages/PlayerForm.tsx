@@ -46,7 +46,7 @@ import {
 import { toast } from 'sonner';
 import { Slider } from '@/components/ui/slider';
 import { useAuthStore } from '@/store/useAuthStore';
-import { cn, normalizePlayerNameKey, cleanPhotoUrl } from '@/lib/utils';
+import { cn, normalizePlayerNameKey, cleanPhotoUrl, isPlayerMatch } from '@/lib/utils';
 import { getObservers, addObserver } from '@/lib/observers';
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 
@@ -495,10 +495,7 @@ export default function PlayerForm() {
       // Sync to ALL local team rosters
       const pId = playerId || id || finalPlayerRecord.id;
       const isMatchingPlayer = (p: any) => 
-        p.id === pId || 
-        (p.nombre?.trim().toLowerCase() === playerPayload.nombre.trim().toLowerCase() && 
-         p.apellidos?.trim().toLowerCase() === playerPayload.apellidos.trim().toLowerCase()) ||
-        normalizePlayerNameKey(p.nombre, p.apellidos) === normKey;
+        isPlayerMatch(p, { id: pId, nombre: playerPayload.nombre, apellidos: playerPayload.apellidos });
 
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
@@ -570,7 +567,7 @@ export default function PlayerForm() {
                 foto_url: finalFotoUrl || '',
                 telefono: playerPayload.telefono || p.telefono,
                 email: playerPayload.email || p.email,
-                origen: 'scouting'
+                origen: (p as any).origen || 'scouting'
               };
             }
             return p;
@@ -597,6 +594,9 @@ export default function PlayerForm() {
         const filteredRoster = rosterArr.filter((p: any) => !(isMatchingPlayer(p) && p.origen === 'scouting'));
         localStorage.setItem(rosterKey, JSON.stringify(filteredRoster));
       }
+
+      window.dispatchEvent(new CustomEvent('player-updated', { detail: finalPlayerRecord }));
+      window.dispatchEvent(new Event('storage'));
 
       toast.success(id ? 'Jugador actualizado' : 'Jugador registrado');
       navigate('/players');
