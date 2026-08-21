@@ -36,6 +36,8 @@ import { toast } from 'sonner';
 import { useAuthStore } from '@/store/useAuthStore';
 import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
+import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
+import { cleanPhotoUrl, normalizePlayerNameKey, isPlayerMatch } from '@/lib/utils';
 
 // Constants for teams as specified by the user
 const TEAMS_F11 = [
@@ -67,8 +69,10 @@ const ALL_TEAMS = [...TEAMS_F11, ...TEAMS_F7];
 export interface PlayerRoster {
   id: string;
   nombre: string;
+  apellidos?: string;
   dorsal?: string | number;
   posicionOriginal?: string;
+  foto_url?: string;
 }
 
 export interface TacticalPosition {
@@ -437,28 +441,140 @@ export default function Campograma() {
 
   const hasCustomPositions = Object.keys(customCoords).length > 0;
 
-  // Load from local storage on mount or when season changes
+  // Helper to load roster directly from Plantilla's database/localStorage for the team
+  const loadTeamRosterFromPlantilla = (teamName: string): PlayerRoster[] => {
+    const key = `team_roster_${teamName}`;
+    const saved = localStorage.getItem(key);
+    const deletedKey = `team_deleted_players_${teamName}`;
+    const deletedSaved = localStorage.getItem(deletedKey);
+    const deletedPlayers: { id?: string; fullName: string }[] = deletedSaved ? JSON.parse(deletedSaved) : [];
+
+    const isDeletedPlayer = (id: string, nombre: string, apellidos: string = '') => {
+      const normKey = normalizePlayerNameKey(nombre, apellidos);
+      const simpleFullName = `${(nombre || '').trim()} ${(apellidos || '').trim()}`.toLowerCase();
+      return deletedPlayers.some(
+        dp => (dp.id && dp.id === id) || dp.fullName === normKey || dp.fullName === simpleFullName
+      );
+    };
+
+    const officialTeamPlayers = teamName === 'SENIOR FEMENINO' ? JUGADORAS_ADJUNTAS : [];
+
+    let currentList: any[] = [];
+    if (saved) {
+      try {
+        currentList = JSON.parse(saved);
+      } catch {}
+    }
+
+    // Filter out deleted & demo
+    currentList = currentList.filter(p => {
+      const isDemo = p.nombre === 'Carlos' || p.nombre === 'Marcos' || (p.nombre === 'Marina' && p.apellidos === 'Sierra Garcia');
+      if (isDemo) return false;
+      return !isDeletedPlayer(p.id, p.nombre, p.apellidos || '');
+    });
+
+    // Merge missing official players for Senior Femenino
+    officialTeamPlayers.forEach(oj => {
+      if (!isDeletedPlayer(oj.id, oj.nombre, oj.apellidos)) {
+        const exists = currentList.some(p => isPlayerMatch(p, oj));
+        if (!exists) {
+          currentList.push({
+            id: oj.id,
+            nombre: oj.nombre,
+            apellidos: oj.apellidos,
+            dorsal: oj.dorsal,
+            posicion: oj.posicion,
+            foto_url: cleanPhotoUrl(oj.foto_url)
+          });
+        }
+      }
+    });
+
+    // Reconcile with local scouting players for latest custom edits (e.g. photo/dorsal changes)
+    const localScoutingSaved = localStorage.getItem('scouting_local_players');
+    if (localScoutingSaved) {
+      try {
+        const scList: any[] = JSON.parse(localScoutingSaved);
+        currentList = currentList.map(p => {
+          const scPlayer = scList.find((sp: any) => isPlayerMatch(sp, p));
+          if (scPlayer) {
+            return {
+              ...p,
+              foto_url: scPlayer.foto_url !== undefined && scPlayer.foto_url !== '' ? cleanPhotoUrl(scPlayer.foto_url) : cleanPhotoUrl(p.foto_url),
+              dorsal: scPlayer.dorsal || p.dorsal,
+              posicion: scPlayer.posicion || p.posicion
+            };
+          }
+          return {
+            ...p,
+            foto_url: cleanPhotoUrl(p.foto_url)
+          };
+        });
+      } catch {}
+    }
+
+    // Deduplicate and format to PlayerRoster
+    const cleanDeduplicated: PlayerRoster[] = [];
+    const seenKeys = new Set<string>();
+
+    currentList.forEach(p => {
+      const cleanNombre = (p.nombre || '').trim();
+      const cleanApellidos = (p.apellidos || '').trim() === 'Marta Pulido' ? 'Pulido' : (p.apellidos || '').trim();
+      const fullName = cleanApellidos ? `${cleanNombre} ${cleanApellidos}` : cleanNombre;
+      const keyStr = normalizePlayerNameKey(cleanNombre, cleanApellidos);
+
+      if (!seenKeys.has(keyStr) && !isDeletedPlayer(p.id, cleanNombre, cleanApellidos)) {
+        seenKeys.add(keyStr);
+        cleanDeduplicated.push({
+          id: p.id,
+          nombre: fullName,
+          apellidos: cleanApellidos,
+          dorsal: p.dorsal !== undefined && p.dorsal !== null ? p.dorsal : '',
+          posicionOriginal: p.posicion || p.posicionOriginal || 'MEDIOCENTRO',
+          foto_url: cleanPhotoUrl(p.foto_url)
+        });
+      }
+    });
+
+    // If empty for other teams, fallback to sample players
+    if (cleanDeduplicated.length === 0 && teamName !== 'SENIOR FEMENINO') {
+      const isTeamF11 = TEAMS_F11.includes(teamName);
+      const defaults = isTeamF11 ? [...SAMPLE_PLAYERS.F11] : [...SAMPLE_PLAYERS.F7];
+      return defaults;
+    }
+
+    return cleanDeduplicated;
+  };
+
+  // Load from local storage and sync with Plantilla on mount or when season/team changes
   useEffect(() => {
+    const syncCurrentTeamRoster = () => {
+      const plantRoster = loadTeamRosterFromPlantilla(selectedTeam);
+      setRosters(prev => {
+        const next = { ...prev, [selectedTeam]: plantRoster };
+        localStorage.setItem(`ud_lapoveda_tactics_rosters_v1_${selectedSeason}`, JSON.stringify(next));
+        return next;
+      });
+    };
+
     const savedRosters = localStorage.getItem(`ud_lapoveda_tactics_rosters_v1_${selectedSeason}`);
     const savedLineups = localStorage.getItem(`ud_lapoveda_tactics_lineups_v1_${selectedSeason}`);
     const savedFormations = localStorage.getItem(`ud_lapoveda_tactics_formations_v1_${selectedSeason}`);
 
+    let initialRosters: Record<string, PlayerRoster[]> = {};
     if (savedRosters) {
       try { 
-        setRosters(JSON.parse(savedRosters)); 
+        initialRosters = JSON.parse(savedRosters); 
       } catch (e) { 
         console.error(e); 
       }
-    } else {
-      // Setup initial empty lists with fallback
-      const initial: Record<string, PlayerRoster[]> = {};
-      ALL_TEAMS.forEach(team => {
-        const isTeamF11 = TEAMS_F11.includes(team);
-        initial[team] = isTeamF11 ? [...SAMPLE_PLAYERS.F11] : [...SAMPLE_PLAYERS.F7];
-      });
-      setRosters(initial);
-      localStorage.setItem(`ud_lapoveda_tactics_rosters_v1_${selectedSeason}`, JSON.stringify(initial));
     }
+    
+    // Always guarantee that selected team gets fresh live data from Plantilla
+    const currentLiveRoster = loadTeamRosterFromPlantilla(selectedTeam);
+    initialRosters[selectedTeam] = currentLiveRoster;
+    setRosters(initialRosters);
+    localStorage.setItem(`ud_lapoveda_tactics_rosters_v1_${selectedSeason}`, JSON.stringify(initialRosters));
 
     if (savedLineups) {
       try { 
@@ -508,7 +624,15 @@ export default function Campograma() {
       const availableFormations = Object.keys(isF11 ? SYSTEMS_F11 : SYSTEMS_F7);
       setSelectedFormation(availableFormations[0]);
     }
-  }, [selectedSeason]);
+
+    // Listen to real-time events from Plantilla or other tabs
+    window.addEventListener('player-updated', syncCurrentTeamRoster);
+    window.addEventListener('storage', syncCurrentTeamRoster);
+    return () => {
+      window.removeEventListener('player-updated', syncCurrentTeamRoster);
+      window.removeEventListener('storage', syncCurrentTeamRoster);
+    };
+  }, [selectedSeason, selectedTeam]);
 
   // Supabase states for cloud persistence
   const [isSupabaseSynced, setIsSupabaseSynced] = useState(true);
@@ -658,11 +782,31 @@ export default function Campograma() {
     loadTacticsFromSupabase(true);
   }, [selectedTeam, selectedSeason]);
 
-  // Sync state changes to localStorage
+  // Sync state changes to localStorage and synchronize with Plantilla
   const saveRostersToStorage = (updated: Record<string, PlayerRoster[]>) => {
     setRosters(updated);
     setIsSupabaseSynced(false);
     localStorage.setItem(`ud_lapoveda_tactics_rosters_v1_${selectedSeason}`, JSON.stringify(updated));
+
+    // Also persist to Plantilla's storage key for seamless bidirectional sync
+    const currentTeamList = updated[selectedTeam] || [];
+    const formattedForPlantilla = currentTeamList.map(p => {
+      const parts = (p.nombre || '').trim().split(/\s+/);
+      const apellidos = p.apellidos || (parts.length > 1 ? parts.slice(1).join(' ') : '');
+      const nombre = p.apellidos ? p.nombre.replace(p.apellidos, '').trim() : (parts.length > 1 ? parts[0] : p.nombre);
+      return {
+        id: p.id,
+        nombre: nombre || p.nombre,
+        apellidos: apellidos,
+        dorsal: p.dorsal !== undefined ? String(p.dorsal) : '',
+        posicion: p.posicionOriginal || 'MEDIOCENTRO',
+        foto_url: cleanPhotoUrl(p.foto_url),
+        estado_fisico: 'Disponible'
+      };
+    });
+    localStorage.setItem(`team_roster_${selectedTeam}`, JSON.stringify(formattedForPlantilla));
+    window.dispatchEvent(new CustomEvent('player-updated', { detail: { team: selectedTeam } }));
+    window.dispatchEvent(new Event('storage'));
   };
 
   const saveLineupsToStorage = (updated: Record<string, Record<string, string[]>>) => {
@@ -851,6 +995,18 @@ export default function Campograma() {
         wasAssigned = true;
       }
     });
+
+    const targetPlayer = currentRoster.find(p => p.id === playerId);
+    if (targetPlayer) {
+      const deletedKey = `team_deleted_players_${selectedTeam}`;
+      const deletedSaved = localStorage.getItem(deletedKey);
+      const deletedPlayers: { id?: string; fullName: string }[] = deletedSaved ? JSON.parse(deletedSaved) : [];
+      const normKey = normalizePlayerNameKey(targetPlayer.nombre, targetPlayer.apellidos || '');
+      const simpleFullName = targetPlayer.nombre.toLowerCase().trim();
+      deletedPlayers.push({ id: targetPlayer.id, fullName: normKey });
+      deletedPlayers.push({ id: targetPlayer.id, fullName: simpleFullName });
+      localStorage.setItem(deletedKey, JSON.stringify(deletedPlayers));
+    }
 
     const updatedRoster = currentRoster.filter(p => p.id !== playerId);
     const nextRosters = {

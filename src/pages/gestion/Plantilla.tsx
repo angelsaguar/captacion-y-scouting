@@ -2432,6 +2432,7 @@ export default function Plantilla() {
 
     localStorage.setItem(key, JSON.stringify(cleanDeduplicatedRoster));
     setPlayers(cleanDeduplicatedRoster);
+    window.dispatchEvent(new CustomEvent('player-updated', { detail: { team: selectedTeam } }));
 
     const evaluationsKey = `team_evaluations_${selectedTeam}`;
     const savedEvaluations = localStorage.getItem(evaluationsKey);
@@ -3018,6 +3019,8 @@ export default function Plantilla() {
   const saveRoster = (updated: TeamPlayer[]) => {
     setPlayers(updated);
     localStorage.setItem(`team_roster_${selectedTeam}`, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('player-updated', { detail: { team: selectedTeam } }));
+    window.dispatchEvent(new Event('storage'));
   };
 
   const handleSavePlayerStats = async (e: React.FormEvent) => {
