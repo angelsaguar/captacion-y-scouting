@@ -1458,6 +1458,14 @@ export default function Campograma() {
                 <div className="absolute -top-[5px] left-1/2 -translate-x-1/2 w-[20%] h-[4px] bg-slate-100 rounded-sm pointer-events-none" />
                 <div className="absolute -bottom-[5px] left-1/2 -translate-x-1/2 w-[20%] h-[4px] bg-slate-100 rounded-sm pointer-events-none" />
 
+                {/* Click-outside backdrop when a player slot selector is open */}
+                {activeSlotId && (
+                  <div 
+                    className="absolute inset-0 z-30 bg-black/10 cursor-pointer" 
+                    onClick={() => setActiveSlotId(null)} 
+                  />
+                )}
+
                 {/* PLACED PLAYER DOTS */}
                 {currentPositions.map((pos) => {
                   const assignedIdsRaw = currentLineup[pos.id] || [];
@@ -1475,15 +1483,16 @@ export default function Campograma() {
 
                   // Dynamic alignment classes to prevent the selector box from getting clipped near the pitch edges
                   let alignmentHClass = "left-1/2 -translate-x-1/2";
-                  if (posX < 30) {
+                  if (posX < 28) {
                     alignmentHClass = "left-0 translate-x-2"; // align left and move slightly right to stay on pitch
-                  } else if (posX > 70) {
+                  } else if (posX > 72) {
                     alignmentHClass = "right-0 -translate-x-2"; // align right and move slightly left to stay on pitch
                   }
 
-                  let alignmentVClass = "bottom-12 animate-in slide-in-from-bottom-2";
-                  if (posY < 25) {
-                    alignmentVClass = "top-12 animate-in slide-in-from-top-2"; // show below the circle if too close to the top of pitch
+                  // If player is in upper half of the field (< 50%), always open selector downwards so header and X are completely visible
+                  let alignmentVClass = "bottom-14 animate-in slide-in-from-bottom-2";
+                  if (posY < 50) {
+                    alignmentVClass = "top-14 animate-in slide-in-from-top-2"; // show below the circle in the top half of pitch
                   }
 
                   return (
@@ -1551,20 +1560,28 @@ export default function Campograma() {
                       {/* Selector Bubble Overlay triggered on click */}
                       {isSlotActive && !isDraggingThis && (
                         <div 
-                          className={`absolute ${alignmentVClass} ${alignmentHClass} bg-slate-900 border-2 border-slate-700 rounded-xl p-2.5 shadow-2xl w-[210px] z-50 fade-in duration-200 pointer-events-auto`}
+                          className={`absolute ${alignmentVClass} ${alignmentHClass} bg-slate-900 border-2 border-slate-700 rounded-xl p-2.5 shadow-2xl w-[220px] z-50 fade-in duration-200 pointer-events-auto`}
                           onPointerDown={(e) => e.stopPropagation()}
                           onClick={(e) => e.stopPropagation()} // stop parent click
                         >
-                          <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-1.5">
-                            <span className="text-[10px] uppercase font-black text-slate-400">Escoger: {pos.label}</span>
-                            <button onClick={() => setActiveSlotId(null)} className="text-slate-500 hover:text-white text-xs font-black p-1 hover:bg-slate-800 rounded">×</button>
+                          <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-2 gap-1">
+                            <span className="text-[10px] uppercase font-black text-slate-300 truncate">Escoger: {pos.label}</span>
+                            <button 
+                              onClick={() => setActiveSlotId(null)} 
+                              className="text-slate-400 hover:text-white p-1 hover:bg-slate-800 rounded-md transition-colors shrink-0 bg-slate-800/80 cursor-pointer"
+                              title="Cerrar selector"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                           
-                          <div className="space-y-1 max-h-[180px] overflow-y-auto custom-scrollbar">
+                          <div className="space-y-1 max-h-[180px] overflow-y-auto custom-scrollbar pr-0.5">
                             {players.length > 0 && (
                               <button
-                                onClick={() => assignPlayerToPosition(pos.id, 'CLEARED')}
-                                className="w-full text-left text-[10px] font-black text-red-400 hover:bg-red-950/20 p-1.5 rounded uppercase block border border-red-900/10 mb-1"
+                                onClick={() => {
+                                  assignPlayerToPosition(pos.id, 'CLEARED');
+                                }}
+                                className="w-full text-left text-[10px] font-black text-red-400 hover:bg-red-950/20 p-1.5 rounded uppercase block border border-red-900/20 mb-1 cursor-pointer"
                               >
                                 ❌ Vaciar posición
                               </button>
@@ -1580,8 +1597,10 @@ export default function Campograma() {
                                 return (
                                   <button
                                     key={rosterPlayer.id}
-                                    onClick={() => assignPlayerToPosition(pos.id, rosterPlayer.id)}
-                                    className={`w-full text-left font-semibold text-xs py-1.5 px-2 rounded flex items-center justify-between hover:bg-slate-800 text-white transition-all ${
+                                    onClick={() => {
+                                      assignPlayerToPosition(pos.id, rosterPlayer.id);
+                                    }}
+                                    className={`w-full text-left font-semibold text-xs py-1.5 px-2 rounded flex items-center justify-between hover:bg-slate-800 text-white transition-all cursor-pointer ${
                                       isAssignedToThis ? 'bg-blue-600/25 border border-blue-500/30 text-blue-200 font-bold' : 'border border-transparent'
                                     }`}
                                   >
@@ -1600,6 +1619,15 @@ export default function Campograma() {
                                 );
                               })
                             )}
+                          </div>
+
+                          <div className="pt-2 mt-2 border-t border-slate-800 flex justify-end">
+                            <button
+                              onClick={() => setActiveSlotId(null)}
+                              className="text-[10px] uppercase font-bold text-slate-400 hover:text-white px-2 py-1 bg-slate-800/80 hover:bg-slate-700 rounded transition-colors cursor-pointer"
+                            >
+                              Cerrar
+                            </button>
                           </div>
                         </div>
                       )}
