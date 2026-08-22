@@ -127,7 +127,7 @@ export const loadCompleteTeamRoster = (teamName: string): TeamPlayer[] => {
     const cleanA = (p.apellidos || '').trim();
     if (!cleanN) return false;
     if (cleanN.toUpperCase() === 'JUGADORA' && (!cleanA || cleanA.toUpperCase() === 'JUGADORA')) return false;
-    const isDemo = cleanN === 'Carlos' || cleanN === 'Marcos' || cleanN === 'Sofía' || (cleanN === 'Marina' && cleanA === 'Sierra Garcia');
+    const isDemo = cleanN === 'Carlos' || cleanN === 'Marcos' || cleanN === 'Sofía';
     if (isDemo) return false;
     return !isDeletedPlayer(p.id, cleanN, cleanA);
   });
@@ -344,13 +344,62 @@ export default function Asistencia() {
         const a = (p?.apellidos || rec.playerLastName || '').trim();
         if (!n) return false;
         if (n.toUpperCase() === 'JUGADORA' && (!a || a.toUpperCase() === 'JUGADORA')) return false;
-        if (n === 'Carlos' || n === 'Marcos' || n === 'Sofía' || (n === 'Marina' && a === 'Sierra Garcia')) return false;
+        if (n === 'Carlos' || n === 'Marcos' || n === 'Sofía') return false;
         return true;
       });
     };
 
-    // Fetch from Supabase, fallback to localStorage
-    const fetchSessions = async () => {
+    const sessionsKey = `team_sessions_${selectedTeam}`;
+    const activeKey = `active_session_id_${selectedTeam}`;
+
+    // 1. Synchronously load local storage first so user never loses their changes
+    const savedSessions = localStorage.getItem(sessionsKey);
+    let initialList: AttendanceSession[] = [];
+    if (savedSessions) {
+      try {
+        const parsed = JSON.parse(savedSessions);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          initialList = parsed.map((item: any) => ({
+            ...item,
+            id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id) ? item.id : crypto.randomUUID(),
+            records: cleanSessionRecords(item.records || [], currentRoster)
+          }));
+        }
+      } catch {}
+    }
+
+    if (initialList.length === 0) {
+      // Create initial default session with all roster players
+      const defaultRecords = currentRoster.map(p => ({
+        playerId: p.id,
+        playerName: p.nombre,
+        playerLastName: p.apellidos,
+        playerDorsal: p.dorsal,
+        playerPosition: p.posicion,
+        foto_url: p.foto_url,
+        status: undefined
+      }));
+      const defaultSession: AttendanceSession = {
+        id: crypto.randomUUID(),
+        fecha: new Date().toISOString().split('T')[0],
+        hora: '19:30 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Sesión de entrenamiento habitual',
+        records: defaultRecords,
+        tareas: [],
+        archivos: []
+      };
+      initialList = [defaultSession];
+      localStorage.setItem(sessionsKey, JSON.stringify(initialList));
+    }
+
+    setSessions(initialList);
+    const lastActiveId = localStorage.getItem(activeKey);
+    const foundActive = initialList.find(s => s.id === lastActiveId) || initialList[0];
+    setSelectedSession(foundActive);
+
+    // 2. Fetch from Supabase in the background and sync
+    const syncFromSupabase = async () => {
       try {
         const { data, error } = await supabase
           .from('attendance_sessions')
@@ -359,8 +408,8 @@ export default function Asistencia() {
           .neq('tipo', 'CalendarioMensual')
           .order('fecha', { ascending: false });
 
-        if (!error && data) {
-          const formatted: AttendanceSession[] = data.map(item => ({
+        if (!error && data && data.length > 0) {
+          const cloudFormatted: AttendanceSession[] = data.map(item => ({
             id: item.id,
             fecha: item.fecha,
             hora: item.hora || '19:30 h',
@@ -370,67 +419,37 @@ export default function Asistencia() {
             tareas: item.tareas || [],
             archivos: item.archivos || []
           }));
-          
-          setSessions(formatted);
-          if (formatted.length > 0) {
-            setSelectedSession(formatted[0]);
+
+          // If local storage was empty, use cloud data
+          const localSavedRaw = localStorage.getItem(sessionsKey);
+          if (!localSavedRaw || JSON.parse(localSavedRaw).length === 0) {
+            setSessions(cloudFormatted);
+            setSelectedSession(cloudFormatted[0]);
+            localStorage.setItem(sessionsKey, JSON.stringify(cloudFormatted));
           } else {
-            setSelectedSession(null);
+            // Push any local sessions to Supabase to keep cloud up to date
+            const localList: AttendanceSession[] = JSON.parse(localSavedRaw);
+            for (const locSess of localList) {
+              const payload = {
+                team: selectedTeam,
+                fecha: locSess.fecha,
+                hora: locSess.hora || '19:30 h',
+                tipo: locSess.tipo,
+                descripcion: locSess.descripcion,
+                records: locSess.records,
+                tareas: locSess.tareas || [],
+                archivos: locSess.archivos || []
+              };
+              await supabase.from('attendance_sessions').upsert({ id: locSess.id, ...payload });
+            }
           }
-          localStorage.setItem(`team_sessions_${selectedTeam}`, JSON.stringify(formatted));
-          return;
-        } else if (error) {
-          console.warn('Error fetching attendance from Supabase, using local fallback:', error);
         }
       } catch (err) {
-        console.warn('Exception fetching attendance from Supabase:', err);
-      }
-
-      // Local fallback
-      const sessionsKey = `team_sessions_${selectedTeam}`;
-      const savedSessions = localStorage.getItem(sessionsKey);
-      if (savedSessions) {
-        try {
-          const parsed = JSON.parse(savedSessions);
-          const formatted: AttendanceSession[] = Array.isArray(parsed) ? parsed.map((item: any) => ({
-            ...item,
-            records: cleanSessionRecords(item.records || [], currentRoster)
-          })) : [];
-          setSessions(formatted);
-          if (formatted.length > 0) {
-            setSelectedSession(formatted[0]);
-          } else {
-            setSelectedSession(null);
-          }
-          localStorage.setItem(sessionsKey, JSON.stringify(formatted));
-        } catch {}
-      } else {
-        // Create a default session to make it look active immediately with all roster players
-        const defaultRecords = currentRoster.map(p => ({
-          playerId: p.id,
-          playerName: p.nombre,
-          playerLastName: p.apellidos,
-          playerDorsal: p.dorsal,
-          playerPosition: p.posicion,
-          foto_url: p.foto_url,
-          status: undefined
-        }));
-        const defaultSession: AttendanceSession = {
-          id: 'default-session-1',
-          fecha: new Date().toISOString().split('T')[0],
-          hora: '19:30 h',
-          tipo: 'Entrenamiento',
-          descripcion: 'Entrenamiento Táctico de inicio de semana',
-          records: defaultRecords
-        };
-        const initialSessions = [defaultSession];
-        localStorage.setItem(sessionsKey, JSON.stringify(initialSessions));
-        setSessions(initialSessions);
-        setSelectedSession(defaultSession);
+        console.warn('Supabase sync skipped/failed:', err);
       }
     };
 
-    fetchSessions();
+    syncFromSupabase();
 
     const handlePlayerUpdate = () => {
       syncRoster();
@@ -444,14 +463,25 @@ export default function Asistencia() {
     };
   }, [selectedTeam]);
 
+  const handleSelectSession = (sess: AttendanceSession) => {
+    setSelectedSession(sess);
+    localStorage.setItem(`active_session_id_${selectedTeam}`, sess.id);
+  };
+
   const saveSessions = async (updated: AttendanceSession[]) => {
-    setSessions(updated);
-    localStorage.setItem(`team_sessions_${selectedTeam}`, JSON.stringify(updated));
+    // Ensure all sessions have valid UUIDs
+    const validSessions = updated.map(sess => {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sess.id);
+      return isUuid ? sess : { ...sess, id: crypto.randomUUID() };
+    });
+
+    setSessions(validSessions);
+    const sessionsKey = `team_sessions_${selectedTeam}`;
+    localStorage.setItem(sessionsKey, JSON.stringify(validSessions));
 
     // Try to sync to Supabase in the background
     try {
-      for (const sess of updated) {
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sess.id);
+      for (const sess of validSessions) {
         const payload = {
           team: selectedTeam,
           fecha: sess.fecha,
@@ -463,24 +493,9 @@ export default function Asistencia() {
           archivos: sess.archivos || []
         };
 
-        if (isUuid) {
-          await supabase
-            .from('attendance_sessions')
-            .upsert({ id: sess.id, ...payload });
-        } else {
-          // If it's a temporary ID, insert it and let Supabase assign a real UUID
-          const { data, error } = await supabase
-            .from('attendance_sessions')
-            .insert({ ...payload })
-            .select();
-
-          if (!error && data && data[0]) {
-            // Update the temporary ID in state and local storage with the new UUID
-            sess.id = data[0].id;
-            setSessions([...updated]);
-            localStorage.setItem(`team_sessions_${selectedTeam}`, JSON.stringify(updated));
-          }
-        }
+        await supabase
+          .from('attendance_sessions')
+          .upsert({ id: sess.id, ...payload });
       }
     } catch (err) {
       console.warn('Failed to sync attendance sessions to Supabase:', err);
@@ -599,6 +614,7 @@ export default function Asistencia() {
     const updated = [newSession, ...sessions];
     saveSessions(updated);
     setSelectedSession(newSession);
+    localStorage.setItem(`active_session_id_${selectedTeam}`, newSession.id);
     setShowNewForm(false);
     toast.success(`Nueva sesión de ${newSessionData.tipo} creada con las ${currentRoster.length} jugadoras de la plantilla.`);
   };
@@ -612,7 +628,7 @@ export default function Asistencia() {
       const a = (pInfo?.apellidos || rec.playerLastName || '').trim();
       if (!n) return false;
       if (n.toUpperCase() === 'JUGADORA' && (!a || a.toUpperCase() === 'JUGADORA')) return false;
-      if (n === 'Carlos' || n === 'Marcos' || n === 'Sofía' || (n === 'Marina' && a === 'Sierra Garcia')) return false;
+      if (n === 'Carlos' || n === 'Marcos' || n === 'Sofía') return false;
       return true;
     });
   }, [selectedSession, players]);
@@ -1161,7 +1177,7 @@ export default function Asistencia() {
                 return (
                   <div 
                     key={sess.id}
-                    onClick={() => setSelectedSession(sess)}
+                    onClick={() => handleSelectSession(sess)}
                     className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between gap-2 ${
                       isActive 
                         ? 'bg-blue-600/10 border-blue-600' 
