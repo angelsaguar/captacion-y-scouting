@@ -26,7 +26,15 @@ import {
   Search,
   CheckCheck,
   UserCheck,
-  RefreshCw
+  RefreshCw,
+  MessageSquare,
+  StickyNote,
+  Video,
+  Play,
+  Film,
+  Upload,
+  Link,
+  Info
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -68,15 +76,29 @@ interface SessionFile {
   dataUrl?: string;
 }
 
+export interface SessionVideo {
+  id: string;
+  titulo: string;
+  tipo: 'youtube' | 'local';
+  url: string;
+  youtubeId?: string;
+  duracion?: string;
+  tamano?: string;
+  descripcion?: string;
+  fechaSubida?: string;
+}
+
 interface AttendanceSession {
   id: string;
   fecha: string;
   hora?: string;
   tipo: 'Entrenamiento' | 'Partido' | 'Reunión' | 'Otro';
   descripcion: string;
+  observaciones?: string;
   records: AttendanceRecord[];
   tareas?: SessionTask[];
   archivos?: SessionFile[];
+  videos?: SessionVideo[];
 }
 
 const POSICIONES_DISPONIBLES = [
@@ -245,8 +267,15 @@ export default function Asistencia() {
   const [sessions, setSessions] = useState<AttendanceSession[]>([]);
   const [selectedSession, setSelectedSession] = useState<AttendanceSession | null>(null);
   const [activeTab, setActiveTab] = useState<'asistencia' | 'planificacion'>('asistencia');
+  const [observacionesInput, setObservacionesInput] = useState<string>('');
+  const [observacionesSaved, setObservacionesSaved] = useState<boolean>(true);
   const [previewFile, setPreviewFile] = useState<SessionFile | null>(null);
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [previewVideo, setPreviewVideo] = useState<SessionVideo | null>(null);
+  const [videoModalTab, setVideoModalTab] = useState<'youtube' | 'local'>('youtube');
+  const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
+  const [videoTitleInput, setVideoTitleInput] = useState('');
+  const [videoDescInput, setVideoDescInput] = useState('');
   const [searchPlayerQuery, setSearchPlayerQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'Presente' | 'Retraso' | 'No Justificó' | 'Justificado' | 'Lesionado' | 'Pendiente'>('ALL');
 
@@ -327,6 +356,12 @@ export default function Asistencia() {
     descripcion: ''
   });
 
+  // Synchronize observaciones text with active session
+  useEffect(() => {
+    setObservacionesInput(selectedSession?.observaciones || '');
+    setObservacionesSaved(true);
+  }, [selectedSession?.id]);
+
   // Load roster and synchronize on team change and on storage/player-updated events
   useEffect(() => {
     const syncRoster = () => {
@@ -385,9 +420,11 @@ export default function Asistencia() {
         hora: '19:30 h',
         tipo: 'Entrenamiento',
         descripcion: 'Sesión de entrenamiento habitual',
+        observaciones: '',
         records: defaultRecords,
         tareas: [],
-        archivos: []
+        archivos: [],
+        videos: []
       };
       initialList = [defaultSession];
       localStorage.setItem(sessionsKey, JSON.stringify(initialList));
@@ -415,9 +452,11 @@ export default function Asistencia() {
             hora: item.hora || '19:30 h',
             tipo: item.tipo as any,
             descripcion: item.descripcion || '',
+            observaciones: item.observaciones || '',
             records: cleanSessionRecords(item.records || [], currentRoster),
             tareas: item.tareas || [],
-            archivos: item.archivos || []
+            archivos: item.archivos || [],
+            videos: item.videos || []
           }));
 
           // If local storage was empty, use cloud data
@@ -436,9 +475,11 @@ export default function Asistencia() {
                 hora: locSess.hora || '19:30 h',
                 tipo: locSess.tipo,
                 descripcion: locSess.descripcion,
+                observaciones: locSess.observaciones || '',
                 records: locSess.records,
                 tareas: locSess.tareas || [],
-                archivos: locSess.archivos || []
+                archivos: locSess.archivos || [],
+                videos: locSess.videos || []
               };
               await supabase.from('attendance_sessions').upsert({ id: locSess.id, ...payload });
             }
@@ -488,9 +529,11 @@ export default function Asistencia() {
           hora: sess.hora || '19:30 h',
           tipo: sess.tipo,
           descripcion: sess.descripcion,
+          observaciones: sess.observaciones || '',
           records: sess.records,
           tareas: sess.tareas || [],
-          archivos: sess.archivos || []
+          archivos: sess.archivos || [],
+          videos: sess.videos || []
         };
 
         await supabase
@@ -606,6 +649,7 @@ export default function Asistencia() {
       hora: newSessionData.hora || '19:30 h',
       tipo: newSessionData.tipo,
       descripcion: newSessionData.descripcion,
+      observaciones: '',
       records: defaultRecords,
       tareas: [],
       archivos: []
@@ -1035,6 +1079,132 @@ export default function Asistencia() {
     toast.success('Archivo eliminado');
   };
 
+  const handleSaveObservaciones = async (customText?: string) => {
+    if (!selectedSession) return;
+    const textToSave = customText !== undefined ? customText : observacionesInput;
+    const updatedSession: AttendanceSession = {
+      ...selectedSession,
+      observaciones: textToSave
+    };
+
+    setSelectedSession(updatedSession);
+    const updatedSessions = sessions.map(s => s.id === selectedSession.id ? updatedSession : s);
+    await saveSessions(updatedSessions);
+    setObservacionesSaved(true);
+    toast.success('Observaciones del entreno guardadas con éxito');
+  };
+
+  const handleAppendQuickTag = (tag: string) => {
+    const current = observacionesInput.trim();
+    const next = current ? `${current}\n• ${tag}: ` : `• ${tag}: `;
+    setObservacionesInput(next);
+    setObservacionesSaved(false);
+  };
+
+  // Helper to extract YouTube ID from standard URL, shorts, youtu.be, embed
+  const extractYouTubeId = (url: string): string | null => {
+    if (!url) return null;
+    const cleanUrl = url.trim();
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=|shorts\/)([^#&?]*).*/;
+    const match = cleanUrl.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+  };
+
+  // Add YouTube video to active session
+  const handleAddYouTubeVideo = () => {
+    if (!selectedSession) return;
+    const yId = extractYouTubeId(youtubeUrlInput);
+    if (!yId) {
+      toast.error('URL de YouTube no válida. Introduce un enlace válido (ej: https://www.youtube.com/watch?v=... o youtu.be/...)');
+      return;
+    }
+
+    const title = videoTitleInput.trim() || `Vídeo Análisis YouTube (${yId})`;
+    const newVideo: SessionVideo = {
+      id: crypto.randomUUID(),
+      titulo: title,
+      tipo: 'youtube',
+      url: `https://www.youtube-nocookie.com/embed/${yId}`,
+      youtubeId: yId,
+      descripcion: videoDescInput.trim() || undefined,
+      fechaSubida: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    };
+
+    const currentVideos = selectedSession.videos || [];
+    const updatedSession: AttendanceSession = {
+      ...selectedSession,
+      videos: [...currentVideos, newVideo]
+    };
+
+    setSelectedSession(updatedSession);
+    const updatedSessions = sessions.map(s => s.id === selectedSession.id ? updatedSession : s);
+    saveSessions(updatedSessions);
+    setYoutubeUrlInput('');
+    setVideoTitleInput('');
+    setVideoDescInput('');
+    toast.success('Vídeo de YouTube añadido con éxito a la sesión');
+  };
+
+  // Upload local video file
+  const handleLocalVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedSession || !e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+
+    // Check size limit: warning if over 25MB
+    const sizeMb = file.size / (1024 * 1024);
+    if (sizeMb > 25) {
+      toast.error('El vídeo supera el límite recomendado de 25MB para rendimiento local.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      const title = videoTitleInput.trim() || file.name.replace(/\.[^/.]+$/, '');
+      const newVideo: SessionVideo = {
+        id: crypto.randomUUID(),
+        titulo: title,
+        tipo: 'local',
+        url: dataUrl,
+        tamano: `${sizeMb.toFixed(1)} MB`,
+        descripcion: videoDescInput.trim() || undefined,
+        fechaSubida: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      };
+
+      const currentVideos = selectedSession.videos || [];
+      const updatedSession: AttendanceSession = {
+        ...selectedSession,
+        videos: [...currentVideos, newVideo]
+      };
+
+      setSelectedSession(updatedSession);
+      const updatedSessions = sessions.map(s => s.id === selectedSession.id ? updatedSession : s);
+      saveSessions(updatedSessions);
+      setVideoTitleInput('');
+      setVideoDescInput('');
+      toast.success('Vídeo local subido con éxito a la sesión');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Delete video from active session
+  const handleDeleteVideo = (videoId: string) => {
+    if (!selectedSession) return;
+    const currentVideos = selectedSession.videos || [];
+    const updatedSession: AttendanceSession = {
+      ...selectedSession,
+      videos: currentVideos.filter(v => v.id !== videoId)
+    };
+
+    setSelectedSession(updatedSession);
+    const updatedSessions = sessions.map(s => s.id === selectedSession.id ? updatedSession : s);
+    saveSessions(updatedSessions);
+    if (previewVideo?.id === videoId) {
+      setPreviewVideo(null);
+    }
+    toast.success('Vídeo eliminado');
+  };
+
   // Helper stats calculations
   const getSessionStats = (session: AttendanceSession) => {
     const total = (session.records || []).length;
@@ -1280,13 +1450,16 @@ export default function Asistencia() {
                 <button
                   type="button"
                   onClick={() => setActiveTab('planificacion')}
-                  className={`flex-1 py-2 text-xs font-black uppercase tracking-wider transition-colors border-b-2 rounded-t-lg ${
+                  className={`flex-1 py-2 text-xs font-black uppercase tracking-wider transition-colors border-b-2 rounded-t-lg flex items-center justify-center gap-2 ${
                     activeTab === 'planificacion'
                       ? 'border-emerald-500 text-emerald-400 bg-slate-950/30'
                       : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-950/10'
                   }`}
                 >
-                  Diseño de la Sesión y Tareas
+                  <span>Diseño, Tareas y Observaciones</span>
+                  {(selectedSession.observaciones?.trim() || (selectedSession.tareas && selectedSession.tareas.length > 0)) && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  )}
                 </button>
               </div>
 
@@ -1702,6 +1875,113 @@ export default function Asistencia() {
               ) : (
                 /* Planning Dashboard */
                 <div className="space-y-6">
+                  {/* Comentarios y Observaciones del Entreno Section */}
+                  <div className="bg-slate-950/40 border border-slate-850 rounded-2xl p-5 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-900 pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                          <MessageSquare className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h5 className="font-bold text-white text-xs uppercase tracking-wider flex items-center gap-2">
+                            <span>Comentarios y Observaciones del Entreno</span>
+                          </h5>
+                          <p className="text-[10px] text-slate-400">
+                            Notas del cuerpo técnico sobre rendimiento, sensaciones grupales, objetivos e incidencias.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5 transition-all ${
+                          observacionesSaved
+                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            : 'bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse'
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${observacionesSaved ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                          {observacionesSaved ? 'Guardado' : 'Cambios pendientes'}
+                        </span>
+                        <Button
+                          type="button"
+                          onClick={() => handleSaveObservaciones()}
+                          className="text-[10px] uppercase font-black tracking-wider bg-emerald-600 hover:bg-emerald-500 text-white h-8 px-3.5 rounded-xl gap-1.5 shadow-lg shadow-emerald-950/40 transition-all"
+                        >
+                          <Save className="w-3.5 h-3.5" />
+                          <span>Guardar Notas</span>
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Quick Tags / Fast Templates */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-extrabold uppercase tracking-widest text-slate-500">
+                          Atajos y Plantillas Rápidas:
+                        </span>
+                        {observacionesInput.trim() && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm('¿Deseas vaciar el texto de observaciones de esta sesión?')) {
+                                setObservacionesInput('');
+                                handleSaveObservaciones('');
+                              }
+                            }}
+                            className="text-[9px] text-slate-500 hover:text-red-400 font-bold uppercase transition-colors"
+                          >
+                            Limpiar texto
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          'Sensaciones del grupo',
+                          'Ritmo e intensidad',
+                          'Aspectos tácticos clave',
+                          'Aspectos a mejorar',
+                          'Incidencias físicas / Molestias',
+                          'Jugadoras destacadas'
+                        ].map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => handleAppendQuickTag(tag)}
+                            className="text-[10px] bg-slate-900 hover:bg-emerald-950/30 text-slate-400 hover:text-emerald-300 border border-slate-800 hover:border-emerald-500/30 px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1"
+                          >
+                            <span>+</span>
+                            <span>{tag}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Textarea */}
+                    <div className="space-y-1.5">
+                      <textarea
+                        value={observacionesInput}
+                        onChange={(e) => {
+                          setObservacionesInput(e.target.value);
+                          setObservacionesSaved(false);
+                        }}
+                        onBlur={() => {
+                          if (!observacionesSaved) {
+                            handleSaveObservaciones(observacionesInput);
+                          }
+                        }}
+                        placeholder="Escribe aquí las conclusiones y observaciones del entrenamiento: sensaciones del equipo, cómo salieron las tareas, aspectos tácticos a reforzar en el próximo entreno, jugadoras a destacar, molestias físicas, etc..."
+                        rows={5}
+                        className="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-emerald-500 rounded-xl p-3.5 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none transition-all resize-y leading-relaxed font-normal shadow-inner"
+                      />
+                      <div className="flex items-center justify-between pt-1 px-1">
+                        <span className="text-[10px] text-slate-500">
+                          {observacionesInput.trim() ? `${observacionesInput.trim().split(/\s+/).length} palabras` : '0 palabras'} • {observacionesInput.length} caracteres
+                        </span>
+                        <span className="text-[10px] text-slate-500 italic">
+                          💡 Se guarda automáticamente al hacer clic fuera o al pulsar "Guardar Notas".
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Tareas / Ejercicios Section */}
                   <div className="bg-slate-950/40 border border-slate-850 rounded-2xl p-5 space-y-4">
                     <div className="flex items-center justify-between border-b border-slate-900 pb-3">
@@ -1873,6 +2153,244 @@ export default function Asistencia() {
                       </div>
                     )}
                   </div>
+
+                  {/* Vídeos de la Sesión (YouTube o Galería Local) Section */}
+                  <div className="bg-slate-950/40 border border-slate-850 rounded-2xl p-5 space-y-5">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-900 pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
+                          <Film className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h5 className="font-bold text-white text-xs uppercase tracking-wider flex items-center gap-2">
+                            <span>Vídeos de la Sesión y Análisis Táctico</span>
+                          </h5>
+                          <p className="text-[10px] text-slate-400">
+                            Embebe vídeos de YouTube (ejercicios, rivales, partidos) o sube clips directos desde la galería de tu dispositivo.
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] bg-slate-900 text-slate-400 px-2.5 py-0.5 rounded-full font-bold">
+                        {selectedSession.videos?.length || 0} vídeos
+                      </span>
+                    </div>
+
+                    {/* Video Form Switcher Tabs */}
+                    <div className="bg-slate-950 border border-slate-900 p-4 rounded-xl space-y-4">
+                      <div className="flex items-center gap-2 border-b border-slate-900 pb-3">
+                        <button
+                          type="button"
+                          onClick={() => setVideoModalTab('youtube')}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${
+                            videoModalTab === 'youtube'
+                              ? 'bg-red-600 text-white shadow-lg shadow-red-950/40'
+                              : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-850'
+                          }`}
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current" />
+                          <span>Embeber de YouTube</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVideoModalTab('local')}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${
+                            videoModalTab === 'local'
+                              ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950/40'
+                              : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-850'
+                          }`}
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Subir desde Galería / Dispositivo</span>
+                        </button>
+                      </div>
+
+                      {/* Video Title & Description Inputs */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">
+                            Título del Vídeo (Opcional)
+                          </label>
+                          <input
+                            type="text"
+                            value={videoTitleInput}
+                            onChange={(e) => setVideoTitleInput(e.target.value)}
+                            placeholder="Ej: Salida de balón 3v2 / Resumen primera parte"
+                            className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">
+                            Descripción / Nota táctica (Opcional)
+                          </label>
+                          <input
+                            type="text"
+                            value={videoDescInput}
+                            onChange={(e) => setVideoDescInput(e.target.value)}
+                            placeholder="Ej: Fijar atención en el desmarque de ruptura al minuto 01:20..."
+                            className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* YouTube Embed Form */}
+                      {videoModalTab === 'youtube' ? (
+                        <div className="space-y-3 pt-1">
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <div className="relative flex-1">
+                              <Play className="w-4 h-4 text-red-500 fill-red-500 absolute left-3 top-2.5" />
+                              <input
+                                type="url"
+                                value={youtubeUrlInput}
+                                onChange={(e) => setYoutubeUrlInput(e.target.value)}
+                                placeholder="Pega el enlace o enlace corto de YouTube (ej: https://www.youtube.com/watch?v=... o youtu.be/...)"
+                                className="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 pl-9 pr-3 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-red-500"
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              onClick={handleAddYouTubeVideo}
+                              className="text-[10px] uppercase font-black tracking-widest bg-red-600 hover:bg-red-500 text-white h-9 px-4 rounded-lg shrink-0 gap-1.5 shadow-lg shadow-red-950/40"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Embeber Vídeo</span>
+                            </Button>
+                          </div>
+                          {extractYouTubeId(youtubeUrlInput) && (
+                            <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center gap-3">
+                              <img
+                                src={`https://img.youtube.com/vi/${extractYouTubeId(youtubeUrlInput)}/mqdefault.jpg`}
+                                alt="Previsualización YouTube"
+                                className="w-24 h-14 object-cover rounded-lg border border-slate-800 shrink-0"
+                              />
+                              <div className="min-w-0">
+                                <span className="text-[10px] text-emerald-400 font-bold uppercase block">✓ Enlace reconocido con éxito</span>
+                                <p className="text-xs text-white truncate font-semibold">ID: {extractYouTubeId(youtubeUrlInput)}</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        /* Local File / Gallery Upload */
+                        <div className="space-y-3 pt-1">
+                          <div className="border border-dashed border-slate-800 hover:border-emerald-500/50 rounded-xl p-5 text-center cursor-pointer relative transition-colors bg-slate-900/30 group">
+                            <input
+                              type="file"
+                              onChange={handleLocalVideoUpload}
+                              accept="video/mp4,video/webm,video/ogg,video/quicktime,video/x-m4v,video/*"
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            />
+                            <Video className="w-7 h-7 text-slate-600 group-hover:text-emerald-400 mx-auto transition-colors" />
+                            <p className="text-xs text-slate-300 font-bold uppercase mt-2">
+                              Seleccionar vídeo de tu galería o almacenamiento
+                            </p>
+                            <p className="text-[10px] text-slate-500 mt-1">
+                              Soporta MP4, MOV, WEBM, M4V (Límite recomendado: hasta 25MB)
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Video Gallery / List */}
+                    {selectedSession.videos && selectedSession.videos.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {selectedSession.videos.map((vid) => (
+                          <div
+                            key={vid.id}
+                            className="bg-slate-950/80 border border-slate-850 hover:border-slate-750 rounded-2xl overflow-hidden flex flex-col transition-all shadow-md group"
+                          >
+                            {/* Video Display Area */}
+                            <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
+                              {vid.tipo === 'youtube' && vid.youtubeId ? (
+                                <iframe
+                                  src={vid.url}
+                                  title={vid.titulo}
+                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                  allowFullScreen
+                                  className="w-full h-full border-0"
+                                />
+                              ) : (
+                                <video
+                                  src={vid.url}
+                                  controls
+                                  preload="metadata"
+                                  className="w-full h-full object-contain bg-black"
+                                />
+                              )}
+                            </div>
+
+                            {/* Info & Actions */}
+                            <div className="p-3.5 space-y-2 flex-1 flex flex-col justify-between">
+                              <div>
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    {vid.tipo === 'youtube' ? (
+                                      <span className="text-[9px] bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded font-black uppercase shrink-0 flex items-center gap-1">
+                                        <Play className="w-2.5 h-2.5 fill-current" /> YouTube
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-black uppercase shrink-0 flex items-center gap-1">
+                                        <Film className="w-3 h-3" /> Galería {vid.tamano ? `(${vid.tamano})` : ''}
+                                      </span>
+                                    )}
+                                    <h6 className="font-extrabold text-white text-xs uppercase truncate" title={vid.titulo}>
+                                      {vid.titulo}
+                                    </h6>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewVideo(vid)}
+                                      className="p-1 text-slate-400 hover:text-emerald-400 hover:bg-slate-900 rounded-lg transition-colors"
+                                      title="Ver a pantalla completa"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteVideo(vid.id)}
+                                      className="p-1 text-slate-500 hover:text-red-400 hover:bg-slate-900 rounded-lg transition-colors"
+                                      title="Eliminar vídeo"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {vid.descripcion && (
+                                  <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed bg-slate-900/40 p-2 rounded-lg border border-slate-900">
+                                    {vid.descripcion}
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="flex items-center justify-between text-[9px] text-slate-500 pt-2 border-t border-slate-900 mt-2">
+                                <span>{vid.fechaSubida || 'Añadido a la sesión'}</span>
+                                {vid.tipo === 'youtube' && vid.youtubeId && (
+                                  <a
+                                    href={`https://www.youtube.com/watch?v=${vid.youtubeId}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-red-400 hover:underline flex items-center gap-1 font-bold"
+                                  >
+                                    <span>Ver en YouTube</span>
+                                    <ExternalLink className="w-2.5 h-2.5" />
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 border border-dashed border-slate-850 rounded-xl text-slate-500 text-xs italic space-y-1">
+                        <Film className="w-7 h-7 text-slate-700 mx-auto" />
+                        <p>No hay vídeos embebidos ni subidos para esta sesión.</p>
+                        <p className="text-[10px] text-slate-600">Pega un enlace de YouTube o selecciona un clip de vídeo arriba.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1975,6 +2493,87 @@ export default function Asistencia() {
               <Button
                 type="button"
                 onClick={() => setPreviewFile(null)}
+                className="text-xs font-bold uppercase bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl px-5 py-2"
+              >
+                Cerrar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Video Preview Modal */}
+      {previewVideo && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-4xl w-full shadow-2xl text-left flex flex-col max-h-[95vh]">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+              <div className="flex items-center gap-2 text-red-400">
+                {previewVideo.tipo === 'youtube' ? <Play className="w-5 h-5 fill-current" /> : <Film className="w-5 h-5 text-emerald-400" />}
+                <h4 className="font-extrabold text-white text-base uppercase tracking-wider truncate max-w-md" title={previewVideo.titulo}>
+                  {previewVideo.titulo}
+                </h4>
+              </div>
+              <span className={`text-[10px] border px-2.5 py-1 rounded-full font-bold uppercase ${
+                previewVideo.tipo === 'youtube'
+                  ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                  : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+              }`}>
+                {previewVideo.tipo === 'youtube' ? 'YouTube' : `Galería ${previewVideo.tamano ? `(${previewVideo.tamano})` : ''}`}
+              </span>
+            </div>
+
+            <div className="flex-1 bg-black rounded-2xl overflow-hidden flex items-center justify-center aspect-video max-h-[65vh]">
+              {previewVideo.tipo === 'youtube' && previewVideo.youtubeId ? (
+                <iframe
+                  src={previewVideo.url}
+                  title={previewVideo.titulo}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                  className="w-full h-full border-0"
+                />
+              ) : (
+                <video
+                  src={previewVideo.url}
+                  controls
+                  autoPlay
+                  className="w-full h-full object-contain"
+                />
+              )}
+            </div>
+
+            {previewVideo.descripcion && (
+              <div className="mt-3 p-3 bg-slate-950/70 border border-slate-850 rounded-xl">
+                <p className="text-xs text-slate-300 leading-relaxed font-medium">
+                  {previewVideo.descripcion}
+                </p>
+              </div>
+            )}
+
+            <div className="flex flex-wrap justify-end gap-2 mt-4 pt-3 border-t border-slate-900">
+              {previewVideo.tipo === 'youtube' && previewVideo.youtubeId && (
+                <a
+                  href={`https://www.youtube.com/watch?v=${previewVideo.youtubeId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-bold uppercase bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 rounded-xl px-4 py-2 flex items-center gap-1.5 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Abrir en YouTube</span>
+                </a>
+              )}
+              {previewVideo.tipo === 'local' && previewVideo.url && (
+                <a
+                  href={previewVideo.url}
+                  download={`${previewVideo.titulo}.mp4`}
+                  className="text-xs font-bold uppercase bg-slate-950 border border-slate-850 hover:bg-slate-900 text-slate-200 rounded-xl px-4 py-2 flex items-center gap-1.5 transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Descargar Vídeo</span>
+                </a>
+              )}
+              <Button
+                type="button"
+                onClick={() => setPreviewVideo(null)}
                 className="text-xs font-bold uppercase bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl px-5 py-2"
               >
                 Cerrar
