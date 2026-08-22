@@ -248,6 +248,7 @@ export default function Asistencia() {
   const [previewFile, setPreviewFile] = useState<SessionFile | null>(null);
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
   const [searchPlayerQuery, setSearchPlayerQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'Presente' | 'Retraso' | 'No Justificó' | 'Justificado' | 'Lesionado' | 'Pendiente'>('ALL');
 
   // Add player modal state
   const [showAddPlayerModal, setShowAddPlayerModal] = useState(false);
@@ -615,6 +616,35 @@ export default function Asistencia() {
       return true;
     });
   }, [selectedSession, players]);
+
+  // Real-time live status counters for the 5 attendance options
+  const sessionCounts = useMemo(() => {
+    let presente = 0;
+    let retraso = 0;
+    let noJustifico = 0;
+    let justificado = 0;
+    let lesionado = 0;
+    let sinMarcar = 0;
+
+    validSessionRecords.forEach(rec => {
+      if (rec.status === 'Presente') presente++;
+      else if (rec.status === 'Retraso') retraso++;
+      else if (rec.status === 'No Justificó' || rec.status === 'Ausente') noJustifico++;
+      else if (rec.status === 'Justificado') justificado++;
+      else if (rec.status === 'Lesionado') lesionado++;
+      else sinMarcar++;
+    });
+
+    return {
+      presente,
+      retraso,
+      noJustifico,
+      justificado,
+      lesionado,
+      sinMarcar,
+      total: validSessionRecords.length
+    };
+  }, [validSessionRecords]);
 
   // Find players currently in the team's plantilla that are missing from the selected session
   const missingRosterPlayers = useMemo(() => {
@@ -1246,6 +1276,143 @@ export default function Asistencia() {
 
               {activeTab === 'asistencia' ? (
                 <div className="space-y-4">
+                  {/* 5 Real-Time Status Counters Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+                    {/* PRESENTE */}
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter(prev => prev === 'Presente' ? 'ALL' : 'Presente')}
+                      className={`p-3 rounded-2xl border transition-all text-left flex items-center justify-between gap-2.5 cursor-pointer select-none ${
+                        statusFilter === 'Presente'
+                          ? 'bg-emerald-500/20 border-emerald-500 ring-2 ring-emerald-500/40 shadow-lg shadow-emerald-950/50'
+                          : 'bg-slate-950/70 border-emerald-500/30 hover:border-emerald-500/60 hover:bg-emerald-950/20'
+                      }`}
+                      title="Filtrar por jugadoras presentes"
+                    >
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider block truncate">
+                          Presente
+                        </span>
+                        <span className="text-xl font-black text-white leading-tight">
+                          {sessionCounts.presente}
+                        </span>
+                      </div>
+                      <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-black shrink-0">
+                        <Check className="w-4 h-4" />
+                      </div>
+                    </button>
+
+                    {/* RETRASO */}
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter(prev => prev === 'Retraso' ? 'ALL' : 'Retraso')}
+                      className={`p-3 rounded-2xl border transition-all text-left flex items-center justify-between gap-2.5 cursor-pointer select-none ${
+                        statusFilter === 'Retraso'
+                          ? 'bg-amber-500/20 border-amber-500 ring-2 ring-amber-500/40 shadow-lg shadow-amber-950/50'
+                          : 'bg-slate-950/70 border-amber-500/30 hover:border-amber-500/60 hover:bg-amber-950/20'
+                      }`}
+                      title="Filtrar por jugadoras con retraso"
+                    >
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-black text-amber-400 uppercase tracking-wider block truncate">
+                          Retraso
+                        </span>
+                        <span className="text-xl font-black text-white leading-tight">
+                          {sessionCounts.retraso}
+                        </span>
+                      </div>
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center font-black shrink-0">
+                        <Clock className="w-4 h-4" />
+                      </div>
+                    </button>
+
+                    {/* NO JUSTIFICADO */}
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter(prev => prev === 'No Justificó' ? 'ALL' : 'No Justificó')}
+                      className={`p-3 rounded-2xl border transition-all text-left flex items-center justify-between gap-2.5 cursor-pointer select-none ${
+                        statusFilter === 'No Justificó'
+                          ? 'bg-red-500/20 border-red-500 ring-2 ring-red-500/40 shadow-lg shadow-red-950/50'
+                          : 'bg-slate-950/70 border-red-500/30 hover:border-red-500/60 hover:bg-red-950/20'
+                      }`}
+                      title="Filtrar por ausencias no justificadas"
+                    >
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-black text-red-400 uppercase tracking-wider block truncate">
+                          No Justificado
+                        </span>
+                        <span className="text-xl font-black text-white leading-tight">
+                          {sessionCounts.noJustifico}
+                        </span>
+                      </div>
+                      <div className="w-8 h-8 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 flex items-center justify-center font-black shrink-0">
+                        <X className="w-4 h-4" />
+                      </div>
+                    </button>
+
+                    {/* JUSTIFICADO */}
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter(prev => prev === 'Justificado' ? 'ALL' : 'Justificado')}
+                      className={`p-3 rounded-2xl border transition-all text-left flex items-center justify-between gap-2.5 cursor-pointer select-none ${
+                        statusFilter === 'Justificado'
+                          ? 'bg-purple-500/20 border-purple-500 ring-2 ring-purple-500/40 shadow-lg shadow-purple-950/50'
+                          : 'bg-slate-950/70 border-purple-500/30 hover:border-purple-500/60 hover:bg-purple-950/20'
+                      }`}
+                      title="Filtrar por ausencias justificadas"
+                    >
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-black text-purple-400 uppercase tracking-wider block truncate">
+                          Justificado
+                        </span>
+                        <span className="text-xl font-black text-white leading-tight">
+                          {sessionCounts.justificado}
+                        </span>
+                      </div>
+                      <div className="w-8 h-8 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-400 flex items-center justify-center font-black shrink-0">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                    </button>
+
+                    {/* LESIONADO */}
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter(prev => prev === 'Lesionado' ? 'ALL' : 'Lesionado')}
+                      className={`p-3 rounded-2xl border transition-all text-left flex items-center justify-between gap-2.5 cursor-pointer select-none ${
+                        statusFilter === 'Lesionado'
+                          ? 'bg-indigo-500/20 border-indigo-500 ring-2 ring-indigo-500/40 shadow-lg shadow-indigo-950/50'
+                          : 'bg-slate-950/70 border-indigo-500/30 hover:border-indigo-500/60 hover:bg-indigo-950/20'
+                      }`}
+                      title="Filtrar por jugadoras lesionadas"
+                    >
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-black text-indigo-400 uppercase tracking-wider block truncate">
+                          Lesionado
+                        </span>
+                        <span className="text-xl font-black text-white leading-tight">
+                          {sessionCounts.lesionado}
+                        </span>
+                      </div>
+                      <div className="w-8 h-8 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 flex items-center justify-center font-black shrink-0">
+                        <ShieldAlert className="w-4 h-4" />
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Active status filter banner */}
+                  {statusFilter !== 'ALL' && (
+                    <div className="flex items-center justify-between bg-blue-950/30 border border-blue-500/30 rounded-xl px-3.5 py-2 text-xs text-blue-300 animate-in fade-in">
+                      <span>Mostrando solo jugadoras con estado: <strong className="uppercase text-white font-bold">{statusFilter}</strong></span>
+                      <button
+                        type="button"
+                        onClick={() => setStatusFilter('ALL')}
+                        className="text-xs font-bold text-blue-400 hover:text-white underline cursor-pointer"
+                      >
+                        Mostrar todas ({validSessionRecords.length})
+                      </button>
+                    </div>
+                  )}
+
                   {/* Missing Roster Players Notification Banner */}
                   {missingRosterPlayers.length > 0 && (
                     <div className="bg-amber-950/40 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
@@ -1334,6 +1501,17 @@ export default function Asistencia() {
                     {validSessionRecords.length > 0 ? (
                       validSessionRecords
                         .filter((rec) => {
+                          // Apply Status Filter if active
+                          if (statusFilter !== 'ALL') {
+                            if (statusFilter === 'Presente' && rec.status !== 'Presente') return false;
+                            if (statusFilter === 'Retraso' && rec.status !== 'Retraso') return false;
+                            if (statusFilter === 'No Justificó' && rec.status !== 'No Justificó' && rec.status !== 'Ausente') return false;
+                            if (statusFilter === 'Justificado' && rec.status !== 'Justificado') return false;
+                            if (statusFilter === 'Lesionado' && rec.status !== 'Lesionado') return false;
+                            if (statusFilter === 'Pendiente' && rec.status) return false;
+                          }
+
+                          // Apply Search Query
                           if (!searchPlayerQuery.trim()) return true;
                           const pInfo = players.find(p => p.id === rec.playerId);
                           const name = `${pInfo?.nombre || rec.playerName || ''} ${pInfo?.apellidos || rec.playerLastName || ''}`.toLowerCase();
