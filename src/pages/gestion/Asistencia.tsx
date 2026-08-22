@@ -918,18 +918,16 @@ export default function Asistencia() {
     const rec = selectedSession.records.find(r => r.playerId === playerId);
     const name = p ? `${p.nombre} ${p.apellidos}` : (rec?.playerName ? `${rec.playerName} ${rec.playerLastName || ''}` : 'la jugadora');
 
-    if (confirm(`¿Quitar a ${name} de esta sesión de entrenamiento?`)) {
-      const updatedRecords = selectedSession.records.filter(r => r.playerId !== playerId);
-      const updatedSession: AttendanceSession = {
-        ...selectedSession,
-        records: updatedRecords
-      };
+    const updatedRecords = selectedSession.records.filter(r => r.playerId !== playerId);
+    const updatedSession: AttendanceSession = {
+      ...selectedSession,
+      records: updatedRecords
+    };
 
-      setSelectedSession(updatedSession);
-      const updatedSessions = sessions.map(s => s.id === selectedSession.id ? updatedSession : s);
-      saveSessions(updatedSessions);
-      toast.success(`${name} quitada de la sesión.`);
-    }
+    setSelectedSession(updatedSession);
+    const updatedSessions = sessions.map(s => s.id === selectedSession.id ? updatedSession : s);
+    saveSessions(updatedSessions);
+    toast.success(`${name} quitada de la sesión.`);
   };
 
   // Handler: Mark all players present
@@ -970,25 +968,23 @@ export default function Asistencia() {
   };
 
   const handleDeleteSession = async (id: string) => {
-    if (confirm('¿Estás seguro de eliminar esta sesión de asistencia?')) {
-      const updated = sessions.filter(s => s.id !== id);
-      
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-      if (isUuid) {
-        try {
-          await supabase
-            .from('attendance_sessions')
-            .delete()
-            .eq('id', id);
-        } catch (err) {
-          console.warn('Failed to delete attendance session from Supabase:', err);
-        }
+    const updated = sessions.filter(s => s.id !== id);
+    
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    if (isUuid) {
+      try {
+        await supabase
+          .from('attendance_sessions')
+          .delete()
+          .eq('id', id);
+      } catch (err) {
+        console.warn('Failed to delete attendance session from Supabase:', err);
       }
-
-      saveSessions(updated);
-      setSelectedSession(updated.length > 0 ? updated[0] : null);
-      toast.success('Sesión de asistencia eliminada.');
     }
+
+    saveSessions(updated);
+    setSelectedSession(updated.length > 0 ? updated[0] : null);
+    toast.success('Sesión de asistencia eliminada.');
   };
 
   const handleAddTask = (titulo: string, duracion: string, descripcion: string) => {
@@ -1356,16 +1352,16 @@ export default function Asistencia() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <span className={`inline-block text-[9px] font-black uppercase px-2 py-0.5 rounded-md mb-1.5 ${
-                          sess.tipo === 'Entrenamiento' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                          sess.tipo === 'Partido' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                          'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
+                        <span className={`inline-block text-[10px] font-black uppercase px-2.5 py-0.5 rounded-lg mb-1.5 border shadow-sm ${
+                          sess.tipo === 'Entrenamiento' ? 'bg-emerald-500/20 text-white border-emerald-400/40' :
+                          sess.tipo === 'Partido' ? 'bg-amber-500/20 text-white border-amber-400/40' :
+                          'bg-indigo-500/20 text-white border-indigo-400/40'
                         }`}>
                           {sess.tipo === 'Entrenamiento' ? 'Sesión de Entrenamiento' : sess.tipo}
                         </span>
-                        <h6 className="font-bold text-white text-xs leading-snug break-words">{sess.descripcion}</h6>
+                        <h6 className="font-extrabold text-white text-xs leading-snug break-words">{sess.descripcion}</h6>
                       </div>
-                      <span className="text-[9px] font-bold text-slate-500 shrink-0">{sess.fecha}</span>
+                      <span className="text-[10px] font-extrabold text-white bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-md shrink-0">{sess.fecha}</span>
                     </div>
 
                     <div className="flex items-center justify-between border-t border-slate-900/60 pt-2 text-[10px]">
@@ -1921,10 +1917,8 @@ export default function Asistencia() {
                           <button
                             type="button"
                             onClick={() => {
-                              if (confirm('¿Deseas vaciar el texto de observaciones de esta sesión?')) {
-                                setObservacionesInput('');
-                                handleSaveObservaciones('');
-                              }
+                              setObservacionesInput('');
+                              handleSaveObservaciones('');
                             }}
                             className="text-[9px] text-slate-500 hover:text-red-400 font-bold uppercase transition-colors"
                           >

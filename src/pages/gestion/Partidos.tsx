@@ -111,6 +111,21 @@ const MOTIVATIONAL_PHRASES = [
   "¡Juntas somos imparables! ¡A ganar!"
 ];
 
+export const calculateDefaultCitacionHora = (matchHora: string): string => {
+  if (!matchHora) return '';
+  const cleanHora = matchHora.replace(' h', '').trim();
+  const [h, m] = cleanHora.split(':').map(Number);
+  if (!isNaN(h)) {
+    const totalMatchMins = h * 60 + (isNaN(m) ? 0 : m);
+    let citMins = totalMatchMins - 75; // 1 hora y 15 minutos (75 min) antes del inicio
+    if (citMins < 0) citMins += 1440;
+    const citH = Math.floor(citMins / 60);
+    const citM = citMins % 60;
+    return `${String(citH).padStart(2, '0')}:${String(citM).padStart(2, '0')} h (1h 15m antes)`;
+  }
+  return '1h 15m antes del encuentro';
+};
+
 export default function Partidos() {
   const [selectedTeam, setSelectedTeam] = useState<string>(CLUB_TEAMS[0]);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -118,6 +133,7 @@ export default function Partidos() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showActaModal, setShowActaModal] = useState<Match | null>(null);
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
+  const [deletingMatch, setDeletingMatch] = useState<Match | null>(null);
   
   // Interactive statistics editor inside closure modal
   const [matchPlayerStats, setMatchPlayerStats] = useState<MatchPlayerStat[]>([]);
@@ -129,9 +145,12 @@ export default function Partidos() {
     rival: '',
     fecha: new Date().toISOString().split('T')[0],
     hora: '10:00',
+    hora_citacion: calculateDefaultCitacionHora('10:00'),
     tipo: 'Local' as 'Local' | 'Visitante',
     competicion: 'Liga' as 'Liga' | 'Copa' | 'Amistoso',
     estado: 'Programado' as 'Programado' | 'Finalizado',
+    lugar: '',
+    equipacion: '1ª Equipación Oficial + Chándal',
     goles_favor: 0,
     goles_contra: 0,
     acta: ''
@@ -445,17 +464,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
     let defaultCitHora = match.estadisticas?.hora_citacion || match.hora_citacion || '';
     if (!defaultCitHora && match.hora) {
-      const [h, m] = match.hora.split(':').map(Number);
-      if (!isNaN(h)) {
-        const totalMatchMins = h * 60 + (isNaN(m) ? 0 : m);
-        let citMins = totalMatchMins - 75; // 1h 15m (75 mins) before match
-        if (citMins < 0) citMins += 1440;
-        const citH = Math.floor(citMins / 60);
-        const citM = citMins % 60;
-        defaultCitHora = `${String(citH).padStart(2, '0')}:${String(citM).padStart(2, '0')} h (1h 15m antes)`;
-      } else {
-        defaultCitHora = '1h 15m antes del encuentro';
-      }
+      defaultCitHora = calculateDefaultCitacionHora(match.hora);
     }
     setCitacionHora(defaultCitHora);
 
@@ -843,6 +852,10 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       return;
     }
 
+    const calculatedCitacion = formData.hora_citacion?.trim() || calculateDefaultCitacionHora(formData.hora);
+    const defaultLugar = formData.lugar?.trim() || (formData.tipo === 'Local' ? 'Polideportivo Municipal La Poveda (Campo Principal)' : `Campo Municipal del Rival (${formData.rival})`);
+    const defaultEquip = formData.equipacion?.trim() || '1ª Equipación Oficial + Chándal';
+
     const newMatch: Match = {
       id: crypto.randomUUID(),
       rival: formData.rival,
@@ -851,9 +864,17 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       tipo: formData.tipo,
       competicion: formData.competicion,
       estado: formData.estado,
+      hora_citacion: calculatedCitacion,
+      lugar: defaultLugar,
+      equipacion: defaultEquip,
       goles_favor: formData.estado === 'Finalizado' ? formData.goles_favor : undefined,
       goles_contra: formData.estado === 'Finalizado' ? formData.goles_contra : undefined,
-      acta: formData.estado === 'Finalizado' ? formData.acta : undefined
+      acta: formData.estado === 'Finalizado' ? formData.acta : undefined,
+      estadisticas: {
+        hora_citacion: calculatedCitacion,
+        lugar: defaultLugar,
+        equipacion: defaultEquip
+      }
     };
 
     const updated = [newMatch, ...matches];
@@ -865,9 +886,12 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       rival: '',
       fecha: new Date().toISOString().split('T')[0],
       hora: '10:00',
+      hora_citacion: calculateDefaultCitacionHora('10:00'),
       tipo: 'Local',
       competicion: 'Liga',
       estado: 'Programado',
+      lugar: '',
+      equipacion: '1ª Equipación Oficial + Chándal',
       goles_favor: 0,
       goles_contra: 0,
       acta: ''
@@ -875,25 +899,27 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
     setShowAddForm(false);
   };
 
-  const handleDeleteMatch = async (id: string, rival: string) => {
-    if (confirm(`¿Estás seguro de eliminar el partido contra ${rival}?`)) {
-      const updated = matches.filter(m => m.id !== id);
-      saveMatches(updated);
+  const confirmDeleteMatch = async () => {
+    if (!deletingMatch) return;
+    const { id, rival } = deletingMatch;
 
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-      if (isUuid) {
-        try {
-          await supabase
-            .from('team_matches')
-            .delete()
-            .eq('id', id);
-        } catch (err) {
-          console.warn('Failed to delete match from Supabase:', err);
-        }
+    const updated = matches.filter(m => m.id !== id);
+    saveMatches(updated);
+
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    if (isUuid) {
+      try {
+        await supabase
+          .from('team_matches')
+          .delete()
+          .eq('id', id);
+      } catch (err) {
+        console.warn('Failed to delete match from Supabase:', err);
       }
-
-      toast.success('Partido eliminado del calendario.');
     }
+
+    setDeletingMatch(null);
+    toast.success(`Partido contra ${rival} eliminado del calendario.`);
   };
 
   const handleSaveActa = (e: React.FormEvent) => {
@@ -923,10 +949,11 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
   };
 
   const handleOpenEditModal = (match: Match) => {
+    const defaultCitacion = match.hora_citacion || match.estadisticas?.hora_citacion || calculateDefaultCitacionHora(match.hora);
     setEditingMatch({
       ...match,
       lugar: match.lugar || match.estadisticas?.lugar || '',
-      hora_citacion: match.hora_citacion || match.estadisticas?.hora_citacion || '',
+      hora_citacion: defaultCitacion,
       equipacion: match.equipacion || match.estadisticas?.equipacion || '',
       observaciones: match.observaciones || match.estadisticas?.observaciones || ''
     });
@@ -969,7 +996,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       {/* Selector & Add */}
       <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-slate-900/60 border border-slate-900 p-4 rounded-2xl">
         <div className="w-full sm:w-auto flex flex-col gap-1.5">
-          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Equipo Activo</label>
+          <label className="text-xs text-white font-black uppercase tracking-wider">Equipo Activo</label>
           <select 
             value={selectedTeam} 
             onChange={(e) => setSelectedTeam(e.target.value)}
@@ -1010,7 +1037,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="text-xs font-semibold text-slate-400">Equipo Rival *</label>
+              <label className="text-xs font-bold text-slate-200 uppercase tracking-wider">Equipo Rival *</label>
               <input 
                 type="text" 
                 required
@@ -1022,7 +1049,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-400">Fecha</label>
+              <label className="text-xs font-bold text-slate-200 uppercase tracking-wider">Fecha</label>
               <input 
                 type="date" 
                 required
@@ -1033,22 +1060,45 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-400">Hora</label>
+              <label className="text-xs font-bold text-slate-200 uppercase tracking-wider">Hora del Partido *</label>
               <input 
                 type="time" 
                 required
                 value={formData.hora}
-                onChange={(e) => setFormData({...formData, hora: e.target.value})}
-                className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1"
+                onChange={(e) => {
+                  const newHora = e.target.value;
+                  setFormData({
+                    ...formData,
+                    hora: newHora,
+                    hora_citacion: calculateDefaultCitacionHora(newHora)
+                  });
+                }}
+                className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1 font-semibold"
               />
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-400">Localía</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-200 uppercase tracking-wider">Hora de Citación</label>
+                <span className="text-[10px] text-blue-400 font-extrabold bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded-md">
+                  Auto 1h 15m antes
+                </span>
+              </div>
+              <input 
+                type="text" 
+                value={formData.hora_citacion}
+                onChange={(e) => setFormData({...formData, hora_citacion: e.target.value})}
+                className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1 font-semibold"
+                placeholder="Ej. 08:45 h (1h 15m antes)"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-200 uppercase tracking-wider">Localía</label>
               <select 
                 value={formData.tipo}
                 onChange={(e) => setFormData({...formData, tipo: e.target.value as any})}
-                className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1"
+                className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1 font-semibold cursor-pointer"
               >
                 <option value="Local">Local (UD La Poveda)</option>
                 <option value="Visitante">Visitante (Fuera)</option>
@@ -1056,11 +1106,11 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-400">Competición</label>
+              <label className="text-xs font-bold text-slate-200 uppercase tracking-wider">Competición</label>
               <select 
                 value={formData.competicion}
                 onChange={(e) => setFormData({...formData, competicion: e.target.value as any})}
-                className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1"
+                className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1 font-semibold cursor-pointer"
               >
                 <option value="Liga">Liga</option>
                 <option value="Copa">Copa</option>
@@ -1069,11 +1119,11 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-400">Estado Inicial</label>
+              <label className="text-xs font-bold text-slate-200 uppercase tracking-wider">Estado Inicial</label>
               <select 
                 value={formData.estado}
                 onChange={(e) => setFormData({...formData, estado: e.target.value as any})}
-                className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1"
+                className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1 font-semibold cursor-pointer"
               >
                 <option value="Programado">Programado</option>
                 <option value="Finalizado">Finalizado / Ya jugado</option>
@@ -1084,7 +1134,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
           {formData.estado === 'Finalizado' && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-850 pt-4 animate-in fade-in duration-200">
               <div>
-                <label className="text-xs font-semibold text-slate-400">Goles a Favor</label>
+                <label className="text-xs font-bold text-slate-200 uppercase tracking-wider">Goles a Favor</label>
                 <input 
                   type="number" 
                   min="0"
@@ -1095,7 +1145,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-400">Goles en Contra</label>
+                <label className="text-xs font-bold text-slate-200 uppercase tracking-wider">Goles en Contra</label>
                 <input 
                   type="number" 
                   min="0"
@@ -1106,7 +1156,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-400">Resumen del Acta / Comentarios</label>
+                <label className="text-xs font-bold text-slate-200 uppercase tracking-wider">Resumen del Acta / Comentarios</label>
                 <textarea 
                   value={formData.acta}
                   onChange={(e) => setFormData({...formData, acta: e.target.value})}
@@ -1138,28 +1188,30 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
       {/* Fixtures List */}
       <div className="space-y-4">
-        <h5 className="font-extrabold text-xs text-slate-400 uppercase tracking-widest">Calendario de Partidos</h5>
+        <h5 className="font-black text-sm text-white uppercase tracking-wider flex items-center gap-2">
+          <span>Calendario de Partidos</span>
+        </h5>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {matches.length > 0 ? (
             matches.map((match) => (
               <div 
                 key={match.id}
-                className="bg-slate-900/40 border border-slate-900 rounded-3xl p-5 flex flex-col justify-between hover:border-slate-800 transition-all gap-4"
+                className="bg-slate-900/50 border border-slate-800/80 rounded-3xl p-5 flex flex-col justify-between hover:border-slate-700 transition-all gap-4 shadow-lg shadow-black/20"
               >
                 {/* Header info */}
-                <div className="flex items-center justify-between gap-2 border-b border-slate-900/60 pb-3">
-                  <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md ${
-                    match.competicion === 'Liga' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
-                    match.competicion === 'Copa' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                    'bg-slate-950 text-slate-500 border border-slate-850'
+                <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+                  <span className={`text-[11px] font-black uppercase px-3 py-1 rounded-xl border shadow-sm tracking-wider ${
+                    match.competicion === 'Liga' ? 'bg-blue-600/30 text-white border-blue-400/50 shadow-blue-950/40' :
+                    match.competicion === 'Copa' ? 'bg-amber-600/30 text-white border-amber-400/50 shadow-amber-950/40' :
+                    'bg-slate-800 text-white border-slate-500/60 shadow-slate-950/40'
                   }`}>
                     {match.competicion}
                   </span>
 
-                  <span className="text-[10px] text-slate-500 font-bold flex items-center gap-1">
-                    <CalendarDays className="w-3.5 h-3.5" />
-                    <span>{match.fecha} • {match.hora}</span>
+                  <span className="text-xs text-white font-extrabold flex items-center gap-1.5 bg-slate-950/90 border border-slate-750 px-3 py-1 rounded-xl shadow-sm">
+                    <CalendarDays className="w-3.5 h-3.5 text-blue-400" />
+                    <span className="text-white tracking-wide">{match.fecha} • {match.hora}</span>
                   </span>
                 </div>
 
@@ -1173,7 +1225,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                       </div>
                     ) : (
                       <div className="w-10 h-10 bg-slate-950 border border-slate-850 rounded-xl flex items-center justify-center shadow-md">
-                        <Trophy className="w-5 h-5 text-slate-500" />
+                        <Trophy className="w-5 h-5 text-slate-400" />
                       </div>
                     )}
                     <span className="font-extrabold text-white text-xs uppercase truncate max-w-full">
@@ -1185,21 +1237,21 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                   <div className="flex flex-col items-center justify-center w-1/3">
                     {match.estado === 'Finalizado' ? (
                       <div className="flex items-center gap-3">
-                        <span className="text-2xl md:text-3xl font-black text-white bg-slate-950/60 border border-slate-850 px-3 py-1 rounded-xl">
+                        <span className="text-2xl md:text-3xl font-black text-white bg-slate-950/80 border border-slate-750 px-3 py-1 rounded-xl shadow-inner">
                           {match.tipo === 'Local' ? match.goles_favor : match.goles_contra}
                         </span>
-                        <span className="text-slate-600 font-bold">-</span>
-                        <span className="text-2xl md:text-3xl font-black text-white bg-slate-950/60 border border-slate-850 px-3 py-1 rounded-xl">
+                        <span className="text-slate-400 font-black text-lg">-</span>
+                        <span className="text-2xl md:text-3xl font-black text-white bg-slate-950/80 border border-slate-750 px-3 py-1 rounded-xl shadow-inner">
                           {match.tipo === 'Local' ? match.goles_contra : match.goles_favor}
                         </span>
                       </div>
                     ) : (
-                      <div className="text-[10px] text-slate-400 font-extrabold bg-slate-950 px-3 py-1 rounded-full uppercase tracking-wider border border-slate-850">
+                      <div className="text-xs text-white font-black bg-slate-950 px-3.5 py-1.5 rounded-full uppercase tracking-wider border border-slate-750 shadow-sm">
                         VS
                       </div>
                     )}
-                    <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-2 flex items-center gap-1">
-                      <MapPin className="w-3 h-3 text-red-500" />
+                    <span className="text-[10px] text-slate-200 font-bold uppercase tracking-wider mt-2 flex items-center gap-1">
+                      <MapPin className="w-3 h-3 text-red-400" />
                       <span>{match.tipo === 'Local' ? 'Campo Local' : 'Campo Rival'}</span>
                     </span>
                   </div>
@@ -1288,11 +1340,11 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                     </Button>
 
                     <Button
-                      onClick={() => handleDeleteMatch(match.id, match.rival)}
+                      onClick={() => setDeletingMatch(match)}
                       variant="ghost"
                       size="icon"
                       title="Eliminar partido"
-                      className="h-8 w-8 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg cursor-pointer"
+                      className="h-8 w-8 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg cursor-pointer transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -2409,13 +2461,20 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                     type="time" 
                     required
                     value={editingMatch.hora}
-                    onChange={(e) => setEditingMatch({ ...editingMatch, hora: e.target.value })}
+                    onChange={(e) => {
+                      const newHora = e.target.value;
+                      setEditingMatch({
+                        ...editingMatch,
+                        hora: newHora,
+                        hora_citacion: calculateDefaultCitacionHora(newHora)
+                      });
+                    }}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all font-semibold"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  <label className="text-xs font-bold text-slate-200 uppercase tracking-wider block mb-1">
                     Localía
                   </label>
                   <select 
@@ -2429,7 +2488,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  <label className="text-xs font-bold text-slate-200 uppercase tracking-wider block mb-1">
                     Competición
                   </label>
                   <select 
@@ -2444,7 +2503,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  <label className="text-xs font-bold text-slate-200 uppercase tracking-wider block mb-1">
                     Estado del Partido
                   </label>
                   <select 
@@ -2460,51 +2519,51 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
               {/* Logística & Citación extra fields */}
               <div className="space-y-4 pt-2 border-t border-slate-800">
-                <h4 className="text-xs font-extrabold uppercase text-slate-300 tracking-wider flex items-center gap-1.5">
+                <h4 className="text-xs font-extrabold uppercase text-white tracking-wider flex items-center gap-1.5">
                   <MapPin className="w-3.5 h-3.5 text-red-400" />
                   <span>Ubicación y Datos de Citación</span>
                 </h4>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-[11px] font-semibold text-slate-400">Lugar / Campo de Juego</label>
+                    <label className="text-[11px] font-bold text-slate-200 uppercase tracking-wider">Lugar / Campo de Juego</label>
                     <input 
                       type="text" 
                       value={editingMatch.lugar || ''}
                       onChange={(e) => setEditingMatch({ ...editingMatch, lugar: e.target.value })}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1"
+                      className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1"
                       placeholder="Ej. Polideportivo Municipal La Poveda"
                     />
                   </div>
 
                   <div>
-                    <label className="text-[11px] font-semibold text-slate-400">Hora de Citación</label>
+                    <label className="text-[11px] font-bold text-slate-200 uppercase tracking-wider">Hora de Citación</label>
                     <input 
                       type="text" 
                       value={editingMatch.hora_citacion || ''}
                       onChange={(e) => setEditingMatch({ ...editingMatch, hora_citacion: e.target.value })}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1"
+                      className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1"
                       placeholder="Ej. 11:00 h (1h 15m antes)"
                     />
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="text-[11px] font-semibold text-slate-400">Indumentaria / Equipación</label>
+                    <label className="text-[11px] font-bold text-slate-200 uppercase tracking-wider">Indumentaria / Equipación</label>
                     <input 
                       type="text" 
                       value={editingMatch.equipacion || ''}
                       onChange={(e) => setEditingMatch({ ...editingMatch, equipacion: e.target.value })}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1"
+                      className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1"
                       placeholder="Ej. 1ª Equipación Oficial (Camiseta Azul) + Chándal"
                     />
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="text-[11px] font-semibold text-slate-400">Observaciones y Notas Tácticas</label>
+                    <label className="text-[11px] font-bold text-slate-200 uppercase tracking-wider">Observaciones y Notas Tácticas</label>
                     <textarea 
                       value={editingMatch.observaciones || ''}
                       onChange={(e) => setEditingMatch({ ...editingMatch, observaciones: e.target.value })}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1 h-16"
+                      className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1 h-16"
                       placeholder="Instrucciones para las jugadoras, recomendación de llegada, etc."
                     />
                   </div>
@@ -2513,7 +2572,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
               {editingMatch.estado === 'Finalizado' && (
                 <div className="space-y-4 pt-2 border-t border-slate-800">
-                  <h4 className="text-xs font-extrabold uppercase text-slate-300 tracking-wider flex items-center gap-1.5">
+                  <h4 className="text-xs font-extrabold uppercase text-white tracking-wider flex items-center gap-1.5">
                     <ClipboardList className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Resultado y Marcador</span>
                   </h4>
@@ -2839,6 +2898,57 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal (custom dialog avoiding browser window.confirm in iframe) */}
+      {deletingMatch && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl text-left space-y-4">
+            <div className="flex items-center gap-3 text-red-400 border-b border-slate-800 pb-3">
+              <div className="w-10 h-10 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5 text-red-400" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-white text-sm uppercase tracking-wide">
+                  Eliminar Partido
+                </h4>
+                <p className="text-xs text-slate-400">
+                  Esta acción eliminará el partido del calendario
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-950/80 border border-slate-850 p-4 rounded-2xl space-y-2 text-xs">
+              <p className="text-slate-300 font-medium leading-relaxed">
+                ¿Estás seguro de que deseas eliminar el partido contra <strong className="text-white font-bold">{deletingMatch.rival}</strong>?
+              </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-300 font-bold">
+                <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800">📅 {deletingMatch.fecha}</span>
+                <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800">⏰ {deletingMatch.hora}</span>
+                <span className="bg-blue-950/60 text-blue-300 px-2 py-0.5 rounded border border-blue-900 uppercase">{deletingMatch.competicion}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDeletingMatch(null)}
+                className="text-xs font-bold border-slate-800 text-slate-400 hover:bg-slate-800 rounded-xl h-10 px-4 cursor-pointer"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                onClick={confirmDeleteMatch}
+                className="text-xs font-black uppercase bg-red-600 hover:bg-red-500 text-white rounded-xl h-10 px-5 shadow-lg shadow-red-950/40 gap-2 cursor-pointer transition-all"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Eliminar Definitivamente</span>
+              </Button>
+            </div>
           </div>
         </div>
       )}
