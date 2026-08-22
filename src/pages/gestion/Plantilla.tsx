@@ -2370,11 +2370,15 @@ export default function Plantilla() {
       } catch {}
     }
 
-    // Filter out deleted players & demo entries
+    // Filter out deleted players & demo entries & invalid empty names
     currentRoster = currentRoster.filter(p => {
-      const isDemo = p.nombre === 'Carlos' || p.nombre === 'Marcos' || (p.nombre === 'Marina' && p.apellidos === 'Sierra Garcia');
+      const cleanN = (p.nombre || '').trim();
+      const cleanA = (p.apellidos || '').trim();
+      if (!cleanN) return false;
+      if (cleanN.toUpperCase() === 'JUGADORA' && (!cleanA || cleanA.toUpperCase() === 'JUGADORA')) return false;
+      const isDemo = cleanN === 'Carlos' || cleanN === 'Marcos' || cleanN === 'Sofía' || (cleanN === 'Marina' && cleanA === 'Sierra Garcia');
       if (isDemo) return false;
-      return !isDeletedPlayer(p.id, p.nombre, p.apellidos);
+      return !isDeletedPlayer(p.id, cleanN, cleanA);
     });
 
     // Merge missing non-deleted official players if missing
@@ -2418,13 +2422,18 @@ export default function Plantilla() {
     const seenKeys = new Set<string>();
 
     currentRoster.forEach(p => {
-      const keyStr = normalizePlayerNameKey(p.nombre, p.apellidos);
-      if (!seenKeys.has(keyStr) && !isDeletedPlayer(p.id, p.nombre, p.apellidos)) {
+      const cleanNombre = (p.nombre || '').trim();
+      const cleanApellidos = (p.apellidos || '').trim() === 'Marta Pulido' ? 'Pulido' : (p.apellidos || '').trim();
+      if (!cleanNombre) return;
+      if (cleanNombre.toUpperCase() === 'JUGADORA' && (!cleanApellidos || cleanApellidos.toUpperCase() === 'JUGADORA')) return;
+
+      const keyStr = normalizePlayerNameKey(cleanNombre, cleanApellidos);
+      if (!seenKeys.has(keyStr) && !isDeletedPlayer(p.id, cleanNombre, cleanApellidos)) {
         seenKeys.add(keyStr);
         cleanDeduplicatedRoster.push({
           ...p,
-          nombre: p.nombre.trim(),
-          apellidos: p.apellidos.trim() === 'Marta Pulido' ? 'Pulido' : p.apellidos.trim(),
+          nombre: cleanNombre,
+          apellidos: cleanApellidos,
           foto_url: cleanPhotoUrl(p.foto_url)
         });
       }

@@ -44,7 +44,7 @@ interface TeamPlayer {
 
 interface AttendanceRecord {
   playerId: string;
-  status: 'Presente' | 'Ausente' | 'No Justificó' | 'Lesionado' | 'Retraso' | 'Justificado';
+  status?: 'Presente' | 'Ausente' | 'No Justificó' | 'Lesionado' | 'Retraso' | 'Justificado' | 'Pendiente' | null;
   playerName?: string;
   playerLastName?: string;
   playerDorsal?: string;
@@ -121,11 +121,15 @@ export const loadCompleteTeamRoster = (teamName: string): TeamPlayer[] => {
     } catch {}
   }
 
-  // Filter out deleted & demo sample dummy entries
+  // Filter out deleted & demo sample dummy entries & entries with no valid name
   currentList = currentList.filter(p => {
-    const isDemo = p.nombre === 'Carlos' || p.nombre === 'Marcos' || (p.nombre === 'Marina' && p.apellidos === 'Sierra Garcia');
+    const cleanN = (p.nombre || '').trim();
+    const cleanA = (p.apellidos || '').trim();
+    if (!cleanN) return false;
+    if (cleanN.toUpperCase() === 'JUGADORA' && (!cleanA || cleanA.toUpperCase() === 'JUGADORA')) return false;
+    const isDemo = cleanN === 'Carlos' || cleanN === 'Marcos' || cleanN === 'Sofía' || (cleanN === 'Marina' && cleanA === 'Sierra Garcia');
     if (isDemo) return false;
-    return !isDeletedPlayer(p.id, p.nombre, p.apellidos || '');
+    return !isDeletedPlayer(p.id, cleanN, cleanA);
   });
 
   // Merge missing official players for Senior Femenino
@@ -153,14 +157,20 @@ export const loadCompleteTeamRoster = (teamName: string): TeamPlayer[] => {
       const signedList: any[] = JSON.parse(signedSaved);
       if (Array.isArray(signedList)) {
         signedList.forEach(sp => {
+          const cleanSPName = (sp.nombre || '').trim();
+          const cleanSPLast = (sp.apellidos || '').trim();
+          if (!cleanSPName) return;
+          if (cleanSPName.toUpperCase() === 'JUGADORA' && (!cleanSPLast || cleanSPLast.toUpperCase() === 'JUGADORA')) return;
+          if (cleanSPName === 'Carlos' || cleanSPName === 'Marcos' || cleanSPName === 'Sofía') return;
+
           const matchTeam = sp.equipo_asignado ? (sp.equipo_asignado.toUpperCase() === teamName.toUpperCase()) : (teamName === 'SENIOR FEMENINO');
-          if (matchTeam && !isDeletedPlayer(sp.id, sp.nombre, sp.apellidos || '')) {
+          if (matchTeam && !isDeletedPlayer(sp.id, cleanSPName, cleanSPLast)) {
             const exists = currentList.some(p => isPlayerMatch(p, sp));
             if (!exists) {
               currentList.push({
                 id: sp.id,
-                nombre: sp.nombre,
-                apellidos: sp.apellidos || '',
+                nombre: cleanSPName,
+                apellidos: cleanSPLast,
                 dorsal: sp.dorsal || '',
                 posicion: sp.posicion || 'JUGADORA',
                 foto_url: cleanPhotoUrl(sp.foto_url),
@@ -203,6 +213,9 @@ export const loadCompleteTeamRoster = (teamName: string): TeamPlayer[] => {
   currentList.forEach(p => {
     const cleanNombre = (p.nombre || '').trim();
     const cleanApellidos = (p.apellidos || '').trim() === 'Marta Pulido' ? 'Pulido' : (p.apellidos || '').trim();
+    if (!cleanNombre) return;
+    if (cleanNombre.toUpperCase() === 'JUGADORA' && (!cleanApellidos || cleanApellidos.toUpperCase() === 'JUGADORA')) return;
+
     const keyStr = normalizePlayerNameKey(cleanNombre, cleanApellidos);
 
     if (!seenKeys.has(keyStr) && !isDeletedPlayer(p.id, cleanNombre, cleanApellidos)) {
@@ -239,12 +252,19 @@ export default function Asistencia() {
   // Add player modal state
   const [showAddPlayerModal, setShowAddPlayerModal] = useState(false);
   const [addPlayerTab, setAddPlayerTab] = useState<'manual' | 'club'>('manual');
-  const [manualPlayerForm, setManualPlayerForm] = useState({
+  const [manualPlayerForm, setManualPlayerForm] = useState<{
+    nombre: string;
+    apellidos: string;
+    dorsal: string;
+    posicion: string;
+    status?: AttendanceRecord['status'];
+    saveToRoster: boolean;
+  }>({
     nombre: '',
     apellidos: '',
     dorsal: '',
     posicion: 'CENTRAL',
-    status: 'Presente' as AttendanceRecord['status'],
+    status: undefined,
     saveToRoster: true
   });
   const [searchClubQuery, setSearchClubQuery] = useState('');
@@ -316,6 +336,18 @@ export default function Asistencia() {
 
     const currentRoster = syncRoster();
 
+    const cleanSessionRecords = (records: AttendanceRecord[], roster: TeamPlayer[]) => {
+      return (records || []).filter(rec => {
+        const p = roster.find(pl => pl.id === rec.playerId);
+        const n = (p?.nombre || rec.playerName || '').trim();
+        const a = (p?.apellidos || rec.playerLastName || '').trim();
+        if (!n) return false;
+        if (n.toUpperCase() === 'JUGADORA' && (!a || a.toUpperCase() === 'JUGADORA')) return false;
+        if (n === 'Carlos' || n === 'Marcos' || n === 'Sofía' || (n === 'Marina' && a === 'Sierra Garcia')) return false;
+        return true;
+      });
+    };
+
     // Fetch from Supabase, fallback to localStorage
     const fetchSessions = async () => {
       try {
@@ -333,7 +365,7 @@ export default function Asistencia() {
             hora: item.hora || '19:30 h',
             tipo: item.tipo as any,
             descripcion: item.descripcion || '',
-            records: item.records || [],
+            records: cleanSessionRecords(item.records || [], currentRoster),
             tareas: item.tareas || [],
             archivos: item.archivos || []
           }));
@@ -357,13 +389,20 @@ export default function Asistencia() {
       const sessionsKey = `team_sessions_${selectedTeam}`;
       const savedSessions = localStorage.getItem(sessionsKey);
       if (savedSessions) {
-        const parsed = JSON.parse(savedSessions);
-        setSessions(parsed);
-        if (parsed.length > 0) {
-          setSelectedSession(parsed[0]);
-        } else {
-          setSelectedSession(null);
-        }
+        try {
+          const parsed = JSON.parse(savedSessions);
+          const formatted: AttendanceSession[] = Array.isArray(parsed) ? parsed.map((item: any) => ({
+            ...item,
+            records: cleanSessionRecords(item.records || [], currentRoster)
+          })) : [];
+          setSessions(formatted);
+          if (formatted.length > 0) {
+            setSelectedSession(formatted[0]);
+          } else {
+            setSelectedSession(null);
+          }
+          localStorage.setItem(sessionsKey, JSON.stringify(formatted));
+        } catch {}
       } else {
         // Create a default session to make it look active immediately with all roster players
         const defaultRecords = currentRoster.map(p => ({
@@ -373,7 +412,7 @@ export default function Asistencia() {
           playerDorsal: p.dorsal,
           playerPosition: p.posicion,
           foto_url: p.foto_url,
-          status: 'Presente' as const
+          status: undefined
         }));
         const defaultSession: AttendanceSession = {
           id: 'default-session-1',
@@ -534,7 +573,7 @@ export default function Asistencia() {
       return;
     }
 
-    // ALL active players from the team's plantilla are automatically included
+    // ALL active players from the team's plantilla are automatically included with no option pre-selected
     const defaultRecords: AttendanceRecord[] = currentRoster.map(p => ({
       playerId: p.id,
       playerName: p.nombre,
@@ -542,7 +581,7 @@ export default function Asistencia() {
       playerDorsal: p.dorsal,
       playerPosition: p.posicion,
       foto_url: p.foto_url,
-      status: 'Presente'
+      status: undefined
     }));
 
     const newSession: AttendanceSession = {
@@ -563,18 +602,32 @@ export default function Asistencia() {
     toast.success(`Nueva sesión de ${newSessionData.tipo} creada con las ${currentRoster.length} jugadoras de la plantilla.`);
   };
 
+  // Filter out any ghost/dummy/empty records from active session
+  const validSessionRecords = useMemo(() => {
+    if (!selectedSession) return [];
+    return (selectedSession.records || []).filter(rec => {
+      const pInfo = players.find(p => p.id === rec.playerId);
+      const n = (pInfo?.nombre || rec.playerName || '').trim();
+      const a = (pInfo?.apellidos || rec.playerLastName || '').trim();
+      if (!n) return false;
+      if (n.toUpperCase() === 'JUGADORA' && (!a || a.toUpperCase() === 'JUGADORA')) return false;
+      if (n === 'Carlos' || n === 'Marcos' || n === 'Sofía' || (n === 'Marina' && a === 'Sierra Garcia')) return false;
+      return true;
+    });
+  }, [selectedSession, players]);
+
   // Find players currently in the team's plantilla that are missing from the selected session
   const missingRosterPlayers = useMemo(() => {
     if (!selectedSession) return [];
-    const sessionPlayerIds = new Set(selectedSession.records.map(r => r.playerId));
-    const sessionNames = new Set(selectedSession.records.map(r => 
+    const sessionPlayerIds = new Set(validSessionRecords.map(r => r.playerId));
+    const sessionNames = new Set(validSessionRecords.map(r => 
       normalizePlayerNameKey(r.playerName || '', r.playerLastName || '')
     ));
     return players.filter(p => 
       !sessionPlayerIds.has(p.id) && 
       !sessionNames.has(normalizePlayerNameKey(p.nombre, p.apellidos))
     );
-  }, [selectedSession, players]);
+  }, [selectedSession, players, validSessionRecords]);
 
   // Synchronize all missing team roster players into the current session
   const handleAddMissingRosterPlayers = () => {
@@ -586,7 +639,7 @@ export default function Asistencia() {
       playerDorsal: p.dorsal,
       playerPosition: p.posicion,
       foto_url: p.foto_url,
-      status: 'Presente'
+      status: undefined
     }));
 
     const updatedSession: AttendanceSession = {
@@ -730,7 +783,7 @@ export default function Asistencia() {
       apellidos: '',
       dorsal: '',
       posicion: 'CENTRAL',
-      status: 'Presente',
+      status: undefined,
       saveToRoster: true
     });
     setShowAddPlayerModal(false);
@@ -748,7 +801,7 @@ export default function Asistencia() {
 
     const newRecord: AttendanceRecord = {
       playerId: player.id,
-      status: 'Presente',
+      status: undefined,
       playerName: player.nombre,
       playerLastName: player.apellidos,
       playerDorsal: player.dorsal,
@@ -806,12 +859,14 @@ export default function Asistencia() {
     toast.success('Todas las jugadoras marcadas como Presente');
   };
 
-  const handleUpdateStatus = (playerId: string, status: AttendanceRecord['status']) => {
+  const handleUpdateStatus = (playerId: string, targetStatus: AttendanceRecord['status']) => {
     if (!selectedSession) return;
 
     const updatedRecords = selectedSession.records.map(rec => {
       if (rec.playerId === playerId) {
-        return { ...rec, status };
+        // Toggle behavior: clicking the active status clears it (unselected)
+        const nextStatus = rec.status === targetStatus ? undefined : targetStatus;
+        return { ...rec, status: nextStatus };
       }
       return rec;
     });
@@ -936,12 +991,15 @@ export default function Asistencia() {
 
   // Helper stats calculations
   const getSessionStats = (session: AttendanceSession) => {
-    const total = session.records.length;
-    if (total === 0) return { presentCount: 0, percentage: 0 };
+    const total = (session.records || []).length;
+    if (total === 0) return { presentCount: 0, markedCount: 0, total: 0, percentage: 0 };
     const presentCount = session.records.filter(r => r.status === 'Presente' || r.status === 'Retraso').length;
+    const markedCount = session.records.filter(r => r.status && r.status !== ('Pendiente' as any)).length;
     return {
       presentCount,
-      percentage: Math.round((presentCount / total) * 100)
+      markedCount,
+      total,
+      percentage: markedCount > 0 ? Math.round((presentCount / total) * 100) : 0
     };
   };
 
@@ -1096,8 +1154,18 @@ export default function Asistencia() {
 
                     <div className="flex items-center justify-between border-t border-slate-900/60 pt-2 text-[10px]">
                       <span className="text-slate-400 font-semibold">Asistencia:</span>
-                      <span className={`font-black ${stats.percentage >= 80 ? 'text-emerald-400' : stats.percentage >= 60 ? 'text-amber-400' : 'text-red-400'}`}>
-                        {stats.percentage}% ({stats.presentCount}/{sess.records.length})
+                      <span className={`font-black ${
+                        stats.markedCount === 0
+                          ? 'text-slate-500'
+                          : stats.percentage >= 80 
+                          ? 'text-emerald-400' 
+                          : stats.percentage >= 60 
+                          ? 'text-amber-400' 
+                          : 'text-red-400'
+                      }`}>
+                        {stats.markedCount === 0
+                          ? `Sin registrar (0/${sess.records.length})`
+                          : `${stats.percentage}% (${stats.presentCount}/${sess.records.length})`}
                       </span>
                     </div>
                   </div>
@@ -1229,7 +1297,7 @@ export default function Asistencia() {
                         )}
                       </div>
                       <span className="text-[11px] font-bold text-slate-400 px-2.5 py-1 bg-slate-900 rounded-xl border border-slate-800 shrink-0">
-                        {selectedSession.records.length} {selectedSession.records.length === 1 ? 'jugadora' : 'jugadoras'} convocadas
+                        {validSessionRecords.length} {validSessionRecords.length === 1 ? 'jugadora' : 'jugadoras'} convocadas
                       </span>
                     </div>
 
@@ -1263,8 +1331,8 @@ export default function Asistencia() {
 
                   {/* Roster Attendance Table Grid */}
                   <div className="space-y-2.5">
-                    {selectedSession.records.length > 0 ? (
-                      selectedSession.records
+                    {validSessionRecords.length > 0 ? (
+                      validSessionRecords
                         .filter((rec) => {
                           if (!searchPlayerQuery.trim()) return true;
                           const pInfo = players.find(p => p.id === rec.playerId);
@@ -1951,10 +2019,11 @@ export default function Asistencia() {
                       Estado inicial de asistencia
                     </label>
                     <select 
-                      value={manualPlayerForm.status}
-                      onChange={(e) => setManualPlayerForm({ ...manualPlayerForm, status: e.target.value as any })}
+                      value={manualPlayerForm.status || ''}
+                      onChange={(e) => setManualPlayerForm({ ...manualPlayerForm, status: (e.target.value || undefined) as any })}
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-bold cursor-pointer"
                     >
+                      <option value="">Sin marcar (Seleccionar manualmente)</option>
                       <option value="Presente">Presente</option>
                       <option value="Retraso">Retraso</option>
                       <option value="No Justificó">No Justificó</option>
