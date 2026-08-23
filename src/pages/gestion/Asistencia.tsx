@@ -38,6 +38,13 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { 
+  saveSessionFile, 
+  getSessionFile, 
+  deleteSessionFile, 
+  hydrateSessionFiles, 
+  safeLocalStorageSetSessions 
+} from '@/lib/fileStorage';
 
 interface TeamPlayer {
   id: string;
@@ -356,6 +363,10 @@ export default function Asistencia() {
     descripcion: ''
   });
 
+  // File upload UI states
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+
   // Synchronize observaciones text with active session
   useEffect(() => {
     setObservacionesInput(selectedSession?.observaciones || '');
@@ -596,7 +607,7 @@ export default function Asistencia() {
 
     setSessions(validSessions);
     const sessionsKey = `team_sessions_${selectedTeam}`;
-    localStorage.setItem(sessionsKey, JSON.stringify(validSessions));
+    safeLocalStorageSetSessions(sessionsKey, validSessions);
     window.dispatchEvent(new CustomEvent('session-updated', { detail: { team: selectedTeam } }));
     window.dispatchEvent(new Event('storage'));
 
@@ -1167,45 +1178,131 @@ export default function Asistencia() {
     toast.success('Tarea eliminada');
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!selectedSession || !e.target.files || e.target.files.length === 0) return;
-    
-    const file = e.target.files[0];
-    
-    // Check file size (limit to 1.5MB for localStorage)
-    if (file.size > 1.5 * 1024 * 1024) {
-      toast.error('El archivo es demasiado grande (máximo 1.5MB para almacenamiento local).');
-      return;
+  // Robust file upload processor supporting multiple files, IndexedDB storage, and files up to 50MB
+  const processUploadedFiles = async (fileList: FileList | File[]) => {
+    if (!selectedSession || !fileList || fileList.length === 0) return;
+    setIsUploadingFile(true);
+
+    const newFiles: SessionFile[] = [];
+    const filesArray = Array.from(fileList);
+
+    for (const file of filesArray) {
+      // Limit to 50MB per file
+      if (file.size > 50 * 1024 * 1024) {
+        toast.error(`"${file.name}" supera el límite máximo permitido de 50MB.`);
+        continue;
+      }
+
+      try {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (event) => resolve((event.target?.result as string) || '');
+          reader.onerror = () => reject(new Error(`Error al leer el archivo ${file.name}`));
+          reader.readAsDataURL(file);
+        });
+
+        const fileId = crypto.randomUUID();
+        const sizeFormatted = file.size >= 1024 * 1024
+          ? `${(file.size / (1024 * 1024)).toFixed(2)} MB`
+          : `${(file.size / 1024).toFixed(1)} KB`;
+
+        const sessionFileItem: SessionFile = {
+          id: fileId,
+          nombre: file.name,
+          tamano: sizeFormatted,
+          tipo: file.type || 'application/octet-stream',
+          dataUrl
+        };
+
+        // Persist file into IndexedDB for persistent offline retrieval
+        await saveSessionFile({
+          id: fileId,
+          nombre: file.name,
+          tamano: sizeFormatted,
+          tipo: file.type || 'application/octet-stream',
+          dataUrl,
+          sessionId: selectedSession.id
+        });
+
+        newFiles.push(sessionFileItem);
+      } catch (err) {
+        console.error('Error al procesar archivo:', err);
+        toast.error(`Error al procesar "${file.name}"`);
+      }
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      const newFile = {
-        id: crypto.randomUUID(),
-        nombre: file.name,
-        tamano: (file.size / 1024).toFixed(1) + ' KB',
-        tipo: file.type,
-        dataUrl
-      };
-
+    if (newFiles.length > 0) {
       const currentFiles = selectedSession.archivos || [];
-      const updatedSession = {
+      const updatedSession: AttendanceSession = {
         ...selectedSession,
-        archivos: [...currentFiles, newFile]
+        archivos: [...currentFiles, ...newFiles]
       };
 
       setSelectedSession(updatedSession);
       const updatedSessions = sessions.map(s => s.id === selectedSession.id ? updatedSession : s);
-      saveSessions(updatedSessions);
-      toast.success('Archivo subido con éxito');
-    };
-    reader.readAsDataURL(file);
+      await saveSessions(updatedSessions);
+      toast.success(
+        newFiles.length === 1
+          ? `Archivo "${newFiles[0].nombre}" (${newFiles[0].tamano}) subido correctamente.`
+          : `${newFiles.length} archivos subidos correctamente.`
+      );
+    }
+
+    setIsUploadingFile(false);
   };
 
-  const handleDeleteFile = (fileId: string) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      processUploadedFiles(e.target.files);
+      // Reset input value so re-selecting the exact same file fires onChange again
+      e.target.value = '';
+    }
+  };
+
+  const handleOpenPreviewFile = async (file: SessionFile) => {
+    if (file.dataUrl && file.dataUrl.length > 50) {
+      setPreviewFile(file);
+      return;
+    }
+    // Fetch full dataUrl from IndexedDB if not cached in memory
+    try {
+      const stored = await getSessionFile(file.id);
+      if (stored && stored.dataUrl) {
+        setPreviewFile({ ...file, dataUrl: stored.dataUrl });
+      } else {
+        setPreviewFile(file);
+      }
+    } catch {
+      setPreviewFile(file);
+    }
+  };
+
+  const handleDownloadFile = async (file: SessionFile) => {
+    let url = file.dataUrl;
+    if (!url || url.length < 50) {
+      const stored = await getSessionFile(file.id);
+      if (stored?.dataUrl) {
+        url = stored.dataUrl;
+      }
+    }
+    if (!url) {
+      toast.error('No se pudo recuperar el archivo para descargar.');
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = file.nombre;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDeleteFile = async (fileId: string) => {
     if (!selectedSession) return;
     
+    // Remove from IndexedDB
+    await deleteSessionFile(fileId);
+
     const currentFiles = selectedSession.archivos || [];
     const updatedSession = {
       ...selectedSession,
@@ -1214,7 +1311,7 @@ export default function Asistencia() {
 
     setSelectedSession(updatedSession);
     const updatedSessions = sessions.map(s => s.id === selectedSession.id ? updatedSession : s);
-    saveSessions(updatedSessions);
+    await saveSessions(updatedSessions);
     toast.success('Archivo eliminado');
   };
 
@@ -2229,7 +2326,7 @@ export default function Asistencia() {
                     <div className="flex items-center justify-between border-b border-slate-900 pb-3">
                       <div className="flex items-center gap-2">
                         <UploadCloud className="w-4 h-4 text-emerald-400" />
-                        <h5 className="font-bold text-white text-xs uppercase tracking-wider">Subir Archivo de Sesión (Diseño, PDF, Imagen)</h5>
+                        <h5 className="font-bold text-white text-xs uppercase tracking-wider">Subir Archivo de Sesión (Diseño, PDF, Imagen, Táctica)</h5>
                       </div>
                       <span className="text-[10px] bg-slate-900 text-slate-400 px-2.5 py-0.5 rounded-full font-bold">
                         {selectedSession.archivos?.length || 0} archivos
@@ -2237,65 +2334,139 @@ export default function Asistencia() {
                     </div>
 
                     {/* File Upload Dropzone */}
-                    <div className="border border-dashed border-slate-800 hover:border-emerald-500/50 rounded-xl p-6 text-center cursor-pointer relative transition-colors bg-slate-950/20 group">
+                    <div 
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setIsDraggingFile(true);
+                      }}
+                      onDragLeave={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setIsDraggingFile(false);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setIsDraggingFile(false);
+                        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                          processUploadedFiles(e.dataTransfer.files);
+                        }
+                      }}
+                      className={cn(
+                        "border border-dashed rounded-2xl p-6 text-center cursor-pointer relative transition-all group",
+                        isDraggingFile 
+                          ? "border-emerald-400 bg-emerald-500/10 shadow-lg shadow-emerald-950/40 scale-[1.01]" 
+                          : "border-slate-800 hover:border-emerald-500/60 bg-slate-950/20 hover:bg-slate-900/40"
+                      )}
+                    >
                       <input 
                         type="file" 
+                        multiple
                         onChange={handleFileUpload}
-                        accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx"
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.svg"
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                       />
-                      <UploadCloud className="w-8 h-8 text-slate-600 group-hover:text-emerald-400 mx-auto transition-colors" />
-                      <p className="text-xs text-slate-300 font-bold uppercase mt-2">Seleccionar o arrastrar archivos</p>
-                      <p className="text-[10px] text-slate-500 mt-1">Soporta PDF, PNG, JPG, DOCX (Máximo 1.5MB)</p>
+                      
+                      {isUploadingFile ? (
+                        <div className="flex flex-col items-center justify-center gap-2 py-2">
+                          <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin" />
+                          <p className="text-xs text-emerald-400 font-extrabold uppercase tracking-wide">
+                            Subiendo y guardando archivos...
+                          </p>
+                        </div>
+                      ) : (
+                        <>
+                          <div className={cn(
+                            "w-12 h-12 rounded-2xl flex items-center justify-center mx-auto transition-transform group-hover:scale-110",
+                            isDraggingFile ? "bg-emerald-500 text-slate-950" : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                          )}>
+                            <UploadCloud className="w-6 h-6" />
+                          </div>
+                          <p className="text-xs text-slate-200 font-extrabold uppercase mt-3 tracking-wide">
+                            {isDraggingFile ? 'Suelta los archivos aquí para subirlos' : 'Seleccionar o arrastrar archivos'}
+                          </p>
+                          <p className="text-[11px] text-slate-400 mt-1">
+                            Soporta PDF, PNG, JPG, DOCX, XLSX, Presentaciones y Diseños (Hasta 50MB)
+                          </p>
+                          <div className="flex flex-wrap items-center justify-center gap-1.5 mt-3 pt-2 border-t border-slate-900/60">
+                            {['PDF', 'PNG / JPG', 'DOCX / WORD', 'EXCEL', 'TÁCTICA'].map(tag => (
+                              <span key={tag} className="text-[9px] font-extrabold uppercase tracking-widest bg-slate-900/80 text-slate-400 px-2 py-0.5 rounded-md border border-slate-850">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     {/* File List */}
                     {selectedSession.archivos && selectedSession.archivos.length > 0 ? (
                       <div className="space-y-2">
-                        {selectedSession.archivos.map((file) => (
-                          <div key={file.id} className="bg-slate-950/60 border border-slate-850 hover:border-slate-800 p-3 rounded-xl flex items-center justify-between gap-4 transition-colors">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-8 h-8 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg flex items-center justify-center shrink-0">
-                                <FileText className="w-4 h-4" />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-xs font-bold text-white uppercase truncate" title={file.nombre}>{file.nombre}</p>
-                                <p className="text-[9px] text-slate-500 font-bold uppercase">{file.tamano}</p>
-                              </div>
-                            </div>
+                        {selectedSession.archivos.map((file) => {
+                          const isPdf = file.tipo.includes('pdf') || file.nombre.toLowerCase().endsWith('.pdf');
+                          const isImg = file.tipo.startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)$/i.test(file.nombre);
+                          const isDoc = file.tipo.includes('word') || /\.(docx?|odt|rtf)$/i.test(file.nombre);
+                          const isXls = file.tipo.includes('excel') || file.tipo.includes('sheet') || /\.(xlsx?|csv)$/i.test(file.nombre);
 
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              {file.dataUrl && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => setPreviewFile(file)}
-                                    className="p-1.5 bg-slate-900 hover:bg-slate-850 text-slate-400 hover:text-white border border-slate-800 rounded-lg transition-colors"
-                                    title="Visualizar archivo"
-                                  >
-                                    <Eye className="w-3.5 h-3.5" />
-                                  </button>
-                                  <a 
-                                    href={file.dataUrl} 
-                                    download={file.nombre}
-                                    className="p-1.5 bg-slate-900 hover:bg-slate-850 text-slate-400 hover:text-white border border-slate-800 rounded-lg transition-colors"
-                                    title="Descargar archivo"
-                                  >
-                                    <Download className="w-3.5 h-3.5" />
-                                  </a>
-                                </>
-                              )}
-                              <button 
-                                type="button"
-                                onClick={() => handleDeleteFile(file.id)}
-                                className="p-1.5 bg-slate-900 hover:bg-red-500/15 text-slate-500 hover:text-red-400 border border-slate-800 hover:border-red-500/20 rounded-lg transition-all"
-                                title="Eliminar archivo"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                          return (
+                            <div 
+                              key={file.id} 
+                              className="bg-slate-950/60 border border-slate-850 hover:border-slate-750 p-3 rounded-xl flex items-center justify-between gap-4 transition-all group"
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className={cn(
+                                  "w-9 h-9 border rounded-xl flex items-center justify-center shrink-0 font-black text-[10px]",
+                                  isPdf ? "bg-red-500/10 border-red-500/30 text-red-400" :
+                                  isImg ? "bg-purple-500/10 border-purple-500/30 text-purple-400" :
+                                  isDoc ? "bg-blue-500/10 border-blue-500/30 text-blue-400" :
+                                  isXls ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" :
+                                  "bg-slate-850 border-slate-750 text-slate-300"
+                                )}>
+                                  {isPdf ? 'PDF' : isImg ? 'IMG' : isDoc ? 'DOC' : isXls ? 'XLS' : <FileText className="w-4 h-4" />}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-extrabold text-white uppercase truncate group-hover:text-emerald-300 transition-colors" title={file.nombre}>
+                                    {file.nombre}
+                                  </p>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <span className="text-[9px] text-slate-400 font-bold uppercase">{file.tamano}</span>
+                                    <span className="text-[8px] bg-slate-900 border border-slate-800 text-slate-400 px-1.5 py-0.2 rounded font-bold uppercase">
+                                      Guardado
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenPreviewFile(file)}
+                                  className="p-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-emerald-400 border border-slate-800 rounded-lg transition-colors cursor-pointer"
+                                  title="Visualizar archivo"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </button>
+                                <button 
+                                  type="button"
+                                  onClick={() => handleDownloadFile(file)}
+                                  className="p-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 rounded-lg transition-colors cursor-pointer"
+                                  title="Descargar archivo"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                </button>
+                                <button 
+                                  type="button"
+                                  onClick={() => handleDeleteFile(file.id)}
+                                  className="p-1.5 bg-slate-900 hover:bg-red-500/15 text-slate-500 hover:text-red-400 border border-slate-800 hover:border-red-500/20 rounded-lg transition-all cursor-pointer"
+                                  title="Eliminar archivo"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : (
                       <div className="text-center py-6 border border-dashed border-slate-850 rounded-xl text-slate-500 text-xs italic">
