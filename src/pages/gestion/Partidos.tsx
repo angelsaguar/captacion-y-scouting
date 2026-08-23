@@ -459,8 +459,11 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
   const handleOpenConvocatoriaModal = (match: Match) => {
     setShowConvocatoriaModal(match);
     
-    const existingConv = match.convocatoria || match.estadisticas?.convocatoria || [];
-    setSelectedConvocadas(existingConv);
+    const validPlayerIds = new Set(players.map(p => p.id));
+    const rawConv = match.convocatoria || match.estadisticas?.convocatoria || [];
+    // Ensure we only load unique, valid IDs for active players in the current team
+    const cleanConv = rawConv.filter((id, idx, arr) => validPlayerIds.has(id) && arr.indexOf(id) === idx);
+    setSelectedConvocadas(cleanConv);
 
     let defaultCitHora = match.estadisticas?.hora_citacion || match.hora_citacion || '';
     if (!defaultCitHora && match.hora) {
@@ -815,11 +818,14 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
   const handleSaveConvocatoria = async () => {
     if (!showConvocatoriaModal) return;
 
+    const validPlayerIds = new Set(players.map(p => p.id));
+    const cleanConv = selectedConvocadas.filter(id => validPlayerIds.has(id));
+
     const updated = matches.map(m => {
       if (m.id === showConvocatoriaModal.id) {
         const newStats = {
           ...(m.estadisticas || {}),
-          convocatoria: selectedConvocadas,
+          convocatoria: cleanConv,
           hora_citacion: citacionHora,
           lugar: citacionLugar,
           equipacion: citacionEquipacion,
@@ -828,7 +834,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
         };
         return {
           ...m,
-          convocatoria: selectedConvocadas,
+          convocatoria: cleanConv,
           hora_citacion: citacionHora,
           lugar: citacionLugar,
           equipacion: citacionEquipacion,
@@ -1800,7 +1806,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                     }`}
                   >
                     <Users className="w-3.5 h-3.5" />
-                    <span>⚙️ Selección y Citación ({selectedConvocadas.length})</span>
+                    <span>⚙️ Selección y Citación ({selectedPlayersList.length})</span>
                   </button>
                 </div>
 
@@ -2052,7 +2058,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                     <span className="text-xs font-extrabold text-white uppercase tracking-wider">Selección de Convocadas</span>
                   </div>
                   <span className="bg-green-500/10 text-green-400 border border-green-500/20 text-[10px] font-black px-2 py-0.5 rounded-full">
-                    {selectedConvocadas.length} / {players.length} Convocadas
+                    {selectedPlayersList.length} / {players.length} Convocadas
                   </span>
                 </div>
 

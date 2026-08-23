@@ -394,17 +394,24 @@ export default function Asistencia() {
       try {
         const parsed = JSON.parse(savedSessions);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          initialList = parsed.map((item: any) => ({
-            ...item,
-            id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id) ? item.id : crypto.randomUUID(),
-            records: cleanSessionRecords(item.records || [], currentRoster)
-          }));
+          const cleanParsed = parsed.filter((item: any) => 
+            item && 
+            item.tipo !== 'CalendarioMensual' && 
+            !(typeof item.descripcion === 'string' && item.descripcion.trim().startsWith('{'))
+          );
+          if (cleanParsed.length > 0) {
+            initialList = cleanParsed.map((item: any) => ({
+              ...item,
+              id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id) ? item.id : crypto.randomUUID(),
+              records: cleanSessionRecords(item.records || [], currentRoster)
+            }));
+          }
         }
       } catch {}
     }
 
     if (initialList.length === 0) {
-      // Create initial default session with all roster players
+      // Build default training sessions from current team calendar or standard pre-season
       const defaultRecords = currentRoster.map(p => ({
         playerId: p.id,
         playerName: p.nombre,
@@ -414,19 +421,49 @@ export default function Asistencia() {
         foto_url: p.foto_url,
         status: undefined
       }));
-      const defaultSession: AttendanceSession = {
+
+      // Gather scheduled training dates
+      const trainingDates: Array<{ fecha: string; hora: string; desc: string }> = [
+        { fecha: '2026-08-28', hora: '19:30 h', desc: 'Sesión de entrenamiento' },
+        { fecha: '2026-08-27', hora: '19:30 h', desc: 'Sesión de entrenamiento' },
+        { fecha: '2026-08-25', hora: '19:30 h', desc: 'Sesión de entrenamiento' }
+      ];
+
+      try {
+        const calKey = `team_monthly_calendar_${selectedTeam}_2026_7`;
+        const calSaved = localStorage.getItem(calKey);
+        if (calSaved) {
+          const calEvents = JSON.parse(calSaved);
+          const found: typeof trainingDates = [];
+          Object.values(calEvents).forEach((ev: any) => {
+            if (ev && ev.type === 'Entrenamiento' && ev.dateStr) {
+              found.push({
+                fecha: ev.dateStr,
+                hora: ev.hora || '19:30 h',
+                desc: ev.title === 'Entrenamiento' ? 'Sesión de entrenamiento' : ev.title
+              });
+            }
+          });
+          if (found.length > 0) {
+            found.sort((a, b) => b.fecha.localeCompare(a.fecha));
+            trainingDates.splice(0, trainingDates.length, ...found);
+          }
+        }
+      } catch {}
+
+      initialList = trainingDates.map(tr => ({
         id: crypto.randomUUID(),
-        fecha: new Date().toISOString().split('T')[0],
-        hora: '19:30 h',
+        fecha: tr.fecha,
+        hora: tr.hora,
         tipo: 'Entrenamiento',
-        descripcion: 'Sesión de entrenamiento habitual',
+        descripcion: tr.desc,
         observaciones: '',
         records: defaultRecords,
         tareas: [],
         archivos: [],
         videos: []
-      };
-      initialList = [defaultSession];
+      }));
+
       localStorage.setItem(sessionsKey, JSON.stringify(initialList));
     }
 
@@ -446,43 +483,28 @@ export default function Asistencia() {
           .order('fecha', { ascending: false });
 
         if (!error && data && data.length > 0) {
-          const cloudFormatted: AttendanceSession[] = data.map(item => ({
-            id: item.id,
-            fecha: item.fecha,
-            hora: item.hora || '19:30 h',
-            tipo: item.tipo as any,
-            descripcion: item.descripcion || '',
-            observaciones: item.observaciones || '',
-            records: cleanSessionRecords(item.records || [], currentRoster),
-            tareas: item.tareas || [],
-            archivos: item.archivos || [],
-            videos: item.videos || []
-          }));
+          const cleanData = data.filter(item => 
+            item.tipo !== 'CalendarioMensual' && 
+            !(typeof item.descripcion === 'string' && item.descripcion.trim().startsWith('{'))
+          );
 
-          // If local storage was empty, use cloud data
-          const localSavedRaw = localStorage.getItem(sessionsKey);
-          if (!localSavedRaw || JSON.parse(localSavedRaw).length === 0) {
+          if (cleanData.length > 0) {
+            const cloudFormatted: AttendanceSession[] = cleanData.map(item => ({
+              id: item.id,
+              fecha: item.fecha,
+              hora: item.hora || '19:30 h',
+              tipo: item.tipo as any,
+              descripcion: item.descripcion || 'Sesión de entrenamiento',
+              observaciones: item.observaciones || '',
+              records: cleanSessionRecords(item.records || [], currentRoster),
+              tareas: item.tareas || [],
+              archivos: item.archivos || [],
+              videos: item.videos || []
+            }));
+
             setSessions(cloudFormatted);
             setSelectedSession(cloudFormatted[0]);
             localStorage.setItem(sessionsKey, JSON.stringify(cloudFormatted));
-          } else {
-            // Push any local sessions to Supabase to keep cloud up to date
-            const localList: AttendanceSession[] = JSON.parse(localSavedRaw);
-            for (const locSess of localList) {
-              const payload = {
-                team: selectedTeam,
-                fecha: locSess.fecha,
-                hora: locSess.hora || '19:30 h',
-                tipo: locSess.tipo,
-                descripcion: locSess.descripcion,
-                observaciones: locSess.observaciones || '',
-                records: locSess.records,
-                tareas: locSess.tareas || [],
-                archivos: locSess.archivos || [],
-                videos: locSess.videos || []
-              };
-              await supabase.from('attendance_sessions').upsert({ id: locSess.id, ...payload });
-            }
           }
         }
       } catch (err) {

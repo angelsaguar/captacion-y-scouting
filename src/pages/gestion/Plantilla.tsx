@@ -2503,18 +2503,23 @@ export default function Plantilla() {
         const { data: sessionsData } = await supabase
           .from('attendance_sessions')
           .select('*')
-          .eq('team', selectedTeam);
+          .eq('team', selectedTeam)
+          .neq('tipo', 'CalendarioMensual');
         if (sessionsData) {
-          const formatted = sessionsData.map(item => ({
-            id: item.id,
-            fecha: item.fecha,
-            tipo: item.tipo,
-            descripcion: item.descripcion || '',
-            records: item.records || [],
-            tareas: item.tareas || [],
-            archivos: item.archivos || []
-          }));
-          localStorage.setItem(`team_sessions_${selectedTeam}`, JSON.stringify(formatted));
+          const formatted = sessionsData
+            .filter(item => item.tipo !== 'CalendarioMensual' && !(typeof item.descripcion === 'string' && item.descripcion.trim().startsWith('{')))
+            .map(item => ({
+              id: item.id,
+              fecha: item.fecha,
+              tipo: item.tipo,
+              descripcion: item.descripcion || '',
+              records: item.records || [],
+              tareas: item.tareas || [],
+              archivos: item.archivos || []
+            }));
+          if (formatted.length > 0) {
+            localStorage.setItem(`team_sessions_${selectedTeam}`, JSON.stringify(formatted));
+          }
         }
       } catch (err) {
         console.warn("Failed background sessions sync in Plantilla:", err);

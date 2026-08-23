@@ -44,11 +44,14 @@ import jsPDF from 'jspdf';
 
 export type CalendarEventType = 'Entrenamiento' | 'Descanso' | 'Partido' | 'Inicio Liga' | 'Torneo' | 'Personalizado';
 
+export type MatchCompeticion = 'Amistoso' | 'Liga' | 'Copa' | 'Torneo';
+
 export interface CalendarEvent {
   dateStr: string; // YYYY-MM-DD
   title: string;
   type: CalendarEventType;
   condicion?: 'Local' | 'Visitante';
+  competicion?: MatchCompeticion | string;
   hora?: string;
   lugar?: string;
   rival?: string;
@@ -67,6 +70,29 @@ export function getMatchCondition(ev?: CalendarEvent): 'Local' | 'Visitante' {
     return 'Local';
   }
   return 'Local';
+}
+
+export function getMatchCompeticion(ev?: CalendarEvent): MatchCompeticion {
+  if (ev?.competicion) {
+    const c = ev.competicion.toLowerCase();
+    if (c.includes('liga')) return 'Liga';
+    if (c.includes('copa')) return 'Copa';
+    if (c.includes('torneo')) return 'Torneo';
+    if (c.includes('amistoso')) return 'Amistoso';
+    return ev.competicion as MatchCompeticion;
+  }
+  if (ev?.type === 'Torneo') return 'Torneo';
+  if (ev?.type === 'Inicio Liga') return 'Liga';
+  const t = `${ev?.title || ''} ${ev?.notas || ''} ${ev?.rival || ''}`.toLowerCase();
+  if (t.includes('copa')) return 'Copa';
+  if (t.includes('torneo')) return 'Torneo';
+  if (t.includes('amistoso')) return 'Amistoso';
+  if (t.includes('liga')) return 'Liga';
+  // August and September pre-season friendly matches default to Amistoso
+  if (ev?.dateStr && (ev.dateStr.startsWith('2026-08') || ev.dateStr.startsWith('2026-09-0') || ev.dateStr.startsWith('2026-09-1') || ev.dateStr.startsWith('2026-09-20') || ev.dateStr.startsWith('2026-09-19'))) {
+    return 'Amistoso';
+  }
+  return 'Amistoso';
 }
 
 interface TeamMonthlyCalendarProps {
@@ -128,7 +154,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           '2026-08-26': { dateStr: '2026-08-26', title: 'Descanso', type: 'Descanso' },
           '2026-08-27': { dateStr: '2026-08-27', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
           '2026-08-28': { dateStr: '2026-08-28', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-08-29': { dateStr: '2026-08-29', title: 'vs AD PARLA', type: 'Partido', condicion: 'Local', rival: 'AD PARLA', hora: '20:00 h', lugar: 'Polideportivo La Poveda' },
+          '2026-08-29': { dateStr: '2026-08-29', title: 'vs AD PARLA', type: 'Partido', condicion: 'Local', competicion: 'Amistoso', rival: 'AD PARLA', hora: '20:00 h', lugar: 'Polideportivo La Poveda' },
           '2026-08-30': { dateStr: '2026-08-30', title: 'Descanso', type: 'Descanso' },
 
           '2026-08-31': { dateStr: '2026-08-31', title: 'Descanso', type: 'Descanso' },
@@ -136,7 +162,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           '2026-09-02': { dateStr: '2026-09-02', title: 'Descanso', type: 'Descanso' },
           '2026-09-03': { dateStr: '2026-09-03', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
           '2026-09-04': { dateStr: '2026-09-04', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-05': { dateStr: '2026-09-05', title: 'Por confirmar', type: 'Partido', condicion: 'Visitante' },
+          '2026-09-05': { dateStr: '2026-09-05', title: 'vs AD LA PLATA', type: 'Partido', condicion: 'Local', competicion: 'Amistoso', rival: 'AD LA PLATA', hora: '13:15 h', lugar: 'Polideportivo La Poveda' },
           '2026-09-06': { dateStr: '2026-09-06', title: 'Descanso', type: 'Descanso' },
 
           '2026-09-07': { dateStr: '2026-09-07', title: 'Descanso', type: 'Descanso' },
@@ -144,7 +170,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           '2026-09-09': { dateStr: '2026-09-09', title: 'Descanso', type: 'Descanso' },
           '2026-09-10': { dateStr: '2026-09-10', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
           '2026-09-11': { dateStr: '2026-09-11', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-12': { dateStr: '2026-09-12', title: 'vs SPORTING HORTALEZA', type: 'Partido', condicion: 'Visitante', rival: 'SPORTING HORTALEZA', hora: '18:00 h', lugar: 'Campo Hortaleza' },
+          '2026-09-12': { dateStr: '2026-09-12', title: 'vs SPORTING HORTALEZA', type: 'Partido', condicion: 'Visitante', competicion: 'Amistoso', rival: 'SPORTING HORTALEZA', hora: '18:00 h', lugar: 'Campo Hortaleza' },
           '2026-09-13': { dateStr: '2026-09-13', title: 'Descanso', type: 'Descanso' },
 
           '2026-09-14': { dateStr: '2026-09-14', title: 'Descanso', type: 'Descanso' },
@@ -152,7 +178,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           '2026-09-16': { dateStr: '2026-09-16', title: 'Descanso', type: 'Descanso' },
           '2026-09-17': { dateStr: '2026-09-17', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
           '2026-09-18': { dateStr: '2026-09-18', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-19': { dateStr: '2026-09-19', title: 'vs CD INTER PROMESAS', type: 'Partido', condicion: 'Local', rival: 'CD INTER PROMESAS', hora: '20:00 h', lugar: 'Polideportivo La Poveda' },
+          '2026-09-19': { dateStr: '2026-09-19', title: 'vs CD INTER PROMESAS', type: 'Partido', condicion: 'Local', competicion: 'Amistoso', rival: 'CD INTER PROMESAS', hora: '20:00 h', lugar: 'Polideportivo La Poveda' },
           '2026-09-20': { dateStr: '2026-09-20', title: 'Descanso', type: 'Descanso' },
 
           '2026-09-21': { dateStr: '2026-09-21', title: 'Descanso', type: 'Descanso' },
@@ -160,7 +186,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           '2026-09-23': { dateStr: '2026-09-23', title: 'Descanso', type: 'Descanso' },
           '2026-09-24': { dateStr: '2026-09-24', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
           '2026-09-25': { dateStr: '2026-09-25', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-27': { dateStr: '2026-09-27', title: 'INICIO LIGA', type: 'Inicio Liga' }
+          '2026-09-27': { dateStr: '2026-09-27', title: 'INICIO LIGA', type: 'Inicio Liga', competicion: 'Liga' }
         };
         setEvents(defaultSample);
         localStorage.setItem(storageKey, JSON.stringify(defaultSample));
@@ -308,11 +334,13 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       allMatchesMap.forEach((m, dateStr) => {
         const d = new Date(dateStr);
         if (d.getFullYear() === currentYear && d.getMonth() === currentMonth) {
+          const compDetermined = m.competicion || (dateStr.startsWith('2026-08') || dateStr.startsWith('2026-09-0') || dateStr.startsWith('2026-09-1') || dateStr.startsWith('2026-09-20') || dateStr.startsWith('2026-09-19') ? 'Amistoso' : 'Liga');
           autoEvents[dateStr] = {
             dateStr,
             title: m.tipo === 'Local' ? `vs ${m.rival}` : `@ ${m.rival}`,
             type: 'Partido',
             condicion: m.tipo === 'Local' ? 'Local' : 'Visitante',
+            competicion: compDetermined,
             hora: m.hora || '20:00 h',
             lugar: m.lugar || (m.tipo === 'Local' ? 'Polideportivo La Poveda' : 'Campo Visitante'),
             rival: m.rival
@@ -324,7 +352,8 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       // 2. Fetch training / attendance sessions from Supabase
       const { data: dbSessions } = await supabase
         .from('attendance_sessions')
-        .select('*');
+        .select('*')
+        .neq('tipo', 'CalendarioMensual');
 
       // Combine with local storage sessions
       const localSessionsStr = localStorage.getItem(`team_sessions_${selectedTeam}`) || localStorage.getItem(`attendance_sessions_${selectedTeam}`);
@@ -555,6 +584,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         }
         localStorage.setItem(sessionsKey, JSON.stringify(currentSessions));
       } else if (eventToSave.type === 'Partido') {
+        const compVal = eventToSave.competicion || getMatchCompeticion(eventToSave);
         // Upsert to Supabase team_matches
         await supabase
           .from('team_matches')
@@ -563,6 +593,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
             fecha: editingDate,
             rival: eventToSave.rival || eventToSave.title.replace(/^vs\s+/i, '').replace(/^@\s+/i, '') || 'Rival',
             tipo: eventToSave.condicion || (eventToSave.title.toLowerCase().includes('@') ? 'Visitante' : 'Local'),
+            competicion: compVal,
             hora: eventToSave.hora || '20:00 h',
             lugar: eventToSave.lugar || 'Polideportivo La Poveda',
             estadisticas: {}
@@ -579,6 +610,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           fecha: editingDate,
           rival: eventToSave.rival || eventToSave.title.replace(/^vs\s+/i, '').replace(/^@\s+/i, '') || 'Rival',
           tipo: eventToSave.condicion || (eventToSave.title.toLowerCase().includes('@') ? 'Visitante' : 'Local'),
+          competicion: compVal,
           hora: eventToSave.hora || '20:00 h',
           lugar: eventToSave.lugar || 'Polideportivo La Poveda'
         };
@@ -776,8 +808,10 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
 
       if (ev.type === 'Partido') {
         const cond = getMatchCondition(ev);
+        const comp = getMatchCompeticion(ev);
         const iconTag = cond === 'Local' ? '🏠 LOCAL' : '✈️ VISITANTE';
-        matchesList.push(`⚽ ${iconTag} *${formattedDate}:* ${ev.title}${ev.hora ? ` a las ${ev.hora}` : ''}${ev.lugar ? ` (${ev.lugar})` : ''}`);
+        const compTag = comp === 'Liga' ? '🏆 LIGA' : comp === 'Copa' ? '👑 COPA' : comp === 'Torneo' ? '🎖️ TORNEO' : '🤝 AMISTOSO';
+        matchesList.push(`⚽ ${iconTag} [${compTag}] *${formattedDate}:* ${ev.title}${ev.hora ? ` a las ${ev.hora}` : ''}${ev.lugar ? ` (${ev.lugar})` : ''}`);
       } else if (ev.type === 'Inicio Liga' || ev.type === 'Torneo') {
         keyEventsList.push(`🏆 *${formattedDate}:* ${ev.title.toUpperCase()}`);
       } else if (ev.type === 'Entrenamiento') {
@@ -1099,25 +1133,44 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
                                   <Moon className="w-5 h-5 text-amber-300 stroke-[2.2]" />
                                 </div>
                               )}
-                              {event.type === 'Partido' && (
-                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9.5px] font-black uppercase tracking-wider border shadow-sm ${
-                                  getMatchCondition(event) === 'Local'
-                                    ? 'bg-sky-950/90 text-sky-200 border-sky-400/60'
-                                    : 'bg-amber-950/90 text-amber-200 border-amber-400/60'
-                                }`}>
-                                  {getMatchCondition(event) === 'Local' ? (
-                                    <>
-                                      <Home className="w-3.5 h-3.5 text-sky-300 shrink-0" />
-                                      <span>LOCAL</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Plane className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-                                      <span>VISITANTE</span>
-                                    </>
-                                  )}
-                                </span>
-                              )}
+                              {event.type === 'Partido' && (() => {
+                                const comp = getMatchCompeticion(event);
+                                return (
+                                  <div className="flex flex-wrap items-center justify-center gap-1 w-full">
+                                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border shadow-sm ${
+                                      getMatchCondition(event) === 'Local'
+                                        ? 'bg-sky-950/90 text-sky-200 border-sky-400/60'
+                                        : 'bg-amber-950/90 text-amber-200 border-amber-400/60'
+                                    }`}>
+                                      {getMatchCondition(event) === 'Local' ? (
+                                        <>
+                                          <Home className="w-3 h-3 text-sky-300 shrink-0" />
+                                          <span>LOCAL</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Plane className="w-3 h-3 text-amber-300 shrink-0" />
+                                          <span>VISITANTE</span>
+                                        </>
+                                      )}
+                                    </span>
+
+                                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border shadow-sm ${
+                                      comp === 'Liga'
+                                        ? 'bg-blue-950/90 text-blue-200 border-blue-400/60'
+                                        : comp === 'Copa'
+                                          ? 'bg-amber-950/90 text-amber-200 border-amber-400/60'
+                                          : comp === 'Torneo'
+                                            ? 'bg-purple-950/90 text-purple-200 border-purple-400/60'
+                                            : 'bg-emerald-950/90 text-emerald-200 border-emerald-400/60'
+                                    }`}>
+                                      <span>
+                                        {comp === 'Liga' ? '🏆 LIGA' : comp === 'Copa' ? '👑 COPA' : comp === 'Torneo' ? '🎖️ TORNEO' : '🤝 AMISTOSO'}
+                                      </span>
+                                    </span>
+                                  </div>
+                                );
+                              })()}
                               {event.type === 'Inicio Liga' && (
                                 <div className="p-1.5 rounded-full bg-red-900/40 border border-red-500/30">
                                   <Trophy className="w-5 h-5 text-yellow-300 stroke-[2.2]" />
@@ -1437,6 +1490,31 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
                         <Plane className="w-4 h-4 text-amber-200" />
                         <span>✈️ VISITANTE (FUERA)</span>
                       </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Tipo de Competición
+                    </label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {(['Amistoso', 'Liga', 'Copa', 'Torneo'] as MatchCompeticion[]).map(comp => (
+                        <button
+                          key={comp}
+                          type="button"
+                          onClick={() => setEventForm({ ...eventForm, competicion: comp })}
+                          className={`px-2 py-1.5 text-xs font-black rounded-xl border transition-all text-center uppercase tracking-wider cursor-pointer ${
+                            (eventForm.competicion || getMatchCompeticion(eventForm)) === comp
+                              ? comp === 'Liga' ? 'bg-blue-600 text-white border-blue-400 shadow-md' :
+                                comp === 'Copa' ? 'bg-amber-600 text-white border-amber-400 shadow-md' :
+                                comp === 'Torneo' ? 'bg-purple-600 text-white border-purple-400 shadow-md' :
+                                'bg-emerald-600 text-white border-emerald-400 shadow-md'
+                              : 'bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-800'
+                          }`}
+                        >
+                          {comp === 'Liga' ? '🏆 LIGA' : comp === 'Copa' ? '👑 COPA' : comp === 'Torneo' ? '🎖️ TORNEO' : '🤝 AMISTOSO'}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
