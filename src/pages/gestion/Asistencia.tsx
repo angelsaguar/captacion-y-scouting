@@ -400,11 +400,35 @@ export default function Asistencia() {
             !(typeof item.descripcion === 'string' && item.descripcion.trim().startsWith('{'))
           );
           if (cleanParsed.length > 0) {
-            initialList = cleanParsed.map((item: any) => ({
-              ...item,
-              id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id) ? item.id : crypto.randomUUID(),
-              records: cleanSessionRecords(item.records || [], currentRoster)
-            }));
+            initialList = cleanParsed.map((item: any) => {
+              const cleaned = cleanSessionRecords(item.records || [], currentRoster);
+              // Ensure all current roster players are included in records so user never sees truncated 5-player rosters
+              const existingIds = new Set(cleaned.map(r => r.playerId));
+              const existingNames = new Set(cleaned.map(r => normalizePlayerNameKey(r.playerName || '', r.playerLastName || '')));
+              const completeRecords = [...cleaned];
+              currentRoster.forEach(p => {
+                const norm = normalizePlayerNameKey(p.nombre, p.apellidos);
+                if (!existingIds.has(p.id) && !existingNames.has(norm)) {
+                  completeRecords.push({
+                    playerId: p.id,
+                    playerName: p.nombre,
+                    playerLastName: p.apellidos,
+                    playerDorsal: p.dorsal,
+                    playerPosition: p.posicion,
+                    foto_url: p.foto_url,
+                    status: undefined
+                  });
+                }
+              });
+
+              return {
+                ...item,
+                id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id) ? item.id : crypto.randomUUID(),
+                records: completeRecords
+              };
+            });
+            // Persist the complete records to local storage immediately
+            localStorage.setItem(sessionsKey, JSON.stringify(initialList));
           }
         }
       } catch {}
@@ -472,7 +496,7 @@ export default function Asistencia() {
     const foundActive = initialList.find(s => s.id === lastActiveId) || initialList[0];
     setSelectedSession(foundActive);
 
-    // 2. Fetch from Supabase in the background and sync
+    // 2. Fetch from Supabase in the background and safely merge without overwriting local changes
     const syncFromSupabase = async () => {
       try {
         const { data, error } = await supabase
@@ -489,22 +513,54 @@ export default function Asistencia() {
           );
 
           if (cleanData.length > 0) {
-            const cloudFormatted: AttendanceSession[] = cleanData.map(item => ({
-              id: item.id,
-              fecha: item.fecha,
-              hora: item.hora || '19:30 h',
-              tipo: item.tipo as any,
-              descripcion: item.descripcion || 'Sesión de entrenamiento',
-              observaciones: item.observaciones || '',
-              records: cleanSessionRecords(item.records || [], currentRoster),
-              tareas: item.tareas || [],
-              archivos: item.archivos || [],
-              videos: item.videos || []
-            }));
+            const currentSavedStr = localStorage.getItem(sessionsKey);
+            const currentSaved: AttendanceSession[] = currentSavedStr ? JSON.parse(currentSavedStr) : [];
+            const mergedMap = new Map<string, AttendanceSession>();
 
-            setSessions(cloudFormatted);
-            setSelectedSession(cloudFormatted[0]);
-            localStorage.setItem(sessionsKey, JSON.stringify(cloudFormatted));
+            // Put current local sessions first (they have highest priority for user edits)
+            currentSaved.forEach(s => {
+              mergedMap.set(s.fecha, s);
+            });
+
+            // Merge in cloud data safely
+            cleanData.forEach(cloudItem => {
+              const cloudRecords = cleanSessionRecords(cloudItem.records || [], currentRoster);
+              const existing = mergedMap.get(cloudItem.fecha);
+              if (!existing) {
+                // New session from cloud
+                mergedMap.set(cloudItem.fecha, {
+                  id: cloudItem.id,
+                  fecha: cloudItem.fecha,
+                  hora: cloudItem.hora || '19:30 h',
+                  tipo: cloudItem.tipo as any,
+                  descripcion: cloudItem.descripcion || 'Sesión de entrenamiento',
+                  observaciones: cloudItem.observaciones || '',
+                  records: cloudRecords,
+                  tareas: cloudItem.tareas || [],
+                  archivos: cloudItem.archivos || [],
+                  videos: cloudItem.videos || []
+                });
+              } else {
+                // If cloud has more records than local, merge missing ones
+                const localIds = new Set(existing.records.map(r => r.playerId));
+                cloudRecords.forEach(cr => {
+                  if (!localIds.has(cr.playerId)) {
+                    existing.records.push(cr);
+                  }
+                });
+                if (!existing.observaciones && cloudItem.observaciones) {
+                  existing.observaciones = cloudItem.observaciones;
+                }
+              }
+            });
+
+            const mergedList = Array.from(mergedMap.values()).sort((a, b) => b.fecha.localeCompare(a.fecha));
+            setSessions(mergedList);
+            localStorage.setItem(sessionsKey, JSON.stringify(mergedList));
+            
+            const lastActiveId = localStorage.getItem(activeKey);
+            const foundActive = mergedList.find(s => s.id === lastActiveId) || mergedList[0];
+            setSelectedSession(foundActive);
           }
         }
       } catch (err) {
@@ -541,6 +597,17 @@ export default function Asistencia() {
     setSessions(validSessions);
     const sessionsKey = `team_sessions_${selectedTeam}`;
     localStorage.setItem(sessionsKey, JSON.stringify(validSessions));
+    window.dispatchEvent(new CustomEvent('session-updated', { detail: { team: selectedTeam } }));
+    window.dispatchEvent(new Event('storage'));
+
+    // Update selectedSession reference
+    if (selectedSession) {
+      const match = validSessions.find(s => s.id === selectedSession.id || s.fecha === selectedSession.fecha);
+      if (match) {
+        setSelectedSession(match);
+        localStorage.setItem(`active_session_id_${selectedTeam}`, match.id);
+      }
+    }
 
     // Try to sync to Supabase in the background
     try {
@@ -764,6 +831,41 @@ export default function Asistencia() {
     toast.success(`${missingRosterPlayers.length} jugadoras de la plantilla añadidas a la sesión.`);
   };
 
+  // Synchronize all team sessions with the complete roster
+  const handleSyncAllSessionsWithRoster = () => {
+    if (sessions.length === 0 || players.length === 0) return;
+    const updatedSessions = sessions.map(sess => {
+      const existingIds = new Set(sess.records.map(r => r.playerId));
+      const existingNames = new Set(sess.records.map(r => normalizePlayerNameKey(r.playerName || '', r.playerLastName || '')));
+      const newRecs: AttendanceRecord[] = [];
+      players.forEach(p => {
+        const norm = normalizePlayerNameKey(p.nombre, p.apellidos);
+        if (!existingIds.has(p.id) && !existingNames.has(norm)) {
+          newRecs.push({
+            playerId: p.id,
+            playerName: p.nombre,
+            playerLastName: p.apellidos,
+            playerDorsal: p.dorsal,
+            playerPosition: p.posicion,
+            foto_url: p.foto_url,
+            status: undefined
+          });
+        }
+      });
+      return {
+        ...sess,
+        records: [...sess.records, ...newRecs]
+      };
+    });
+
+    saveSessions(updatedSessions);
+    if (selectedSession) {
+      const activeMatch = updatedSessions.find(s => s.id === selectedSession.id);
+      if (activeMatch) setSelectedSession(activeMatch);
+    }
+    toast.success(`Todas las sesiones (${updatedSessions.length}) se han sincronizado con la plantilla completa.`);
+  };
+
   // Collect all players from other teams or club database for selection
   const allAvailableClubPlayers = useMemo(() => {
     const playerMap = new Map<string, TeamPlayer>();
@@ -867,6 +969,25 @@ export default function Asistencia() {
       const rosterKey = `team_roster_${selectedTeam}`;
       localStorage.setItem(rosterKey, JSON.stringify(updatedPlayers));
       window.dispatchEvent(new CustomEvent('player-updated', { detail: { team: selectedTeam } }));
+
+      // Persist to Supabase players table asynchronously
+      (async () => {
+        try {
+          await supabase.from('players').upsert({
+            id: newPlayer.id,
+            nombre: newPlayer.nombre,
+            apellidos: newPlayer.apellidos,
+            posicion: newPlayer.posicion,
+            dorsal: newPlayer.dorsal || null,
+            estado: 'Fichado',
+            equipo_asignado: selectedTeam,
+            es_plantilla: true,
+            origen: 'plantilla'
+          });
+        } catch (err) {
+          console.warn('Could not sync manual player to Supabase:', err);
+        }
+      })();
     }
 
     // Add to session attendance records
@@ -1637,15 +1758,28 @@ export default function Asistencia() {
                           </p>
                         </div>
                       </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={handleAddMissingRosterPlayers}
-                        className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-extrabold uppercase rounded-xl gap-2 h-9 shrink-0 cursor-pointer shadow-lg shadow-amber-600/20"
-                      >
-                        <UserPlus className="w-4 h-4" />
-                        <span>Sincronizar Plantilla (+{missingRosterPlayers.length})</span>
-                      </Button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleAddMissingRosterPlayers}
+                          className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-extrabold uppercase rounded-xl gap-2 h-9 cursor-pointer shadow-lg shadow-amber-600/20"
+                        >
+                          <UserPlus className="w-4 h-4" />
+                          <span>Sincronizar Esta Sesión (+{missingRosterPlayers.length})</span>
+                        </Button>
+                        {sessions.length > 1 && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={handleSyncAllSessionsWithRoster}
+                            className="border-amber-500/40 text-amber-300 hover:bg-amber-950/50 text-xs font-bold uppercase rounded-xl h-9 cursor-pointer"
+                          >
+                            <span>Sincronizar Todas ({sessions.length})</span>
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   )}
 
