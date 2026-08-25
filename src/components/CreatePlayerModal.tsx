@@ -103,7 +103,7 @@ export function CreatePlayerModal({ isOpen, onClose, onPlayerCreated }: CreatePl
       potencial,
       lateralidad,
       anio_nacimiento: Number(anioNacimiento) || 2005,
-      observador: observador || null,
+      observador: observador && observador !== 'none' ? observador.trim() : null,
       es_plantilla: false,
       origen: 'scouting',
       created_at: new Date().toISOString()
@@ -379,22 +379,26 @@ export function CreatePlayerModal({ isOpen, onClose, onPlayerCreated }: CreatePl
                 </div>
               </div>
 
-              {observers.length > 0 && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-slate-300">Observador / Scout Asignado</Label>
-                  <Select value={observador} onValueChange={setObservador}>
-                    <SelectTrigger className="bg-slate-800/60 border-slate-700 text-white">
-                      <SelectValue placeholder="Seleccionar observador (opcional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">-- Sin observador --</SelectItem>
-                      {observers.map(obs => (
-                        <SelectItem key={obs.id} value={obs.name}>{obs.name} ({obs.role})</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-300">Observador / Scout Asignado</Label>
+                <Select value={observador || 'none'} onValueChange={(val) => setObservador(val === 'none' ? '' : val)}>
+                  <SelectTrigger className="bg-slate-800/60 border-slate-700 text-white">
+                    <SelectValue placeholder="Seleccionar observador (opcional)" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-700 text-white">
+                    <SelectItem value="none" className="text-slate-400 italic">-- Sin observador --</SelectItem>
+                    {observers.map((obs) => {
+                      const nombreObs = obs.nombre || (obs as any).name || '';
+                      if (!nombreObs) return null;
+                      return (
+                        <SelectItem key={obs.id || nombreObs} value={nombreObs}>
+                          {nombreObs}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
 
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-800">
                 <Button 

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { Player, PlayerAttribute, PlayerStatus, POSITION_ATTRIBUTES, POSITION_STRUCTURED_ATTRIBUTES, COMMON_ATTRIBUTES } from '@/types';
+import { Player, PlayerAttribute, PlayerStatus, POSITION_ATTRIBUTES, POSITION_STRUCTURED_ATTRIBUTES, COMMON_ATTRIBUTES, Observer } from '@/types';
+import { getObservers } from '@/lib/observers';
 import { 
   Card, 
   CardContent, 
@@ -77,6 +78,11 @@ export default function PlayerDetail() {
   // Edit Personal Data Modal State
   const [showEditPersonalModal, setShowEditPersonalModal] = useState(false);
   const [editPersonalData, setEditPersonalData] = useState<Partial<Player>>({});
+  const [observersList, setObserversList] = useState<Observer[]>([]);
+
+  useEffect(() => {
+    getObservers().then(list => setObserversList(list || [])).catch(() => {});
+  }, []);
 
   const handleOpenEditPersonalModal = () => {
     if (player) {
@@ -1504,15 +1510,32 @@ export default function PlayerDetail() {
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">URL Foto de Perfil</label>
-                <input 
-                  type="url" 
-                  value={editPersonalData.foto_url || ''}
-                  onChange={(e) => setEditPersonalData({ ...editPersonalData, foto_url: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
-                  placeholder="https://..."
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Observador / Scout Asignado</label>
+                  <select 
+                    value={editPersonalData.observador || ''}
+                    onChange={(e) => setEditPersonalData({ ...editPersonalData, observador: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
+                  >
+                    <option value="">-- Sin observador asignado --</option>
+                    {observersList.map((obs) => (
+                      <option key={obs.id} value={obs.nombre}>
+                        {obs.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">URL Foto de Perfil</label>
+                  <input 
+                    type="url" 
+                    value={editPersonalData.foto_url || ''}
+                    onChange={(e) => setEditPersonalData({ ...editPersonalData, foto_url: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
+                    placeholder="https://..."
+                  />
+                </div>
               </div>
 
               <div className="pt-4 border-t border-slate-800 flex justify-end gap-3">
