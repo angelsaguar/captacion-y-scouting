@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,8 +42,8 @@ import { cleanPhotoUrl, normalizePlayerNameKey, isPlayerMatch } from '@/lib/util
 
 // Constants for teams as specified by the user
 const TEAMS_F11 = [
-  'SENIOR MASCULINO',
   'SENIOR FEMENINO',
+  'SENIOR MASCULINO',
   'JUVENIL A',
   'JUVENIL B',
   'CADETE A',
@@ -311,7 +312,9 @@ export default function Campograma() {
   const [selectedSeason, setSelectedSeason] = useState<string>(() => {
     return localStorage.getItem('ud_lapoveda_tactics_selected_season_v1') || '25/26';
   });
-  const [selectedTeam, setSelectedTeam] = useState<string>('SENIOR MASCULINO');
+  const [selectedTeam, setSelectedTeam] = useState<string>(() => {
+    return localStorage.getItem('ud_lapoveda_tactics_selected_team_v1') || 'SENIOR FEMENINO';
+  });
   const [selectedFormation, setSelectedFormation] = useState<string>('1-4-3-3');
 
   // Roster lists for each team (mapped by teamName)
@@ -466,7 +469,7 @@ export default function Campograma() {
       } catch {}
     }
 
-    // Filter out deleted & demo
+    // Filter out deleted & demo players
     currentList = currentList.filter(p => {
       const cleanN = (p.nombre || '').trim();
       const cleanA = (p.apellidos || '').trim();
@@ -477,7 +480,7 @@ export default function Campograma() {
       return !isDeletedPlayer(p.id, cleanN, cleanA);
     });
 
-    // Merge missing official players for Senior Femenino
+    // Merge official players for Senior Femenino
     officialTeamPlayers.forEach(oj => {
       if (!isDeletedPlayer(oj.id, oj.nombre, oj.apellidos)) {
         const exists = currentList.some(p => isPlayerMatch(p, oj));
@@ -494,11 +497,60 @@ export default function Campograma() {
       }
     });
 
-    // Reconcile with local scouting players for latest custom edits (e.g. photo/dorsal changes)
+    // Include signed players assigned to this team
+    try {
+      const signedSaved = localStorage.getItem('signed_players');
+      if (signedSaved) {
+        const signedList: any[] = JSON.parse(signedSaved);
+        if (Array.isArray(signedList)) {
+          signedList.forEach(sp => {
+            const cleanSPName = (sp.nombre || '').trim();
+            const cleanSPLast = (sp.apellidos || '').trim();
+            if (!cleanSPName) return;
+            if (cleanSPName.toUpperCase() === 'JUGADORA' && (!cleanSPLast || cleanSPLast.toUpperCase() === 'JUGADORA')) return;
+            if (cleanSPName === 'Carlos' || cleanSPName === 'Marcos' || cleanSPName === 'Sofía') return;
+
+            const matchTeam = sp.equipo_asignado ? (sp.equipo_asignado.toUpperCase() === teamName.toUpperCase()) : (teamName === 'SENIOR FEMENINO');
+            if (matchTeam && !isDeletedPlayer(sp.id, cleanSPName, cleanSPLast)) {
+              const exists = currentList.some(p => isPlayerMatch(p, sp));
+              if (!exists) {
+                currentList.push({
+                  id: sp.id,
+                  nombre: cleanSPName,
+                  apellidos: cleanSPLast,
+                  dorsal: sp.dorsal || '',
+                  posicion: sp.posicion || 'JUGADORA',
+                  foto_url: cleanPhotoUrl(sp.foto_url)
+                });
+              }
+            }
+          });
+        }
+      }
+    } catch {}
+
+    // Include local scouting players assigned to this team
     const localScoutingSaved = localStorage.getItem('scouting_local_players');
     if (localScoutingSaved) {
       try {
         const scList: any[] = JSON.parse(localScoutingSaved);
+        scList.forEach(sp => {
+          const matchTeam = sp.equipo_asignado ? (sp.equipo_asignado.toUpperCase() === teamName.toUpperCase()) : (teamName === 'SENIOR FEMENINO' && (sp.es_plantilla || sp.estado === 'Fichado'));
+          if (matchTeam && !isDeletedPlayer(sp.id, sp.nombre || '', sp.apellidos || '')) {
+            const exists = currentList.some(p => isPlayerMatch(p, sp));
+            if (!exists && (sp.estado === 'Fichado' || sp.es_plantilla)) {
+              currentList.push({
+                id: sp.id,
+                nombre: sp.nombre,
+                apellidos: sp.apellidos,
+                dorsal: sp.dorsal || '',
+                posicion: sp.posicion || 'JUGADORA',
+                foto_url: cleanPhotoUrl(sp.foto_url)
+              });
+            }
+          }
+        });
+
         currentList = currentList.map(p => {
           const scPlayer = scList.find((sp: any) => isPlayerMatch(sp, p));
           if (scPlayer) {
@@ -540,14 +592,60 @@ export default function Campograma() {
       }
     });
 
-    // If empty for other teams, fallback to sample players
-    if (cleanDeduplicated.length === 0 && teamName !== 'SENIOR FEMENINO') {
-      const isTeamF11 = TEAMS_F11.includes(teamName);
-      const defaults = isTeamF11 ? [...SAMPLE_PLAYERS.F11] : [...SAMPLE_PLAYERS.F7];
-      return defaults;
-    }
-
     return cleanDeduplicated;
+  };
+
+  // Sync Supabase registered players for this team
+  const syncSupabasePlayersToRoster = async (teamName: string) => {
+    try {
+      let query = supabase.from('players').select('*');
+      if (teamName === 'SENIOR FEMENINO') {
+        query = query.or(`equipo_asignado.eq.${teamName},es_plantilla.eq.true`);
+      } else {
+        query = query.eq('equipo_asignado', teamName);
+      }
+      const { data, error } = await query;
+      if (!error && data && data.length > 0) {
+        const deletedKey = `team_deleted_players_${teamName}`;
+        const deletedSaved = localStorage.getItem(deletedKey);
+        const deletedPlayers: { id?: string; fullName: string }[] = deletedSaved ? JSON.parse(deletedSaved) : [];
+        const isDeleted = (id: string, n: string, a: string) => {
+          const normKey = normalizePlayerNameKey(n, a);
+          return deletedPlayers.some(dp => (dp.id && dp.id === id) || dp.fullName === normKey);
+        };
+
+        const currentLocal = loadTeamRosterFromPlantilla(teamName);
+        const updatedLocal = [...currentLocal];
+        let hasChanges = false;
+
+        data.forEach(dbP => {
+          if (isDeleted(dbP.id, dbP.nombre, dbP.apellidos)) return;
+          const exists = updatedLocal.some(p => isPlayerMatch(p, dbP));
+          if (!exists) {
+            const cleanN = (dbP.nombre || '').trim();
+            const cleanA = (dbP.apellidos || '').trim();
+            if (!cleanN) return;
+            const fullName = cleanA ? `${cleanN} ${cleanA}` : cleanN;
+            updatedLocal.push({
+              id: dbP.id,
+              nombre: fullName,
+              apellidos: cleanA,
+              dorsal: dbP.dorsal || '',
+              posicionOriginal: dbP.posicion || 'MEDIOCENTRO',
+              foto_url: cleanPhotoUrl(dbP.foto_url)
+            });
+            hasChanges = true;
+          }
+        });
+
+        if (hasChanges) {
+          setRosters(prev => ({ ...prev, [teamName]: updatedLocal }));
+          localStorage.setItem(`team_roster_${teamName}`, JSON.stringify(updatedLocal));
+        }
+      }
+    } catch (e) {
+      console.warn("Error syncing Supabase players to Campograma:", e);
+    }
   };
 
   // Load from local storage and sync with Plantilla on mount or when season/team changes
@@ -579,6 +677,9 @@ export default function Campograma() {
     initialRosters[selectedTeam] = currentLiveRoster;
     setRosters(initialRosters);
     localStorage.setItem(`ud_lapoveda_tactics_rosters_v1_${selectedSeason}`, JSON.stringify(initialRosters));
+
+    // Fetch players from Supabase asynchronously
+    syncSupabasePlayersToRoster(selectedTeam);
 
     if (savedLineups) {
       try { 
@@ -666,20 +767,14 @@ export default function Campograma() {
       }
 
       if (data) {
-        // Update local state with cloud data
-        setRosters(prev => {
-          const updated = { ...prev, [selectedTeam]: data.roster || [] };
-          localStorage.setItem(`ud_lapoveda_tactics_rosters_v1_${selectedSeason}`, JSON.stringify(updated));
-          return updated;
-        });
-
+        // Lineup and formation from cloud
         setLineups(prev => {
           const updated = { ...prev, [selectedTeam]: data.lineup || {} };
           localStorage.setItem(`ud_lapoveda_tactics_lineups_v1_${selectedSeason}`, JSON.stringify(updated));
           return updated;
         });
 
-        setSelectedFormation(data.formation || '1-4-3-3');
+        setSelectedFormation(data.formation || (TEAMS_F11.includes(selectedTeam) ? '1-4-3-3' : '1-2-3-1'));
         
         // Save formation in localstorage preferred formations
         const savedFormations = localStorage.getItem(`ud_lapoveda_tactics_formations_v1_${selectedSeason}`);
@@ -687,13 +782,13 @@ export default function Campograma() {
         if (savedFormations) {
           try { parsed = JSON.parse(savedFormations); } catch {}
         }
-        parsed[selectedTeam] = data.formation || '1-4-3-3';
+        parsed[selectedTeam] = data.formation || (TEAMS_F11.includes(selectedTeam) ? '1-4-3-3' : '1-2-3-1');
         localStorage.setItem(`ud_lapoveda_tactics_formations_v1_${selectedSeason}`, JSON.stringify(parsed));
 
         setIsSupabaseSynced(true);
         setSupabaseErrorMsg(null);
         if (!silent) {
-          toast.success('¡Alineación y plantilla cargadas con éxito desde Supabase!');
+          toast.success('¡Alineación y sistema táctico cargados con éxito desde Supabase!');
         }
       } else {
         if (!silent) {
@@ -822,6 +917,7 @@ export default function Campograma() {
   // When team changes, adapt active formation to first available
   const handleTeamChange = (teamName: string) => {
     setSelectedTeam(teamName);
+    localStorage.setItem('ud_lapoveda_tactics_selected_team_v1', teamName);
     const isF11 = TEAMS_F11.includes(teamName);
     const availableFormations = Object.keys(isF11 ? SYSTEMS_F11 : SYSTEMS_F7);
     
@@ -1874,21 +1970,33 @@ export default function Campograma() {
                 return (
                   <div className="flex-1 flex flex-col space-y-3.5">
                     {currentRoster.length === 0 ? (
-                      <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-4 border border-dashed border-slate-800 rounded-xl bg-slate-900/10 h-64">
+                      <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-4 border border-dashed border-slate-800 rounded-xl bg-slate-900/10 min-h-[260px]">
                         <HelpCircle className="w-8 h-8 text-slate-500" />
                         <div>
-                          <p className="text-sm font-bold text-slate-300">No hay jugadores cargados en {selectedTeam}</p>
-                          <p className="text-[11px] text-slate-500 mt-1 max-w-[240px] mx-auto">
-                            Importa una plantilla en bloque o introduce jugadores manuales para empezar.
+                          <p className="text-sm font-bold text-slate-300">No hay jugadores dados de alta en la plantilla de {selectedTeam}</p>
+                          <p className="text-[11px] text-slate-500 mt-1 max-w-[280px] mx-auto">
+                            Puedes gestionar y dar de alta jugadores desde el apartado de Plantilla, importarlos o añadirlos manualmente.
                           </p>
                         </div>
-                        <Button
-                          size="sm"
-                          onClick={handleLoadSampleRoster}
-                          className="bg-blue-600/15 border border-blue-500/25 text-blue-400 text-xs font-bold hover:bg-blue-600/20 cursor-pointer rounded-lg"
-                        >
-                          Cargar plantilla de prueba
-                        </Button>
+                        <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                          <Link to="/gestion/plantilla">
+                            <Button
+                              size="sm"
+                              className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold cursor-pointer rounded-lg flex items-center gap-1.5 shadow-lg shadow-blue-900/20"
+                            >
+                              <Users className="w-3.5 h-3.5" />
+                              Ir a Plantilla
+                            </Button>
+                          </Link>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setActiveRosterTab('manual')}
+                            className="bg-slate-900/80 border-slate-700 text-slate-300 hover:text-white text-xs font-semibold cursor-pointer rounded-lg"
+                          >
+                            + Añadir manual
+                          </Button>
+                        </div>
                       </div>
                     ) : (
                       <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
