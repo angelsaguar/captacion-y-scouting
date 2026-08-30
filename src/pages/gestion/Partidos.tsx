@@ -38,7 +38,8 @@ import {
   Presentation,
   Target,
   ShieldCheck,
-  Zap
+  Zap,
+  Activity
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { toPng } from 'html-to-image';
@@ -46,6 +47,7 @@ import jsPDF from 'jspdf';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { generateLocalTacticalAdvice, getTacticalAdvice } from '@/lib/tacticalAdvisor';
+import MatchStatsModal from '@/components/partidos/MatchStatsModal';
 
 interface MatchPlayerStat {
   playerId: string;
@@ -61,6 +63,12 @@ interface MatchPlayerStat {
   goles_metidos: number;
   goles_encajados: number;
   asistencias?: number;
+  perdidas_balon?: number;
+  recuperaciones_balon?: number;
+  corners_favor?: number;
+  corners_contra?: number;
+  faltas_favor?: number;
+  faltas_contra?: number;
 }
 
 interface Substitution {
@@ -158,6 +166,7 @@ export default function Partidos() {
 
   // Convocatoria & Corporate WhatsApp Modal state
   const [showConvocatoriaModal, setShowConvocatoriaModal] = useState<Match | null>(null);
+  const [showStatsTrackerModal, setShowStatsTrackerModal] = useState<Match | null>(null);
   const [activeConvocatoriaTab, setActiveConvocatoriaTab] = useState<'fifa' | 'editor' | 'whatsapp'>('fifa');
   const [selectedConvocadas, setSelectedConvocadas] = useState<string[]>([]);
   const [citacionHora, setCitacionHora] = useState<string>('');
@@ -997,6 +1006,13 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
     setEditingMatch(null);
   };
 
+  const handleSaveStatsTracker = async (updatedMatch: Match) => {
+    const updated = matches.map(m => m.id === updatedMatch.id ? updatedMatch : m);
+    await saveMatches(updated);
+    setShowStatsTrackerModal(updatedMatch);
+    window.dispatchEvent(new CustomEvent('lapoveda_matches_updated', { detail: { match: updatedMatch } }));
+  };
+
   return (
     <div className="space-y-6">
       {/* Selector & Add */}
@@ -1301,6 +1317,19 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                     >
                       <Presentation className="w-3.5 h-3.5 text-amber-400" />
                       <span>Plan de Partido (IA Táctica)</span>
+                    </Button>
+
+                    <Button
+                      onClick={() => setShowStatsTrackerModal(match)}
+                      className="text-[10px] font-black text-cyan-200 bg-gradient-to-r from-cyan-950/90 to-blue-950/90 hover:from-cyan-900/90 hover:to-blue-900/90 border border-cyan-500/50 flex items-center gap-1.5 px-3 h-8 rounded-xl uppercase transition-all cursor-pointer shadow-md hover:shadow-cyan-500/20"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-cyan-400 fill-current" />
+                      <span>Recoger Estadísticas</span>
+                      {((match.estadisticas?.totales_equipo?.recuperaciones_balon || 0) > 0 || (match.estadisticas?.jugadoras_stats?.some(s => (s.recuperaciones_balon || 0) > 0 || (s.goles_metidos || 0) > 0 || (s.perdidas_balon || 0) > 0))) && (
+                        <span className="bg-cyan-500 text-black text-[9px] font-extrabold px-1.5 py-0.2 rounded-full ml-1">
+                          ✓
+                        </span>
+                      )}
                     </Button>
 
                     {match.estado === 'Finalizado' && match.acta && (
@@ -2957,6 +2986,18 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modern Match Live Statistics Modal */}
+      {showStatsTrackerModal && (
+        <MatchStatsModal
+          isOpen={!!showStatsTrackerModal}
+          match={showStatsTrackerModal}
+          teamName={selectedTeam}
+          allPlayers={players}
+          onClose={() => setShowStatsTrackerModal(null)}
+          onSaveMatch={handleSaveStatsTracker}
+        />
       )}
     </div>
   );

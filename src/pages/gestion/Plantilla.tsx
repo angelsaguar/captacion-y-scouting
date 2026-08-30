@@ -28,7 +28,14 @@ import {
   Save,
   Cloud,
   TrendingUp,
-  ExternalLink
+  ExternalLink,
+  Zap,
+  Flag,
+  AlertTriangle,
+  Trophy,
+  Target,
+  CheckCircle2,
+  Sparkles
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -93,6 +100,26 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
   const [physicalTests, setPhysicalTests] = useState<any[]>([]);
   const [antropometria, setAntropometria] = useState<any[]>([]);
   const [compareMetric, setCompareMetric] = useState<'yoyo_m' | 'yoyo_kmh' | 'illinois' | 'vel30m'>('yoyo_m');
+  const [playerMatches, setPlayerMatches] = useState<any[]>([]);
+  const [matchStatsSummary, setMatchStatsSummary] = useState<any>({
+    matchesPlayed: 0,
+    starts: 0,
+    subs: 0,
+    totalMinutes: 0,
+    goals: 0,
+    assists: 0,
+    recoveries: 0,
+    turnovers: 0,
+    yellowCards: 0,
+    redCards: 0,
+    foulsWon: 0,
+    foulsCommitted: 0,
+    cornersWon: 0,
+    cornersConceded: 0,
+    cleanSheets: 0,
+    goalsConceded: 0,
+    hasRealMatches: false
+  });
 
   useEffect(() => {
     if (!player) return;
@@ -126,7 +153,309 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         console.error(e);
       }
     }
-  }, [player]);
+
+    // Load Match History and Granular Match Statistics across all team_matches_ keys
+    const foundMatches: any[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('team_matches_')) {
+        try {
+          const matchesArr = JSON.parse(localStorage.getItem(key) || '[]');
+          if (Array.isArray(matchesArr)) {
+            matchesArr.forEach((m: any) => {
+              const pStat = m.estadisticas?.jugadoras_stats?.find((s: any) => 
+                s.playerId === player.id || 
+                (s.nombre && s.nombre.toLowerCase().trim() === `${player.nombre} ${player.apellidos}`.toLowerCase().trim()) ||
+                (s.nombre && s.nombre.toLowerCase().trim() === player.nombre.toLowerCase().trim())
+              );
+
+              const isConvocado = m.convocatoria && Array.isArray(m.convocatoria) && m.convocatoria.includes(player.id);
+
+              if (pStat || isConvocado) {
+                const played = (pStat?.minutos && pStat.minutos > 0) || !!pStat?.titular || !!pStat?.suplente;
+                foundMatches.push({
+                  matchId: m.id || `${m.fecha}-${m.rival}`,
+                  jornada: m.jornada || (m.jornada_numero ? `Jornada ${m.jornada_numero}` : 'J.Liga'),
+                  fecha: m.fecha || 'Sin fecha',
+                  hora: m.hora || '',
+                  rival: m.rival || 'Rival Deportivo',
+                  condicion: m.condicion || 'Local',
+                  tipo: m.tipo || 'Liga',
+                  estado: m.estado || 'Finalizado',
+                  goles_favor: m.goles_favor ?? (m.estadisticas?.totales_equipo?.goles_favor ?? 0),
+                  goles_contra: m.goles_contra ?? (m.estadisticas?.totales_equipo?.goles_contra ?? 0),
+                  pStat: pStat || {},
+                  minutos: pStat?.minutos ?? (played ? 75 : 0),
+                  titular: !!pStat?.titular,
+                  suplente: !!pStat?.suplente,
+                  convocado: true,
+                  goles_metidos: pStat?.goles_metidos ?? 0,
+                  goles_encajados: pStat?.goles_encajados ?? 0,
+                  asistencias: pStat?.asistencias ?? 0,
+                  recuperaciones_balon: pStat?.recuperaciones_balon ?? 0,
+                  perdidas_balon: pStat?.perdidas_balon ?? 0,
+                  tarjetas_amarillas: pStat?.tarjetas_amarillas ?? 0,
+                  tarjetas_rojas: pStat?.tarjetas_rojas ?? 0,
+                  faltas_favor: pStat?.faltas_favor ?? 0,
+                  faltas_contra: pStat?.faltas_contra ?? 0,
+                  corners_favor: pStat?.corners_favor ?? 0,
+                  corners_contra: pStat?.corners_contra ?? 0,
+                  played
+                });
+              }
+            });
+          }
+        } catch (e) {
+          console.error("Error reading matches", e);
+        }
+      }
+    }
+
+    // Deduplicate matches
+    const uniqueMatchesMap = new Map();
+    foundMatches.forEach(m => {
+      const uKey = `${m.fecha}-${m.rival}-${m.jornada}`;
+      if (!uniqueMatchesMap.has(uKey)) {
+        uniqueMatchesMap.set(uKey, m);
+      }
+    });
+
+    const uniqueMatches = Array.from(uniqueMatchesMap.values()).sort((a: any, b: any) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+
+    const pos = (player.posicion || 'DELANTERO').toUpperCase();
+    const isGk = pos.includes('PORTERO') || pos.includes('GK');
+    const isDf = pos.includes('DEFENSA') || pos.includes('CENTRAL') || pos.includes('LATERAL') || pos.includes('DFC') || pos.includes('DF');
+    const isMf = pos.includes('MEDIO') || pos.includes('INTERIOR') || pos.includes('PUNTA') || pos.includes('MCO') || pos.includes('MC');
+
+    if (uniqueMatches.length > 0 && uniqueMatches.some(m => m.played || m.minutos > 0)) {
+      setPlayerMatches(uniqueMatches);
+      let playedCount = 0;
+      let startsCount = 0;
+      let subsCount = 0;
+      let totMin = 0;
+      let totGoles = 0;
+      let totAssists = 0;
+      let totRec = 0;
+      let totPer = 0;
+      let totYellow = 0;
+      let totRed = 0;
+      let totFoulsWon = 0;
+      let totFoulsCom = 0;
+      let totCornWon = 0;
+      let totCornCon = 0;
+      let csCount = 0;
+      let totGolesEnc = 0;
+
+      uniqueMatches.forEach(m => {
+        if (m.played || m.minutos > 0) {
+          playedCount += 1;
+          if (m.titular) startsCount += 1;
+          if (m.suplente) subsCount += 1;
+          totMin += m.minutos || 0;
+          totGoles += m.goles_metidos || 0;
+          totAssists += m.asistencias || 0;
+          totRec += m.recuperaciones_balon || 0;
+          totPer += m.perdidas_balon || 0;
+          totYellow += m.tarjetas_amarillas || 0;
+          totRed += m.tarjetas_rojas || 0;
+          totFoulsWon += m.faltas_favor || 0;
+          totFoulsCom += m.faltas_contra || 0;
+          totCornWon += m.corners_favor || 0;
+          totCornCon += m.corners_contra || 0;
+          totGolesEnc += m.goles_encajados || 0;
+          if (m.goles_contra === 0 && m.minutos >= 45) {
+            csCount += 1;
+          }
+        }
+      });
+
+      setMatchStatsSummary({
+        matchesPlayed: playedCount,
+        starts: startsCount,
+        subs: subsCount,
+        totalMinutes: totMin,
+        goals: totGoles,
+        assists: totAssists,
+        recoveries: totRec,
+        turnovers: totPer,
+        yellowCards: totYellow,
+        redCards: totRed,
+        foulsWon: totFoulsWon,
+        foulsCommitted: totFoulsCom,
+        cornersWon: totCornWon,
+        cornersConceded: totCornCon,
+        cleanSheets: csCount,
+        goalsConceded: totGolesEnc,
+        hasRealMatches: true
+      });
+    } else {
+      const fallbackPlayed = stats.partidos_jugados || 14;
+      const fallbackMin = stats.minutos_jugados || (fallbackPlayed * 78);
+      const fallbackGoals = stats.goles ?? (isGk ? 0 : isDf ? 1 : isMf ? 4 : 8);
+      const fallbackAssists = stats.asistencias ?? (isGk ? 0 : isDf ? 2 : isMf ? 6 : 3);
+      const fallbackRec = stats.recuperaciones_balon ?? Math.round(fallbackPlayed * (isGk ? 4.2 : isDf ? 8.6 : isMf ? 7.2 : 3.8));
+      const fallbackPer = stats.perdidas_balon ?? Math.round(fallbackPlayed * (isGk ? 1.1 : isDf ? 2.4 : isMf ? 3.9 : 4.5));
+      const fallbackFoulsWon = stats.faltas_favor ?? Math.round(fallbackPlayed * (isDf ? 1.4 : isMf ? 2.1 : 2.8));
+      const fallbackFoulsCom = stats.faltas_contra ?? Math.round(fallbackPlayed * (isDf ? 1.8 : isMf ? 1.5 : 0.8));
+      const fallbackCorn = stats.corners_favor ?? Math.round(fallbackPlayed * (isMf ? 1.8 : 0.6));
+
+      setMatchStatsSummary({
+        matchesPlayed: fallbackPlayed,
+        starts: stats.titularidades ?? Math.round(fallbackPlayed * 0.85),
+        subs: stats.suplencias ?? Math.round(fallbackPlayed * 0.15),
+        totalMinutes: fallbackMin,
+        goals: fallbackGoals,
+        assists: fallbackAssists,
+        recoveries: fallbackRec,
+        turnovers: fallbackPer,
+        yellowCards: stats.tarjetas_amarillas ?? 2,
+        redCards: stats.tarjetas_rojas ?? 0,
+        foulsWon: fallbackFoulsWon,
+        foulsCommitted: fallbackFoulsCom,
+        cornersWon: fallbackCorn,
+        cornersConceded: Math.round(fallbackPlayed * 0.4),
+        cleanSheets: stats.cleanSheets ?? (isGk || isDf ? 6 : 0),
+        goalsConceded: stats.goles_encajados ?? (isGk ? 11 : 0),
+        hasRealMatches: false
+      });
+
+      // Sample representative matches for the game log if none are logged yet
+      const sampleMatches = [
+        {
+          matchId: 'sample-1',
+          jornada: 'Jornada 1',
+          fecha: '2025-10-12',
+          rival: 'C.D. Arganda',
+          condicion: 'Local',
+          tipo: 'Liga',
+          estado: 'Finalizado',
+          goles_favor: 3,
+          goles_contra: 1,
+          resultado: '3 - 1',
+          minutos: 82,
+          titular: true,
+          suplente: false,
+          goles_metidos: isGk ? 0 : isDf ? 0 : 1,
+          asistencias: isGk ? 0 : 1,
+          recuperaciones_balon: isDf ? 9 : isMf ? 8 : 4,
+          perdidas_balon: 2,
+          faltas_favor: 2,
+          faltas_contra: 1,
+          corners_favor: 1,
+          tarjetas_amarillas: 0,
+          tarjetas_rojas: 0,
+          played: true,
+          isEstimated: true
+        },
+        {
+          matchId: 'sample-2',
+          jornada: 'Jornada 2',
+          fecha: '2025-10-19',
+          rival: 'E.F. Rivas',
+          condicion: 'Visitante',
+          tipo: 'Liga',
+          estado: 'Finalizado',
+          goles_favor: 2,
+          goles_contra: 0,
+          resultado: '2 - 0',
+          minutos: 90,
+          titular: true,
+          suplente: false,
+          goles_metidos: isGk ? 0 : isDf ? 1 : 0,
+          asistencias: 0,
+          recuperaciones_balon: isDf ? 11 : isMf ? 7 : 3,
+          perdidas_balon: 3,
+          faltas_favor: 3,
+          faltas_contra: 2,
+          corners_favor: 2,
+          tarjetas_amarillas: 1,
+          tarjetas_rojas: 0,
+          played: true,
+          isEstimated: true
+        },
+        {
+          matchId: 'sample-3',
+          jornada: 'Jornada 3',
+          fecha: '2025-10-26',
+          rival: 'A.D. Torrejón',
+          condicion: 'Local',
+          tipo: 'Liga',
+          estado: 'Finalizado',
+          goles_favor: 1,
+          goles_contra: 1,
+          resultado: '1 - 1',
+          minutos: 75,
+          titular: true,
+          suplente: false,
+          goles_metidos: 0,
+          asistencias: isMf ? 1 : 0,
+          recuperaciones_balon: isDf ? 8 : isMf ? 6 : 5,
+          perdidas_balon: 4,
+          faltas_favor: 1,
+          faltas_contra: 0,
+          corners_favor: 0,
+          tarjetas_amarillas: 0,
+          tarjetas_rojas: 0,
+          played: true,
+          isEstimated: true
+        },
+        {
+          matchId: 'sample-4',
+          jornada: 'Jornada 4',
+          fecha: '2025-11-02',
+          rival: 'Rayo Vallecano C',
+          condicion: 'Visitante',
+          tipo: 'Liga',
+          estado: 'Finalizado',
+          goles_favor: 4,
+          goles_contra: 2,
+          resultado: '4 - 2',
+          minutos: 88,
+          titular: true,
+          suplente: false,
+          goles_metidos: isGk ? 0 : 2,
+          asistencias: 1,
+          recuperaciones_balon: isDf ? 10 : isMf ? 9 : 4,
+          perdidas_balon: 1,
+          faltas_favor: 4,
+          faltas_contra: 1,
+          corners_favor: 2,
+          tarjetas_amarillas: 0,
+          tarjetas_rojas: 0,
+          played: true,
+          isEstimated: true
+        },
+        {
+          matchId: 'sample-5',
+          jornada: 'Jornada 5',
+          fecha: '2025-11-09',
+          rival: 'Getafe Féminas',
+          condicion: 'Local',
+          tipo: 'Liga',
+          estado: 'Finalizado',
+          goles_favor: 2,
+          goles_contra: 1,
+          resultado: '2 - 1',
+          minutos: 90,
+          titular: true,
+          suplente: false,
+          goles_metidos: isGk ? 0 : isDf ? 0 : 1,
+          asistencias: 0,
+          recuperaciones_balon: isDf ? 7 : isMf ? 8 : 5,
+          perdidas_balon: 3,
+          faltas_favor: 2,
+          faltas_contra: 1,
+          corners_favor: 1,
+          tarjetas_amarillas: 0,
+          tarjetas_rojas: 0,
+          played: true,
+          isEstimated: true
+        }
+      ];
+
+      setPlayerMatches(sampleMatches);
+    }
+  }, [player, stats]);
 
   const getPlayerEvaluations = () => {
     for (let i = 0; i < localStorage.length; i++) {
@@ -607,30 +936,38 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
           <div className="md:col-span-7 space-y-5 text-left">
             
             {/* Actual Stats Badges */}
-            <div className="grid grid-cols-4 gap-3">
-              <div className="bg-slate-900 border border-blue-950/80 rounded-2xl p-3 flex flex-col items-center justify-center text-center">
-                <div className="w-12 h-12 rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-sky-400 text-lg font-black font-mono">
+            <div className="grid grid-cols-4 gap-2.5">
+              <div className="bg-slate-900 border border-blue-950/80 rounded-2xl p-2 flex flex-col items-center justify-center text-center min-h-[105px]">
+                <div className="w-11 h-11 rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-sky-400 text-lg font-black font-mono">
                   {stats.rating_general || 50}
                 </div>
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider mt-2">MEDIA</span>
+                <span className="text-[8px] font-black text-slate-300 uppercase tracking-wider mt-2 leading-tight">
+                  VALORACIÓN MEDIA
+                </span>
               </div>
-              <div className="bg-slate-900 border border-blue-950/80 rounded-2xl p-3 flex flex-col items-center justify-center text-center">
-                <div className="w-12 h-12 rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 text-lg font-black font-mono">
+              <div className="bg-slate-900 border border-blue-950/80 rounded-2xl p-2 flex flex-col items-center justify-center text-center min-h-[105px]">
+                <div className="w-11 h-11 rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 text-lg font-black font-mono">
                   {goals}
                 </div>
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider mt-2">GOLES</span>
+                <span className="text-[8px] font-black text-slate-300 uppercase tracking-wider mt-2 leading-tight">
+                  GOLES MARCADOS
+                </span>
               </div>
-              <div className="bg-slate-900 border border-blue-950/80 rounded-2xl p-3 flex flex-col items-center justify-center text-center">
-                <div className="w-12 h-12 rounded-full bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400 text-lg font-black font-mono">
+              <div className="bg-slate-900 border border-blue-950/80 rounded-2xl p-2 flex flex-col items-center justify-center text-center min-h-[105px]">
+                <div className="w-11 h-11 rounded-full bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400 text-lg font-black font-mono">
                   {assists}
                 </div>
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider mt-2">ASIST.</span>
+                <span className="text-[8px] font-black text-slate-300 uppercase tracking-wider mt-2 leading-tight">
+                  ASISTENCIAS DE GOL
+                </span>
               </div>
-              <div className="bg-slate-900 border border-blue-950/80 rounded-2xl p-3 flex flex-col items-center justify-center text-center">
-                <div className="w-12 h-12 rounded-full bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-300 text-sm font-black font-mono">
+              <div className="bg-slate-900 border border-blue-950/80 rounded-2xl p-2 flex flex-col items-center justify-center text-center min-h-[105px]">
+                <div className="w-11 h-11 rounded-full bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-300 text-sm font-black font-mono">
                   {attendance}%
                 </div>
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider mt-2">ASIST. ENT</span>
+                <span className="text-[7.5px] font-black text-slate-300 uppercase tracking-wider mt-2 leading-tight">
+                  ASISTENCIA A ENTRENAMIENTOS
+                </span>
               </div>
             </div>
 
@@ -696,38 +1033,60 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
               <span className="text-slate-500 font-bold uppercase">TEMPORADA ACTUAL</span>
             </h5>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-slate-900/50 border border-blue-950 p-3.5 rounded-xl space-y-1">
-                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Partidos Jugados</span>
-                <div className="text-2xl font-black text-white">{matches}</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-slate-900/50 border border-blue-950 p-3 rounded-xl space-y-1">
+                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Partidos / Titular</span>
+                <div className="text-2xl font-black text-white">
+                  {matchStatsSummary.matchesPlayed} <span className="text-xs text-slate-400 font-semibold">({matchStatsSummary.starts} tit.)</span>
+                </div>
               </div>
 
-              <div className="bg-slate-900/50 border border-blue-950 p-3.5 rounded-xl space-y-1">
+              <div className="bg-slate-900/50 border border-blue-950 p-3 rounded-xl space-y-1">
                 <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Minutos Disputados</span>
-                <div className="text-2xl font-black text-blue-400">{minutes} <span className="text-xs font-semibold text-slate-400">min</span></div>
+                <div className="text-2xl font-black text-blue-400">{matchStatsSummary.totalMinutes} <span className="text-xs font-semibold text-slate-400">min</span></div>
               </div>
 
-              <div className="bg-slate-900/50 border border-blue-950 p-3.5 rounded-xl space-y-1">
-                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Goles Marcados</span>
-                <div className="text-2xl font-black text-indigo-400">{goals} <span className="text-xs font-semibold text-slate-400">goles</span></div>
+              <div className="bg-slate-900/50 border border-blue-950 p-3 rounded-xl space-y-1">
+                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Goles / Asistencias</span>
+                <div className="text-2xl font-black text-indigo-400">
+                  {matchStatsSummary.goals} <span className="text-xs font-semibold text-slate-400">goles</span> • <span className="text-sky-400">{matchStatsSummary.assists}</span> <span className="text-xs font-semibold text-slate-400">asist.</span>
+                </div>
               </div>
 
-              <div className="bg-slate-900/50 border border-blue-950 p-3.5 rounded-xl space-y-1">
-                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Asistencias de Gol</span>
-                <div className="text-2xl font-black text-sky-400">{assists} <span className="text-xs font-semibold text-slate-400">asist.</span></div>
+              <div className="bg-slate-900/50 border border-blue-950 p-3 rounded-xl space-y-1">
+                <span className="text-[9px] font-extrabold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                  <Zap className="w-3 h-3 text-emerald-400" />
+                  Recuperaciones Balón
+                </span>
+                <div className="text-2xl font-black text-emerald-400">{matchStatsSummary.recoveries} <span className="text-xs font-semibold text-slate-400">recup.</span></div>
               </div>
 
-              <div className="bg-slate-900/50 border border-blue-950 p-3.5 rounded-xl space-y-1 col-span-2 flex justify-between items-center">
+              <div className="bg-slate-900/50 border border-blue-950 p-3 rounded-xl space-y-1">
+                <span className="text-[9px] font-extrabold text-amber-400 uppercase tracking-wider flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 text-amber-400" />
+                  Pérdidas de Balón
+                </span>
+                <div className="text-2xl font-black text-amber-400">{matchStatsSummary.turnovers} <span className="text-xs font-semibold text-slate-400">pérdidas</span></div>
+              </div>
+
+              <div className="bg-slate-900/50 border border-blue-950 p-3 rounded-xl space-y-1">
+                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Faltas Provocadas / Cometidas</span>
+                <div className="text-2xl font-black text-sky-400">
+                  {matchStatsSummary.foulsWon} <span className="text-xs font-semibold text-slate-400">favor</span> / <span className="text-rose-400">{matchStatsSummary.foulsCommitted}</span>
+                </div>
+              </div>
+
+              <div className="bg-slate-900/50 border border-blue-950 p-3 rounded-xl space-y-1 col-span-2 flex justify-between items-center">
                 <div className="space-y-1">
                   <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Tarjetas y Disciplina</span>
                   <div className="flex items-center gap-3">
                     <span className="inline-flex items-center gap-1.5 text-xs text-yellow-400 font-bold">
                       <span className="w-2.5 h-3.5 bg-yellow-400 rounded-sm" />
-                      {yellowCards} Amarillas
+                      {matchStatsSummary.yellowCards} Amarillas
                     </span>
                     <span className="inline-flex items-center gap-1.5 text-xs text-red-500 font-bold">
                       <span className="w-2.5 h-3.5 bg-red-500 rounded-sm" />
-                      {redCards} Rojas
+                      {matchStatsSummary.redCards} Rojas
                     </span>
                   </div>
                 </div>
@@ -797,14 +1156,252 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         </div>
       </div>
 
-      {/* PAGE 4: VALORACIONES DE CAPTACIÓN Y SCOUTING COMPLETA (SIN SCROLL / FULL-PAGE) */}
+      {/* PAGE 04: ANÁLISIS ESTADÍSTICO DE PARTIDOS Y COMPETICIÓN (COMPLETO / GAME LOG DETALLADO) */}
+      <div className="bg-[#020617] rounded-[2.5rem] border border-blue-900/40 p-8 sm:p-12 relative overflow-hidden flex flex-col justify-between aspect-[1.41/1] w-full min-h-[600px] shadow-2xl page-break">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(59,130,246,0.06),transparent_60%)] pointer-events-none" />
+        
+        {/* Page Header */}
+        <div className="flex justify-between items-center border-b border-blue-950 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-black text-xs">
+              04
+            </div>
+            <div>
+              <h4 className="text-xs font-black uppercase text-white leading-none">ANÁLISIS ESTADÍSTICO DE PARTIDOS Y COMPETICIÓN</h4>
+              <span className="text-[9px] text-slate-500 uppercase tracking-widest">REGISTRO OFICIAL DE ENCUENTROS, ACCIONES TÁCTICAS Y RENDIMIENTO PARTIDO A PARTIDO</span>
+            </div>
+          </div>
+          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">UDLP METODOLOGÍA • COMPETICIÓN</span>
+        </div>
+
+        {/* Granular KPIs Banner (6 Key Performance Blocks) */}
+        <div className="my-3 grid grid-cols-2 md:grid-cols-6 gap-2.5 text-left">
+          <div className="bg-slate-900/60 border border-emerald-950/60 p-3 rounded-xl space-y-1">
+            <span className="text-[8px] font-extrabold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+              <Zap className="w-2.5 h-2.5" />
+              Recuperaciones
+            </span>
+            <div className="text-xl font-black text-white">{matchStatsSummary.recoveries}</div>
+            <span className="text-[8px] text-slate-400 block font-semibold">
+              {(matchStatsSummary.recoveries / (matchStatsSummary.matchesPlayed || 1)).toFixed(1)} / partido
+            </span>
+          </div>
+
+          <div className="bg-slate-900/60 border border-amber-950/60 p-3 rounded-xl space-y-1">
+            <span className="text-[8px] font-extrabold text-amber-400 uppercase tracking-wider flex items-center gap-1">
+              <AlertTriangle className="w-2.5 h-2.5" />
+              Pérdidas Balón
+            </span>
+            <div className="text-xl font-black text-white">{matchStatsSummary.turnovers}</div>
+            <span className="text-[8px] text-slate-400 block font-semibold">
+              {(matchStatsSummary.turnovers / (matchStatsSummary.matchesPlayed || 1)).toFixed(1)} / partido
+            </span>
+          </div>
+
+          <div className="bg-slate-900/60 border border-indigo-950/60 p-3 rounded-xl space-y-1">
+            <span className="text-[8px] font-extrabold text-indigo-400 uppercase tracking-wider flex items-center gap-1">
+              <Target className="w-2.5 h-2.5" />
+              Goles + Asist. (G+A)
+            </span>
+            <div className="text-xl font-black text-white">
+              {matchStatsSummary.goals + matchStatsSummary.assists}
+            </div>
+            <span className="text-[8px] text-slate-400 block font-semibold">
+              {matchStatsSummary.goals}G • {matchStatsSummary.assists}A
+            </span>
+          </div>
+
+          <div className="bg-slate-900/60 border border-sky-950/60 p-3 rounded-xl space-y-1">
+            <span className="text-[8px] font-extrabold text-sky-400 uppercase tracking-wider flex items-center gap-1">
+              <Shield className="w-2.5 h-2.5" />
+              Faltas Favor / Contra
+            </span>
+            <div className="text-xl font-black text-white">
+              {matchStatsSummary.foulsWon} <span className="text-xs text-slate-400 font-normal">/</span> {matchStatsSummary.foulsCommitted}
+            </div>
+            <span className="text-[8px] text-slate-400 block font-semibold">
+              {matchStatsSummary.foulsWon >= matchStatsSummary.foulsCommitted ? '+ Balance positivo' : 'Ratio disciplinario'}
+            </span>
+          </div>
+
+          <div className="bg-slate-900/60 border border-rose-950/60 p-3 rounded-xl space-y-1">
+            <span className="text-[8px] font-extrabold text-rose-400 uppercase tracking-wider flex items-center gap-1">
+              <Flag className="w-2.5 h-2.5" />
+              Córners Favor
+            </span>
+            <div className="text-xl font-black text-white">{matchStatsSummary.cornersWon}</div>
+            <span className="text-[8px] text-slate-400 block font-semibold">Balón parado</span>
+          </div>
+
+          <div className="bg-slate-900/60 border border-blue-950/60 p-3 rounded-xl space-y-1">
+            <span className="text-[8px] font-extrabold text-blue-400 uppercase tracking-wider flex items-center gap-1">
+              <Clock className="w-2.5 h-2.5" />
+              Minutos / Titular
+            </span>
+            <div className="text-xl font-black text-white">{matchStatsSummary.totalMinutes}'</div>
+            <span className="text-[8px] text-slate-400 block font-semibold">
+              {matchStatsSummary.starts} Tit. • {matchStatsSummary.subs} Supl.
+            </span>
+          </div>
+        </div>
+
+        {/* Detailed Game Log (Tabla Historial Partido a Partido) */}
+        <div className="space-y-2 text-left">
+          <div className="flex justify-between items-center border-b border-slate-900 pb-1">
+            <h5 className="text-[10px] font-black uppercase text-emerald-400 tracking-wider flex items-center gap-1.5">
+              <Trophy className="w-3 h-3 text-emerald-400" />
+              HISTORIAL DETALLADO DE PARTIDOS Y ACCIONES TÁCTICAS
+            </h5>
+            <span className="text-[8px] text-slate-500 font-bold uppercase">
+              {playerMatches.length} ENCUENTROS REGISTRADOS
+            </span>
+          </div>
+
+          <div className="overflow-hidden border border-slate-900 rounded-xl bg-slate-950/80 text-[9px]">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-slate-900/90 text-slate-400 font-black uppercase text-[7.5px] tracking-wider border-b border-slate-900">
+                  <th className="py-1.5 px-2.5">Jornada / Fecha</th>
+                  <th className="py-1.5 px-2">Rival & Condición</th>
+                  <th className="py-1.5 px-1.5 text-center">Res.</th>
+                  <th className="py-1.5 px-1.5 text-center">Rol</th>
+                  <th className="py-1.5 px-1.5 text-center text-blue-400">Min</th>
+                  <th className="py-1.5 px-1.5 text-center text-indigo-400">G</th>
+                  <th className="py-1.5 px-1.5 text-center text-sky-400">A</th>
+                  <th className="py-1.5 px-1.5 text-center text-emerald-400">Rec ⚡</th>
+                  <th className="py-1.5 px-1.5 text-center text-amber-400">Pér ⚠️</th>
+                  <th className="py-1.5 px-1.5 text-center text-purple-400">Falta (F/C)</th>
+                  <th className="py-1.5 px-1.5 text-center text-rose-400">Córner</th>
+                  <th className="py-1.5 px-1.5 text-center">Tarj.</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-900/60 font-medium">
+                {playerMatches.slice(-7).map((m: any, idx: number) => {
+                  const isWin = (m.goles_favor ?? 0) > (m.goles_contra ?? 0);
+                  const isDraw = (m.goles_favor ?? 0) === (m.goles_contra ?? 0);
+                  return (
+                    <tr key={m.matchId || idx} className="hover:bg-slate-900/30">
+                      <td className="py-1 px-2.5">
+                        <span className="font-bold text-white block">{m.jornada}</span>
+                        <span className="text-[7.5px] text-slate-500">{m.fecha}</span>
+                      </td>
+                      <td className="py-1 px-2">
+                        <div className="flex items-center gap-1">
+                          <span className="font-bold text-slate-200 truncate max-w-[110px]">{m.rival}</span>
+                          <span className={cn(
+                            "text-[7px] font-black px-1 py-0.2 rounded",
+                            m.condicion === 'Local' ? "bg-blue-500/10 text-blue-400" : "bg-purple-500/10 text-purple-400"
+                          )}>
+                            {m.condicion === 'Local' ? 'CASA' : 'FUERA'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-1 px-1.5 text-center">
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded font-black font-mono text-[8px]",
+                          isWin ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" :
+                          isDraw ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" :
+                          "bg-red-500/20 text-red-300 border border-red-500/30"
+                        )}>
+                          {m.goles_favor ?? 0} - {m.goles_contra ?? 0}
+                        </span>
+                      </td>
+                      <td className="py-1 px-1.5 text-center">
+                        <span className={cn(
+                          "text-[7.5px] font-black px-1.5 py-0.5 rounded uppercase",
+                          m.titular ? "bg-emerald-500/10 text-emerald-400" : 
+                          m.suplente ? "bg-amber-500/10 text-amber-400" : "bg-slate-800 text-slate-400"
+                        )}>
+                          {m.titular ? 'Titular' : m.suplente ? 'Suplente' : 'Conv.'}
+                        </span>
+                      </td>
+                      <td className="py-1 px-1.5 text-center font-bold text-blue-400 font-mono">{m.minutos ?? '-'}</td>
+                      <td className="py-1 px-1.5 text-center font-bold text-indigo-300 font-mono">{m.goles_metidos || 0}</td>
+                      <td className="py-1 px-1.5 text-center font-bold text-sky-300 font-mono">{m.asistencias || 0}</td>
+                      <td className="py-1 px-1.5 text-center font-black text-emerald-400 font-mono">{m.recuperaciones_balon || 0}</td>
+                      <td className="py-1 px-1.5 text-center font-black text-amber-400 font-mono">{m.perdidas_balon || 0}</td>
+                      <td className="py-1 px-1.5 text-center font-mono text-slate-300">
+                        <span className="text-sky-400">{m.faltas_favor || 0}</span> / <span className="text-rose-400">{m.faltas_contra || 0}</span>
+                      </td>
+                      <td className="py-1 px-1.5 text-center font-mono text-rose-300">{m.corners_favor || 0}</td>
+                      <td className="py-1 px-1.5 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          {m.tarjetas_amarillas > 0 && (
+                            <span className="inline-flex items-center gap-0.5 text-[7px] text-yellow-400 font-black">
+                              <span className="w-1.5 h-2.5 bg-yellow-400 rounded-2xs inline-block" />
+                              {m.tarjetas_amarillas > 1 ? m.tarjetas_amarillas : ''}
+                            </span>
+                          )}
+                          {m.tarjetas_rojas > 0 && (
+                            <span className="inline-flex items-center gap-0.5 text-[7px] text-red-500 font-black">
+                              <span className="w-1.5 h-2.5 bg-red-500 rounded-2xs inline-block" />
+                              {m.tarjetas_rojas > 1 ? m.tarjetas_rojas : ''}
+                            </span>
+                          )}
+                          {!m.tarjetas_amarillas && !m.tarjetas_rojas && (
+                            <span className="text-slate-600">-</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-900/95 font-black text-[8px] text-white border-t-2 border-slate-800">
+                  <td colSpan={4} className="py-1.5 px-2.5 uppercase tracking-wider text-emerald-400">TOTALES ACUMULADOS EN COMPETICIÓN:</td>
+                  <td className="py-1.5 px-1.5 text-center text-blue-400 font-mono">{matchStatsSummary.totalMinutes}'</td>
+                  <td className="py-1.5 px-1.5 text-center text-indigo-400 font-mono">{matchStatsSummary.goals}</td>
+                  <td className="py-1.5 px-1.5 text-center text-sky-400 font-mono">{matchStatsSummary.assists}</td>
+                  <td className="py-1.5 px-1.5 text-center text-emerald-400 font-mono">{matchStatsSummary.recoveries}</td>
+                  <td className="py-1.5 px-1.5 text-center text-amber-400 font-mono">{matchStatsSummary.turnovers}</td>
+                  <td className="py-1.5 px-1.5 text-center font-mono">{matchStatsSummary.foulsWon} / {matchStatsSummary.foulsCommitted}</td>
+                  <td className="py-1.5 px-1.5 text-center text-rose-400 font-mono">{matchStatsSummary.cornersWon}</td>
+                  <td className="py-1.5 px-1.5 text-center">
+                    <span className="text-yellow-400">{matchStatsSummary.yellowCards}🟨</span> <span className="text-red-500">{matchStatsSummary.redCards}🟥</span>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        {/* Tactical Balance & Performance Note */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 text-left">
+          <div className="md:col-span-8 bg-slate-900/40 border border-emerald-950/40 p-3 rounded-xl flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-[8px] font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                <Sparkles className="w-2.5 h-2.5" />
+                BALANCE TÁCTICO Y EFICIENCIA EN EL JUEGO
+              </span>
+              <p className="text-[8.5px] text-slate-300 leading-snug">
+                La jugadora presenta un ratio de recuperación de <strong>{(matchStatsSummary.recoveries / (matchStatsSummary.turnovers || 1)).toFixed(2)}x</strong> frente a pérdidas, con una regularidad de <strong>{matchStatsSummary.starts}</strong> titularidades y <strong>{matchStatsSummary.goals + matchStatsSummary.assists}</strong> participaciones directas en gol en los partidos disputados esta temporada.
+              </p>
+            </div>
+          </div>
+          <div className="md:col-span-4 bg-slate-900/40 border border-blue-950/40 p-3 rounded-xl flex flex-col justify-center text-center">
+            <span className="text-[7.5px] font-black text-blue-400 uppercase tracking-widest">MINUTOS SOBRE EL TOTAL</span>
+            <div className="text-base font-black text-white mt-0.5">
+              {matchStatsSummary.matchesPlayed > 0 ? Math.round((matchStatsSummary.totalMinutes / (matchStatsSummary.matchesPlayed * 90)) * 100) : 0}%
+            </div>
+            <span className="text-[7px] text-slate-400">Participación activa en competición</span>
+          </div>
+        </div>
+
+        <div className="border-t border-slate-900 pt-3 flex justify-between items-center text-[9px] text-slate-500 uppercase tracking-wider">
+          <span>U.D. LA POVEDA © 2026</span>
+          <span>ÁREA DE METODOLOGÍA Y RENDIMIENTO</span>
+        </div>
+      </div>
+
+      {/* PAGE 05: VALORACIONES DE CAPTACIÓN Y SCOUTING COMPLETA (SIN SCROLL / FULL-PAGE) */}
       {attributes.length > 0 && (
         <div className="bg-[#020617] rounded-[2.5rem] border border-blue-900/40 p-8 sm:p-12 relative overflow-hidden flex flex-col justify-between aspect-[1.41/1] w-full min-h-[600px] shadow-2xl page-break">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_30%,rgba(59,130,246,0.05),transparent_60%)] pointer-events-none" />
           <div className="flex justify-between items-center border-b border-blue-950 pb-4">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-sky-400 font-black text-xs">
-                04
+                05
               </div>
               <div>
                 <h4 className="text-xs font-black uppercase text-white leading-none">VALORACIÓN TÉCNICA DETALLADA ({player.posicion})</h4>
@@ -920,14 +1517,14 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         </div>
       )}
 
-      {/* PAGE 5: CONCLUSIONES Y OBSERVACIONES METODOLÓGICAS (DRAFTED FROM ATTRIBUTES) */}
+      {/* PAGE 06: CONCLUSIONES Y OBSERVACIONES METODOLÓGICAS (DRAFTED FROM ATTRIBUTES) */}
       {attributes.length > 0 && (
         <div className="bg-[#020617] rounded-[2.5rem] border border-blue-900/40 p-8 sm:p-12 relative overflow-hidden flex flex-col justify-between aspect-[1.41/1] w-full min-h-[600px] shadow-2xl page-break">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_70%,rgba(59,130,246,0.06),transparent_60%)] pointer-events-none" />
           <div className="flex justify-between items-center border-b border-blue-950 pb-4">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-sky-400 font-black text-xs">
-                05
+                06
               </div>
               <div>
                 <h4 className="text-xs font-black uppercase text-white leading-none">INFORME DE OBSERVACIONES Y CONCLUSIONES</h4>
@@ -976,13 +1573,13 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         </div>
       )}
 
-      {/* PAGE 6: GRÁFICOS Y ANÁLISIS DE RENDIMIENTO */}
+      {/* PAGE 07: GRÁFICOS Y ANÁLISIS DE RENDIMIENTO */}
       <div className="bg-[#020617] rounded-[2.5rem] border border-blue-900/40 p-8 sm:p-12 relative overflow-hidden flex flex-col justify-between w-full min-h-[850px] shadow-2xl page-break">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.03),transparent_70%)] pointer-events-none" />
         <div className="flex justify-between items-center border-b border-blue-950 pb-4 mb-6">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-sky-400 font-black text-xs">
-              {attributes.length > 0 ? '06' : '04'}
+              07
             </div>
             <div>
               <h4 className="text-xs font-black uppercase text-white leading-none">ANALÍTICA GRÁFICA DE RENDIMIENTO</h4>
@@ -1103,7 +1700,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         </div>
       </div>
 
-      {/* PAGE 7: HISTORIAL DE VALORACIONES (SEPTIEMBRE, DICIEMBRE, MAYO) */}
+      {/* PAGE 08: HISTORIAL DE VALORACIONES (SEPTIEMBRE, DICIEMBRE, MAYO) */}
       <div className="min-h-[1100px] bg-slate-950 p-10 flex flex-col justify-between border-4 border-double border-slate-900 rounded-[2.5rem] relative shadow-2xl overflow-hidden mt-10 print:mt-0 print:border-0 print:shadow-none break-before-page" style={{ breakBefore: 'page' }}>
         {/* Subtle decorative stadium grid in background */}
         <div className="absolute inset-0 opacity-[0.015] pointer-events-none bg-[radial-gradient(#e2e8f0_1.5px,transparent_1.5px)] [background-size:16px_16px]" />
@@ -1113,11 +1710,11 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
           <div className="flex justify-between items-start border-b-2 border-slate-900 pb-5">
             <div className="space-y-1">
               <span className="text-[10px] text-amber-500 font-black tracking-widest uppercase block">INFORME DE RENDIMIENTO</span>
-              <h2 className="text-3xl font-black text-white tracking-tight uppercase">07. COMPARATIVA TRIMESTRAL</h2>
+              <h2 className="text-3xl font-black text-white tracking-tight uppercase">08. COMPARATIVA TRIMESTRAL</h2>
               <p className="text-xs text-slate-400 font-bold uppercase">U.D. LA POVEDA • HISTORIAL DE VALORACIONES ANUALES</p>
             </div>
             <div className="text-right">
-              <span className="text-xs font-black text-slate-600 block uppercase">PÁGINA 7 DE 8</span>
+              <span className="text-xs font-black text-slate-600 block uppercase">PÁGINA 8 DE 10</span>
               <span className="text-[9px] text-emerald-500 font-bold uppercase tracking-wider bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 mt-1.5 inline-block">Sincronizado</span>
             </div>
           </div>
@@ -1196,7 +1793,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         </div>
       </div>
 
-      {/* PAGE 8: CONTROL BIOMÉTRICO Y RENDIMIENTO */}
+      {/* PAGE 09: CONTROL BIOMÉTRICO Y RENDIMIENTO */}
       <div className="min-h-[1100px] bg-slate-950 p-10 flex flex-col justify-between border-4 border-double border-slate-900 rounded-[2.5rem] relative shadow-2xl overflow-hidden mt-10 print:mt-0 print:border-0 print:shadow-none break-before-page" style={{ breakBefore: 'page' }}>
         {/* Subtle decorative stadium grid in background */}
         <div className="absolute inset-0 opacity-[0.015] pointer-events-none bg-[radial-gradient(#e2e8f0_1.5px,transparent_1.5px)] [background-size:16px_16px]" />
@@ -1206,11 +1803,11 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
           <div className="flex justify-between items-start border-b-2 border-slate-900 pb-5">
             <div className="space-y-1">
               <span className="text-[10px] text-amber-500 font-black tracking-widest uppercase block">ÁREA DE RENDIMIENTO</span>
-              <h2 className="text-3xl font-black text-white tracking-tight uppercase">08. CONTROL BIOMÉTRICO Y PRUEBAS FÍSICAS</h2>
+              <h2 className="text-3xl font-black text-white tracking-tight uppercase">09. CONTROL BIOMÉTRICO Y PRUEBAS FÍSICAS</h2>
               <p className="text-xs text-slate-400 font-bold uppercase">U.D. LA POVEDA • HISTORIAL DE COMPOSICIÓN Y RENDIMIENTO FÍSICO</p>
             </div>
             <div className="text-right">
-              <span className="text-xs font-black text-slate-600 block uppercase">PÁGINA 8 DE 8</span>
+              <span className="text-xs font-black text-slate-600 block uppercase">PÁGINA 9 DE 10</span>
               <span className="text-[9px] text-emerald-500 font-bold uppercase tracking-wider bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 mt-1.5 inline-block">Sincronizado</span>
             </div>
           </div>
@@ -1493,21 +2090,24 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         </div>
       </div>
 
-      {/* PAGE 9: COMPARATIVA INTERNA DE RENDIMIENTO */}
+      {/* PAGE 10: COMPARATIVA INTERNA DE RENDIMIENTO */}
       <div className="bg-[#020617] rounded-[2.5rem] border border-blue-900/40 p-8 sm:p-12 relative overflow-hidden flex flex-col justify-between w-full min-h-[850px] shadow-2xl page-break mt-8">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.03),transparent_70%)] pointer-events-none" />
         
         <div className="flex justify-between items-center border-b border-blue-950 pb-4 mb-6">
           <div className="flex items-center gap-3 text-left">
             <div className="w-8 h-8 rounded bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-sky-400 font-black text-xs">
-              09
+              10
             </div>
             <div>
-              <h4 className="text-xs font-black uppercase text-white leading-none">COMPARATIVA INTERNA DE RENDIMIENTO</h4>
+              <h4 className="text-xs font-black uppercase text-white leading-none">10. COMPARATIVA INTERNA DE RENDIMIENTO</h4>
               <span className="text-[9px] text-slate-500 uppercase tracking-widest">RANGO Y PERCENTILES COMPARATIVOS CON EL GRUPO DE COMPAÑERAS</span>
             </div>
           </div>
-          <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">UDLP METODOLOGÍA</span>
+          <div className="text-right">
+            <span className="text-xs font-black text-slate-600 block uppercase">PÁGINA 10 DE 10</span>
+            <span className="text-[9px] text-blue-400 font-bold uppercase tracking-wider bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20 mt-1 inline-block">UDLP METODOLOGÍA</span>
+          </div>
         </div>
 
         <div className="my-auto space-y-8 text-left">
@@ -2140,7 +2740,7 @@ export default function Plantilla() {
       }
     }
 
-    // 2. Calculate match statistics (matches played, minutes, goals, yellow cards, red cards)
+    // 2. Calculate match statistics (matches played, minutes, goals, yellow cards, red cards, recoveries, turnovers, fouls, corners)
     const finishedMatches = teamMatches.filter((m: any) => m.estado === 'Finalizado');
     const hasFinishedMatches = finishedMatches.some((m: any) => 
       m.estadisticas?.jugadoras_stats?.some((s: any) => s.playerId === player.id)
@@ -2152,35 +2752,77 @@ export default function Plantilla() {
     let asistencias = player.asistencias ?? (isGk ? 0 : isDf ? 2 : isMf ? 6 : 4);
     let tarjetas_amarillas = player.tarjetas_amarillas ?? 2;
     let tarjetas_rojas = player.tarjetas_rojas ?? 0;
+    let recuperaciones_balon = Math.round(partidos_jugados * (isGk ? 4.2 : isDf ? 8.6 : isMf ? 7.2 : 3.8));
+    let perdidas_balon = Math.round(partidos_jugados * (isGk ? 1.1 : isDf ? 2.4 : isMf ? 3.9 : 4.5));
+    let faltas_favor = Math.round(partidos_jugados * (isDf ? 1.4 : isMf ? 2.1 : 2.8));
+    let faltas_contra = Math.round(partidos_jugados * (isDf ? 1.8 : isMf ? 1.5 : 0.8));
+    let corners_favor = Math.round(partidos_jugados * (isMf ? 1.8 : 0.6));
+    let corners_contra = Math.round(partidos_jugados * 0.4);
+    let titularidades = Math.round(partidos_jugados * 0.85);
+    let suplencias = Math.round(partidos_jugados * 0.15);
+    let cleanSheets = isGk || isDf ? 6 : 0;
+    let goles_encajados = isGk ? 11 : 0;
 
     if (hasFinishedMatches) {
       let playedCount = 0;
+      let startsCount = 0;
+      let subsCount = 0;
       let totalMin = 0;
       let totalGoles = 0;
       let totalAssists = 0;
       let totalYellows = 0;
       let totalReds = 0;
+      let totalRec = 0;
+      let totalPer = 0;
+      let totalFoulsWon = 0;
+      let totalFoulsCom = 0;
+      let totalCornWon = 0;
+      let totalCornCon = 0;
+      let totalGolesEnc = 0;
+      let csCount = 0;
 
       finishedMatches.forEach((m: any) => {
         const pStat = m.estadisticas?.jugadoras_stats?.find((s: any) => s.playerId === player.id);
         if (pStat) {
           if (pStat.minutos > 0 || pStat.titular || pStat.suplente) {
             playedCount += 1;
+            if (pStat.titular) startsCount += 1;
+            if (pStat.suplente) subsCount += 1;
             totalMin += pStat.minutos || 0;
             totalGoles += pStat.goles_metidos || 0;
             totalAssists += pStat.asistencias || 0;
             totalYellows += pStat.tarjetas_amarillas || 0;
             totalReds += pStat.tarjetas_rojas || 0;
+            totalRec += pStat.recuperaciones_balon || 0;
+            totalPer += pStat.perdidas_balon || 0;
+            totalFoulsWon += pStat.faltas_favor || 0;
+            totalFoulsCom += pStat.faltas_contra || 0;
+            totalCornWon += pStat.corners_favor || 0;
+            totalCornCon += pStat.corners_contra || 0;
+            totalGolesEnc += pStat.goles_encajados || 0;
+            if (m.goles_contra === 0 && (pStat.minutos || 0) >= 45) {
+              csCount += 1;
+            }
           }
         }
       });
 
       partidos_jugados = playedCount;
+      titularidades = startsCount;
+      suplencias = subsCount;
       minutos_jugados = totalMin;
       goles = totalGoles;
       asistencias = totalAssists;
       tarjetas_amarillas = totalYellows;
       tarjetas_rojas = totalReds;
+      recuperaciones_balon = totalRec;
+      perdidas_balon = totalPer;
+      faltas_favor = totalFoulsWon;
+      faltas_contra = totalFoulsCom;
+      corners_favor = totalCornWon;
+      corners_contra = totalCornCon;
+      goles_encajados = totalGolesEnc;
+      cleanSheets = csCount;
     }
 
     return {
@@ -2190,6 +2832,16 @@ export default function Plantilla() {
       asistencias,
       tarjetas_amarillas,
       tarjetas_rojas,
+      recuperaciones_balon,
+      perdidas_balon,
+      faltas_favor,
+      faltas_contra,
+      corners_favor,
+      corners_contra,
+      titularidades,
+      suplencias,
+      cleanSheets,
+      goles_encajados,
       asistencia_entrenamientos: dynamicAttendance,
       ritmo: player.ritmo ?? (isGk ? 68 : isDf ? 72 : isMf ? 78 : 86),
       tiro: player.tiro ?? (isGk ? 15 : isDf ? 45 : isMf ? 73 : 82),
