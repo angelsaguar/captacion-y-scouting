@@ -308,7 +308,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         assists: fallbackAssists,
         recoveries: fallbackRec,
         turnovers: fallbackPer,
-        yellowCards: stats.tarjetas_amarillas ?? 2,
+        yellowCards: stats.tarjetas_amarillas ?? 0,
         redCards: stats.tarjetas_rojas ?? 0,
         foulsWon: fallbackFoulsWon,
         foulsCommitted: fallbackFoulsCom,
@@ -2684,7 +2684,7 @@ export default function Plantilla() {
     minutos_jugados: 1120,
     goles: 9,
     asistencias: 5,
-    tarjetas_amarillas: 2,
+    tarjetas_amarillas: 0,
     tarjetas_rojas: 0,
     asistencia_entrenamientos: 93,
     ritmo: 85,
@@ -2750,7 +2750,7 @@ export default function Plantilla() {
     let minutos_jugados = player.minutos_jugados ?? (player.partidos_jugados ?? 14) * 82;
     let goles = player.goles ?? (isGk ? 0 : isDf ? 1 : isMf ? 3 : 9);
     let asistencias = player.asistencias ?? (isGk ? 0 : isDf ? 2 : isMf ? 6 : 4);
-    let tarjetas_amarillas = player.tarjetas_amarillas ?? 2;
+    let tarjetas_amarillas = player.tarjetas_amarillas ?? 0;
     let tarjetas_rojas = player.tarjetas_rojas ?? 0;
     let recuperaciones_balon = Math.round(partidos_jugados * (isGk ? 4.2 : isDf ? 8.6 : isMf ? 7.2 : 3.8));
     let perdidas_balon = Math.round(partidos_jugados * (isGk ? 1.1 : isDf ? 2.4 : isMf ? 3.9 : 4.5));

@@ -188,15 +188,15 @@ export default function MatchStatsModal({
     setTeamTotals({
       goles_favor: existingTotals?.goles_favor ?? Math.max(match.goles_favor ?? 0, sumGolesF),
       goles_contra: existingTotals?.goles_contra ?? Math.max(match.goles_contra ?? 0, sumGolesC),
-      asistencias: existingTotals?.asistencias ?? sumAsist,
-      recuperaciones_balon: existingTotals?.recuperaciones_balon ?? sumRec,
-      perdidas_balon: existingTotals?.perdidas_balon ?? sumPer,
-      corners_favor: existingTotals?.corners_favor ?? sumCF,
-      corners_contra: existingTotals?.corners_contra ?? sumCC,
-      faltas_favor: existingTotals?.faltas_favor ?? sumFF,
-      faltas_contra: existingTotals?.faltas_contra ?? sumFC,
-      tarjetas_amarillas: existingTotals?.tarjetas_amarillas ?? sumTA,
-      tarjetas_rojas: existingTotals?.tarjetas_rojas ?? sumTR
+      asistencias: sumAsist,
+      recuperaciones_balon: sumRec > 0 ? sumRec : (existingTotals?.recuperaciones_balon ?? 0),
+      perdidas_balon: sumPer > 0 ? sumPer : (existingTotals?.perdidas_balon ?? 0),
+      corners_favor: sumCF > 0 ? sumCF : (existingTotals?.corners_favor ?? 0),
+      corners_contra: sumCC > 0 ? sumCC : (existingTotals?.corners_contra ?? 0),
+      faltas_favor: sumFF > 0 ? sumFF : (existingTotals?.faltas_favor ?? 0),
+      faltas_contra: sumFC > 0 ? sumFC : (existingTotals?.faltas_contra ?? 0),
+      tarjetas_amarillas: sumTA,
+      tarjetas_rojas: sumTR
     });
   }, [match, allPlayers]);
 
@@ -282,17 +282,17 @@ export default function MatchStatsModal({
 
     setTeamTotals(prev => ({
       ...prev,
-      goles_favor: Math.max(prev.goles_favor, sumGolesF),
-      goles_contra: Math.max(prev.goles_contra, sumGolesC),
-      asistencias: Math.max(prev.asistencias, sumAsist),
-      recuperaciones_balon: Math.max(prev.recuperaciones_balon, sumRec),
-      perdidas_balon: Math.max(prev.perdidas_balon, sumPer),
-      corners_favor: Math.max(prev.corners_favor, sumCF),
-      corners_contra: Math.max(prev.corners_contra, sumCC),
-      faltas_favor: Math.max(prev.faltas_favor, sumFF),
-      faltas_contra: Math.max(prev.faltas_contra, sumFC),
-      tarjetas_amarillas: Math.max(prev.tarjetas_amarillas, sumTA),
-      tarjetas_rojas: Math.max(prev.tarjetas_rojas, sumTR)
+      goles_favor: sumGolesF > 0 ? sumGolesF : prev.goles_favor,
+      goles_contra: sumGolesC > 0 ? sumGolesC : prev.goles_contra,
+      asistencias: sumAsist,
+      recuperaciones_balon: sumRec,
+      perdidas_balon: sumPer,
+      corners_favor: sumCF > 0 ? sumCF : prev.corners_favor,
+      corners_contra: sumCC > 0 ? sumCC : prev.corners_contra,
+      faltas_favor: sumFF > 0 ? sumFF : prev.faltas_favor,
+      faltas_contra: sumFC > 0 ? sumFC : prev.faltas_contra,
+      tarjetas_amarillas: sumTA,
+      tarjetas_rojas: sumTR
     }));
   };
 
@@ -1079,9 +1079,45 @@ export default function MatchStatsModal({
                           <span className="text-amber-400 font-bold">{p.faltas_contra || 0}</span>
                         </td>
                         <td className="p-3 text-center">
-                          <span className="text-yellow-400 font-bold">{p.tarjetas_amarillas || 0}</span>
-                          <span className="text-slate-600 mx-1">/</span>
-                          <span className="text-red-500 font-bold">{p.tarjetas_rojas || 0}</span>
+                          <div className="flex items-center justify-center gap-1">
+                            {/* Amarillas */}
+                            <div className="flex items-center gap-0.5 bg-yellow-950/40 px-1 py-0.5 rounded border border-yellow-800/40">
+                              <button
+                                onClick={() => adjustPlayerStat(p.playerId, 'tarjetas_amarillas', -1)}
+                                className="w-4 h-4 rounded text-slate-400 hover:text-white flex items-center justify-center cursor-pointer text-xs"
+                                title="Restar amarilla"
+                              >
+                                -
+                              </button>
+                              <span className="w-4 text-center font-black text-yellow-400 font-mono text-xs">{p.tarjetas_amarillas || 0}🟨</span>
+                              <button
+                                onClick={() => adjustPlayerStat(p.playerId, 'tarjetas_amarillas', 1)}
+                                className="w-4 h-4 rounded text-yellow-400 hover:text-white flex items-center justify-center cursor-pointer text-xs font-bold"
+                                title="Sumar amarilla"
+                              >
+                                +
+                              </button>
+                            </div>
+                            <span className="text-slate-600">/</span>
+                            {/* Rojas */}
+                            <div className="flex items-center gap-0.5 bg-red-950/40 px-1 py-0.5 rounded border border-red-800/40">
+                              <button
+                                onClick={() => adjustPlayerStat(p.playerId, 'tarjetas_rojas', -1)}
+                                className="w-4 h-4 rounded text-slate-400 hover:text-white flex items-center justify-center cursor-pointer text-xs"
+                                title="Restar roja"
+                              >
+                                -
+                              </button>
+                              <span className="w-4 text-center font-black text-red-500 font-mono text-xs">{p.tarjetas_rojas || 0}🟥</span>
+                              <button
+                                onClick={() => adjustPlayerStat(p.playerId, 'tarjetas_rojas', 1)}
+                                className="w-4 h-4 rounded text-red-500 hover:text-white flex items-center justify-center cursor-pointer text-xs font-bold"
+                                title="Sumar roja"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1325,6 +1361,60 @@ export default function MatchStatsModal({
                         onClick={() => adjustTeamTotal('perdidas_balon', 1)}
                         size="sm"
                         className="h-8 w-8 p-0 rounded-lg bg-amber-600"
+                      >
+                        +
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tarjetas y Disciplina */}
+              <div className="bg-slate-950/60 border border-slate-850 p-5 rounded-2xl space-y-4 md:col-span-2">
+                <h5 className="font-extrabold text-xs text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-yellow-400" />
+                  <span>Disciplina y Tarjetas del Equipo</span>
+                </h5>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 text-center">
+                    <span className="text-[10px] font-bold text-yellow-400 uppercase block mb-1">Tarjetas Amarillas (Total)</span>
+                    <div className="flex items-center justify-center gap-3">
+                      <Button
+                        onClick={() => adjustTeamTotal('tarjetas_amarillas', -1)}
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0 rounded-lg"
+                      >
+                        -
+                      </Button>
+                      <span className="text-3xl font-black text-yellow-400">{teamTotals.tarjetas_amarillas}</span>
+                      <Button
+                        onClick={() => adjustTeamTotal('tarjetas_amarillas', 1)}
+                        size="sm"
+                        className="h-8 w-8 p-0 rounded-lg bg-yellow-600 text-black font-bold"
+                      >
+                        +
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 text-center">
+                    <span className="text-[10px] font-bold text-red-500 uppercase block mb-1">Tarjetas Rojas (Total)</span>
+                    <div className="flex items-center justify-center gap-3">
+                      <Button
+                        onClick={() => adjustTeamTotal('tarjetas_rojas', -1)}
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0 rounded-lg"
+                      >
+                        -
+                      </Button>
+                      <span className="text-3xl font-black text-red-500">{teamTotals.tarjetas_rojas}</span>
+                      <Button
+                        onClick={() => adjustTeamTotal('tarjetas_rojas', 1)}
+                        size="sm"
+                        className="h-8 w-8 p-0 rounded-lg bg-red-600 text-white font-bold"
                       >
                         +
                       </Button>

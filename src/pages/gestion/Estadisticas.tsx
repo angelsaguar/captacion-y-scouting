@@ -59,6 +59,7 @@ interface MatchPlayerStat {
   tarjetas_amarillas?: number;
   tarjetas_rojas?: number;
   goles_metidos?: number;
+  asistencias?: number;
   goles_encajados?: number;
   perdidas_balon?: number;
   recuperaciones_balon?: number;
@@ -89,6 +90,7 @@ interface Match {
       faltas_contra?: number;
       goles_favor?: number;
       goles_contra?: number;
+      asistencias?: number;
       tarjetas_amarillas?: number;
       tarjetas_rojas?: number;
     };
@@ -105,6 +107,7 @@ interface AggregatedPlayerStat {
   titularidades: number;
   minutos: number;
   goles: number;
+  asistencias: number;
   goles_encajados: number;
   recuperaciones: number;
   perdidas: number;
@@ -134,6 +137,7 @@ export default function Estadisticas() {
   // Custom derived states for full player stats
   const [playerMinutesData, setPlayerMinutesData] = useState<any[]>([]);
   const [goalscorers, setGoalscorers] = useState<AggregatedPlayerStat[]>([]);
+  const [topAssists, setTopAssists] = useState<AggregatedPlayerStat[]>([]);
   const [topRecuperadoras, setTopRecuperadoras] = useState<AggregatedPlayerStat[]>([]);
   const [topPerdidas, setTopPerdidas] = useState<AggregatedPlayerStat[]>([]);
   const [cardsData, setCardsData] = useState<AggregatedPlayerStat[]>([]);
@@ -151,6 +155,7 @@ export default function Estadisticas() {
     avgGoalsConceded: 0,
     totalGoalsScored: 0,
     totalGoalsConceded: 0,
+    totalAsistencias: 0,
     totalRecuperaciones: 0,
     totalPerdidas: 0,
     totalCornersFavor: 0,
@@ -235,6 +240,7 @@ export default function Estadisticas() {
         titularidades: 0,
         minutos: 0,
         goles: 0,
+        asistencias: 0,
         goles_encajados: 0,
         recuperaciones: 0,
         perdidas: 0,
@@ -256,6 +262,7 @@ export default function Estadisticas() {
     let teamFaltasContra = 0;
     let teamAmarillas = 0;
     let teamRojas = 0;
+    let teamAsistencias = 0;
     let totalGoalsScored = 0;
     let totalGoalsConceded = 0;
 
@@ -276,6 +283,7 @@ export default function Estadisticas() {
         teamFaltasContra += teamTotals.faltas_contra || 0;
         teamAmarillas += teamTotals.tarjetas_amarillas || 0;
         teamRojas += teamTotals.tarjetas_rojas || 0;
+        teamAsistencias += teamTotals.asistencias || 0;
       }
 
       const stats = m.estadisticas?.jugadoras_stats;
@@ -292,6 +300,7 @@ export default function Estadisticas() {
               titularidades: 0,
               minutos: 0,
               goles: 0,
+              asistencias: 0,
               goles_encajados: 0,
               recuperaciones: 0,
               perdidas: 0,
@@ -314,6 +323,7 @@ export default function Estadisticas() {
           }
           pStat.minutos += st.minutos || 0;
           pStat.goles += st.goles_metidos || 0;
+          pStat.asistencias += st.asistencias || 0;
           pStat.goles_encajados += st.goles_encajados || 0;
           pStat.recuperaciones += st.recuperaciones_balon || 0;
           pStat.perdidas += st.perdidas_balon || 0;
@@ -342,6 +352,7 @@ export default function Estadisticas() {
 
     // Rankings
     setGoalscorers(accumulatedList.filter(p => p.goles > 0).sort((a, b) => b.goles - a.goles));
+    setTopAssists(accumulatedList.filter(p => p.asistencias > 0).sort((a, b) => b.asistencias - a.asistencias));
     setTopRecuperadoras(accumulatedList.filter(p => p.recuperaciones > 0).sort((a, b) => b.recuperaciones - a.recuperaciones));
     setTopPerdidas(accumulatedList.filter(p => p.perdidas > 0).sort((a, b) => b.perdidas - a.perdidas));
     setCardsData(accumulatedList.filter(p => p.amarillas > 0 || p.rojas > 0).sort((a, b) => (b.amarillas + b.rojas * 2) - (a.amarillas + a.rojas * 2)));
@@ -452,6 +463,7 @@ export default function Estadisticas() {
       avgGoalsConceded: gamesWithData.length > 0 ? parseFloat((totalGoalsConceded / gamesWithData.length).toFixed(1)) : 0,
       totalGoalsScored,
       totalGoalsConceded,
+      totalAsistencias: teamAsistencias,
       totalRecuperaciones: teamRecuperaciones,
       totalPerdidas: teamPerdidas,
       totalCornersFavor: teamCornersFavor,
@@ -488,7 +500,7 @@ export default function Estadisticas() {
       return;
     }
 
-    const headers = ['Dorsal', 'Nombre', 'Apellidos', 'Posición', 'PJ', 'Titular', 'Minutos', 'Goles F', 'Goles C', 'Recuperaciones', 'Pérdidas', 'Balance', 'Amarillas', 'Rojas', 'Córners F', 'Córners C', 'Faltas F', 'Faltas C'];
+    const headers = ['Dorsal', 'Nombre', 'Apellidos', 'Posición', 'PJ', 'Titular', 'Minutos', 'Goles F', 'Asistencias', 'Goles C', 'Recuperaciones', 'Pérdidas', 'Balance', 'Amarillas', 'Rojas', 'Córners F', 'Córners C', 'Faltas F', 'Faltas C'];
     const rows = masterPlayerStats.map(p => [
       p.dorsal || '',
       `"${p.nombre}"`,
@@ -498,6 +510,7 @@ export default function Estadisticas() {
       p.titularidades,
       p.minutos,
       p.goles,
+      p.asistencias,
       p.goles_encajados,
       p.recuperaciones,
       p.perdidas,
@@ -796,6 +809,43 @@ export default function Estadisticas() {
             </div>
           </div>
 
+          {/* Ranking Asistencias */}
+          <div className="bg-slate-900/30 border border-slate-900 p-5 rounded-3xl space-y-4">
+            <h5 className="font-extrabold text-xs text-slate-400 uppercase tracking-widest flex items-center gap-2">
+              <Activity className="w-4 h-4 text-cyan-400" />
+              <span>Máximas Asistentes de Gol</span>
+            </h5>
+
+            <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
+              {topAssists.length > 0 ? (
+                topAssists.map((p, index) => (
+                  <div key={p.id} className="flex items-center justify-between bg-slate-950/40 border border-slate-850 p-3 rounded-2xl">
+                    <div className="flex items-center gap-3">
+                      <span className={`w-6 h-6 flex items-center justify-center rounded-full font-black text-[10px] ${
+                        index === 0 ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' :
+                        index === 1 ? 'bg-slate-300/20 text-slate-300 border border-slate-400/30' :
+                        index === 2 ? 'bg-amber-700/20 text-amber-600 border border-amber-800/30' :
+                        'bg-slate-900 text-slate-500'
+                      }`}>
+                        {index + 1}
+                      </span>
+                      <div>
+                        <span className="font-bold text-white text-xs block">{p.nombre} {p.apellidos}</span>
+                        <span className="text-[9px] text-slate-500 font-bold uppercase">Dorsal {p.dorsal} • {p.posicion}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs font-black text-cyan-400">{p.asistencias}</span>
+                      <span className="text-[9px] text-slate-500 font-semibold uppercase block">Asistencias</span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-slate-600 italic text-center py-8">No se han registrado asistencias aún.</p>
+              )}
+            </div>
+          </div>
+
           {/* Tarjetas & Disciplina */}
           <div className="bg-slate-900/30 border border-slate-900 p-5 rounded-3xl space-y-4">
             <h5 className="font-extrabold text-xs text-slate-400 uppercase tracking-widest flex items-center gap-2">
@@ -1066,6 +1116,12 @@ export default function Estadisticas() {
                       <ArrowUpDown className="w-3 h-3" />
                     </div>
                   </th>
+                  <th onClick={() => handleSort('asistencias')} className="p-3 text-center cursor-pointer text-cyan-400 hover:text-cyan-300">
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Asist</span>
+                      <ArrowUpDown className="w-3 h-3" />
+                    </div>
+                  </th>
                   <th onClick={() => handleSort('goles_encajados')} className="p-3 text-center cursor-pointer text-red-400 hover:text-red-300">
                     <div className="flex items-center justify-center gap-1">
                       <span>Gol C</span>
@@ -1132,6 +1188,7 @@ export default function Estadisticas() {
                         <td className="p-3 text-center font-bold text-slate-300">{p.partidosJugados}</td>
                         <td className="p-3 text-center font-bold text-slate-300">{p.minutos}'</td>
                         <td className="p-3 text-center font-black text-emerald-400">{p.goles}</td>
+                        <td className="p-3 text-center font-black text-cyan-400">{p.asistencias}</td>
                         <td className="p-3 text-center font-black text-red-400">{p.goles_encajados}</td>
                         <td className="p-3 text-center font-black text-cyan-400">{p.recuperaciones}</td>
                         <td className="p-3 text-center font-black text-amber-400">{p.perdidas}</td>
@@ -1160,7 +1217,7 @@ export default function Estadisticas() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={13} className="p-8 text-center text-slate-500 italic">
+                    <td colSpan={14} className="p-8 text-center text-slate-500 italic">
                       No se encontraron jugadoras que coincidan con la búsqueda.
                     </td>
                   </tr>
