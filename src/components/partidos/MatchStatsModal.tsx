@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, 
   Save, 
@@ -20,7 +20,9 @@ import {
   ListOrdered,
   Sparkles,
   RefreshCw,
-  Eye
+  Eye,
+  Search,
+  Users
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -81,7 +83,8 @@ type StatCategory =
   | 'corners_favor' 
   | 'corners_contra' 
   | 'faltas_favor' 
-  | 'faltas_contra';
+  | 'faltas_contra'
+  | 'minutos';
 
 export default function MatchStatsModal({
   isOpen,
@@ -98,6 +101,9 @@ export default function MatchStatsModal({
 
   // Selected player in Quick Tracker
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>('');
+
+  // Search filter in convocadas list
+  const [playerSearch, setPlayerSearch] = useState<string>('');
 
   // Player Stats array
   const [playerStats, setPlayerStats] = useState<MatchPlayerStat[]>([]);
@@ -220,7 +226,8 @@ export default function MatchStatsModal({
       corners_favor: 'Córner a favor 🚩',
       corners_contra: 'Córner en contra 🚩',
       faltas_favor: 'Falta provocada (favor) 🛡️',
-      faltas_contra: 'Falta cometida (contra) ⚠️'
+      faltas_contra: 'Falta cometida (contra) ⚠️',
+      minutos: 'Minutos de juego ⏱️'
     };
 
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -258,11 +265,52 @@ export default function MatchStatsModal({
     recalcTeamTotals(nextStats);
   };
 
-  // Team totals direct adjustment (for match general counters)
+  // Team totals direct adjustment (for match general counters and collective events)
   const adjustTeamTotal = (key: keyof MatchTotals, delta: number) => {
+    const currentVal = teamTotals[key] || 0;
+    const newVal = Math.max(0, currentVal + delta);
+    if (newVal === currentVal && delta < 0) return;
+
+    const teamCatNames: Record<string, string> = {
+      corners_favor: 'Córner a favor 🚩',
+      corners_contra: 'Córner en contra 🚩',
+      faltas_favor: 'Falta provocada (favor) 🛡️',
+      faltas_contra: 'Falta cometida (contra) ⚠️',
+      goles_favor: 'Gol a favor ⚽',
+      goles_contra: 'Gol en contra 🥅',
+      asistencias: 'Asistencia 🎯',
+      recuperaciones_balon: 'Recuperación ⚡',
+      perdidas_balon: 'Pérdida de balón ⚠️',
+      tarjetas_amarillas: 'Tarjeta amarilla 🟨',
+      tarjetas_rojas: 'Tarjeta roja 🟥'
+    };
+
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    if (delta > 0) {
+      setEventLogs(logs => [
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          time: now,
+          text: `+1 ${teamCatNames[key] || key} (Equipo)`,
+          type: key as any
+        },
+        ...logs.slice(0, 24)
+      ]);
+    } else if (delta < 0 && currentVal > 0) {
+      setEventLogs(logs => [
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          time: now,
+          text: `-1 ${teamCatNames[key] || key} (Equipo)`,
+          type: key as any
+        },
+        ...logs.slice(0, 24)
+      ]);
+    }
+
     setTeamTotals(prev => ({
       ...prev,
-      [key]: Math.max(0, (prev[key] || 0) + delta)
+      [key]: newVal
     }));
   };
 
@@ -314,208 +362,431 @@ export default function MatchStatsModal({
     onClose();
   };
 
+  const filteredPlayerStats = useMemo(() => {
+    if (!playerSearch.trim()) return playerStats;
+    const q = playerSearch.toLowerCase().trim();
+    return playerStats.filter(p => 
+      p.nombre.toLowerCase().includes(q) || 
+      p.apellidos.toLowerCase().includes(q) || 
+      (p.dorsal && p.dorsal.toString().includes(q)) ||
+      (p.posicion && p.posicion.toLowerCase().includes(q))
+    );
+  }, [playerStats, playerSearch]);
+
+  const maxPerBox = 9;
+  const leftSquadPlayers = filteredPlayerStats.slice(0, maxPerBox);
+  const rightSquadPlayers = filteredPlayerStats.slice(maxPerBox, maxPerBox * 2);
+
   const selectedPlayer = playerStats.find(p => p.playerId === selectedPlayerId) || playerStats[0];
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-5xl h-[92vh] flex flex-col shadow-2xl overflow-hidden text-left">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-1 sm:p-2.5 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-[98vw] xl:max-w-7xl 2xl:max-w-[1440px] h-[94vh] max-h-[940px] flex flex-col shadow-2xl overflow-hidden text-left">
         
         {/* HEADER BAR */}
-        <div className="bg-slate-950/90 border-b border-slate-800 px-5 py-4 flex flex-wrap items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-              <Zap className="w-5 h-5 fill-current" />
+        <div className="bg-slate-950/95 border-b border-slate-800 px-3.5 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+              <Zap className="w-4 h-4 fill-current" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded-md border border-cyan-800">
+                <span className="text-[9px] font-black uppercase tracking-widest text-cyan-400 bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-800">
                   Toma de Estadísticas en Vivo
                 </span>
-                <span className="text-xs text-slate-400 font-bold">
+                <span className="text-[11px] text-slate-400 font-semibold">
                   {match.fecha} • {match.hora}
                 </span>
               </div>
-              <h3 className="text-base sm:text-lg font-black text-white uppercase tracking-tight flex items-center gap-2">
-                <span>{match.tipo === 'Local' ? teamName : match.rival}</span>
-                <span className="text-cyan-400 font-mono px-2 py-0.5 bg-slate-900 rounded-lg border border-slate-800">
+              <h3 className="text-sm sm:text-base font-black text-white uppercase tracking-tight flex items-center gap-2">
+                <span className="truncate max-w-[180px] sm:max-w-none">{match.tipo === 'Local' ? teamName : match.rival}</span>
+                <span className="text-cyan-400 font-mono px-2 py-0.5 bg-slate-900 rounded-md border border-slate-800 text-xs sm:text-sm">
                   {teamTotals.goles_favor} - {teamTotals.goles_contra}
                 </span>
-                <span>{match.tipo === 'Local' ? match.rival : teamName}</span>
+                <span className="truncate max-w-[180px] sm:max-w-none">{match.tipo === 'Local' ? match.rival : teamName}</span>
               </h3>
             </div>
           </div>
 
           {/* TAB BUTTONS */}
-          <div className="flex items-center gap-1.5 bg-slate-900 p-1 rounded-2xl border border-slate-800">
+          <div className="flex items-center gap-1 bg-slate-900 p-0.5 rounded-xl border border-slate-800">
             <button
               onClick={() => setActiveTab('rapido')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-black uppercase transition-all flex items-center gap-1 cursor-pointer ${
                 activeTab === 'rapido'
-                  ? 'bg-cyan-500 text-black shadow-md'
+                  ? 'bg-cyan-500 text-black shadow-sm'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800'
               }`}
             >
-              <Zap className="w-3.5 h-3.5" />
+              <Zap className="w-3 h-3" />
               <span>Registro Rápido</span>
             </button>
 
             <button
               onClick={() => setActiveTab('matriz')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-black uppercase transition-all flex items-center gap-1 cursor-pointer ${
                 activeTab === 'matriz'
-                  ? 'bg-cyan-500 text-black shadow-md'
+                  ? 'bg-cyan-500 text-black shadow-sm'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800'
               }`}
             >
-              <ListOrdered className="w-3.5 h-3.5" />
-              <span>Matriz de Jugadoras</span>
+              <ListOrdered className="w-3 h-3" />
+              <span>Matriz Jugadoras</span>
             </button>
 
             <button
               onClick={() => setActiveTab('resumen')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-black uppercase transition-all flex items-center gap-1 cursor-pointer ${
                 activeTab === 'resumen'
-                  ? 'bg-cyan-500 text-black shadow-md'
+                  ? 'bg-cyan-500 text-black shadow-sm'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800'
               }`}
             >
-              <BarChart2 className="w-3.5 h-3.5" />
-              <span>Totales de Equipo</span>
+              <BarChart2 className="w-3 h-3" />
+              <span>Totales Equipo</span>
             </button>
           </div>
 
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-xl bg-slate-850 hover:bg-slate-800 border border-slate-750 flex items-center justify-center text-slate-400 hover:text-white transition-all cursor-pointer"
+            className="w-8 h-8 rounded-xl bg-slate-850 hover:bg-slate-800 border border-slate-750 flex items-center justify-center text-slate-400 hover:text-white transition-all cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* TEAM LIVE STATUS BAR */}
-        <div className="bg-slate-950/60 border-b border-slate-850 px-5 py-2.5 grid grid-cols-2 sm:grid-cols-5 gap-2 shrink-0 text-center">
-          <div className="bg-slate-900/60 rounded-xl p-1.5 border border-slate-800">
-            <span className="text-[9px] text-slate-400 font-extrabold uppercase block">Recuperaciones</span>
-            <span className="text-sm font-black text-cyan-300">{teamTotals.recuperaciones_balon}</span>
+        {/* TEAM COLLECTIVE ACTIONS & LIVE STATUS BAR */}
+        <div className="bg-slate-950/95 border-b border-slate-800 px-3.5 sm:px-4 py-2.5 flex flex-col gap-2 shrink-0">
+          
+          {/* Top Row: 4 Dedicated Team Collective Action Cards (Córners y Faltas) */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-2.5 w-full">
+            
+            {/* 1. Córner a Favor */}
+            <div className="bg-sky-950/40 border border-sky-500/40 hover:border-sky-500/70 rounded-xl p-2 flex flex-col justify-between gap-1.5 shadow-sm transition-all">
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Flag className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span className="text-[11px] font-black text-sky-200 uppercase tracking-wide truncate">
+                    Córner a Favor
+                  </span>
+                </div>
+                <span className="text-base sm:text-lg font-black text-sky-300 font-mono leading-none">
+                  {teamTotals.corners_favor}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => adjustTeamTotal('corners_favor', -1)}
+                  className="h-7 w-8 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-300 border border-slate-750 flex items-center justify-center font-black text-xs cursor-pointer transition-all shrink-0"
+                  title="Restar 1 córner a favor"
+                >
+                  <Minus className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => adjustTeamTotal('corners_favor', 1)}
+                  className="h-7 flex-1 rounded-lg bg-sky-500 hover:bg-sky-400 active:scale-95 text-black font-black text-xs flex items-center justify-center gap-1 cursor-pointer transition-all shadow-sm"
+                  title="Sumar 1 córner a favor"
+                >
+                  <Plus className="w-3 h-3 stroke-[3]" />
+                  <span>+1 Córner</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 2. Córner en Contra */}
+            <div className="bg-rose-950/40 border border-rose-500/40 hover:border-rose-500/70 rounded-xl p-2 flex flex-col justify-between gap-1.5 shadow-sm transition-all">
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Flag className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                  <span className="text-[11px] font-black text-slate-200 uppercase tracking-wide truncate">
+                    Córner en Contra
+                  </span>
+                </div>
+                <span className="text-base sm:text-lg font-black text-rose-400 font-mono leading-none">
+                  {teamTotals.corners_contra}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => adjustTeamTotal('corners_contra', -1)}
+                  className="h-7 w-8 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-300 border border-slate-750 flex items-center justify-center font-black text-xs cursor-pointer transition-all shrink-0"
+                  title="Restar 1 córner en contra"
+                >
+                  <Minus className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => adjustTeamTotal('corners_contra', 1)}
+                  className="h-7 flex-1 rounded-lg bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-black text-xs flex items-center justify-center gap-1 cursor-pointer transition-all shadow-sm"
+                  title="Sumar 1 córner en contra"
+                >
+                  <Plus className="w-3 h-3 stroke-[3]" />
+                  <span>+1 Córner</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 3. Falta a Favor */}
+            <div className="bg-purple-950/40 border border-purple-500/40 hover:border-purple-500/70 rounded-xl p-2 flex flex-col justify-between gap-1.5 shadow-sm transition-all">
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Shield className="w-3.5 h-3.5 text-purple-300 shrink-0" />
+                  <span className="text-[11px] font-black text-purple-200 uppercase tracking-wide truncate">
+                    Falta a Favor
+                  </span>
+                </div>
+                <span className="text-base sm:text-lg font-black text-purple-300 font-mono leading-none">
+                  {teamTotals.faltas_favor}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => adjustTeamTotal('faltas_favor', -1)}
+                  className="h-7 w-8 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-300 border border-slate-750 flex items-center justify-center font-black text-xs cursor-pointer transition-all shrink-0"
+                  title="Restar 1 falta a favor"
+                >
+                  <Minus className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => adjustTeamTotal('faltas_favor', 1)}
+                  className="h-7 flex-1 rounded-lg bg-purple-500 hover:bg-purple-400 active:scale-95 text-white font-black text-xs flex items-center justify-center gap-1 cursor-pointer transition-all shadow-sm"
+                  title="Sumar 1 falta a favor"
+                >
+                  <Plus className="w-3 h-3 stroke-[3]" />
+                  <span>+1 Falta</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 4. Falta en Contra */}
+            <div className="bg-amber-950/40 border border-amber-500/40 hover:border-amber-500/70 rounded-xl p-2 flex flex-col justify-between gap-1.5 shadow-sm transition-all">
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span className="text-[11px] font-black text-amber-200 uppercase tracking-wide truncate">
+                    Falta en Contra
+                  </span>
+                </div>
+                <span className="text-base sm:text-lg font-black text-amber-300 font-mono leading-none">
+                  {teamTotals.faltas_contra}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => adjustTeamTotal('faltas_contra', -1)}
+                  className="h-7 w-8 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-300 border border-slate-750 flex items-center justify-center font-black text-xs cursor-pointer transition-all shrink-0"
+                  title="Restar 1 falta en contra"
+                >
+                  <Minus className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => adjustTeamTotal('faltas_contra', 1)}
+                  className="h-7 flex-1 rounded-lg bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-black text-xs flex items-center justify-center gap-1 cursor-pointer transition-all shadow-sm"
+                  title="Sumar 1 falta en contra"
+                >
+                  <Plus className="w-3 h-3 stroke-[3]" />
+                  <span>+1 Falta</span>
+                </button>
+              </div>
+            </div>
+
           </div>
-          <div className="bg-slate-900/60 rounded-xl p-1.5 border border-slate-800">
-            <span className="text-[9px] text-slate-400 font-extrabold uppercase block">Pérdidas Balón</span>
-            <span className="text-sm font-black text-amber-400">{teamTotals.perdidas_balon}</span>
+
+          {/* Bottom Row: Quick Summary Stats Badges (Goles, Balones, Tarjetas) */}
+          <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-850/80 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap w-full justify-between">
+              
+              {/* Goles Totales */}
+              <div className="bg-slate-900/80 rounded-xl py-1 px-3 border border-slate-800 flex items-center gap-2 text-xs shadow-xs">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                  <Target className="w-3 h-3 text-emerald-400" />
+                  <span>Goles:</span>
+                </span>
+                <span className="text-slate-300 font-medium">
+                  A Favor: <strong className="text-emerald-400 font-mono font-black text-sm">{teamTotals.goles_favor}</strong>
+                </span>
+                <span className="text-slate-700 font-bold">|</span>
+                <span className="text-slate-300 font-medium">
+                  En Contra: <strong className="text-rose-400 font-mono font-black text-sm">{teamTotals.goles_contra}</strong>
+                </span>
+              </div>
+
+              {/* Balones Totales */}
+              <div className="bg-slate-900/80 rounded-xl py-1 px-3 border border-slate-800 flex items-center gap-2 text-xs shadow-xs">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                  <Zap className="w-3 h-3 text-cyan-400" />
+                  <span>Balones:</span>
+                </span>
+                <span className="text-slate-300 font-medium">
+                  Recuperados: <strong className="text-cyan-300 font-mono font-black text-sm">{teamTotals.recuperaciones_balon}</strong>
+                </span>
+                <span className="text-slate-700 font-bold">|</span>
+                <span className="text-slate-300 font-medium">
+                  Perdidos: <strong className="text-amber-400 font-mono font-black text-sm">{teamTotals.perdidas_balon}</strong>
+                </span>
+              </div>
+
+              {/* Tarjetas Totales */}
+              <div className="bg-slate-900/80 rounded-xl py-1 px-3 border border-slate-800 flex items-center gap-2 text-xs shadow-xs">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 text-yellow-400" />
+                  <span>Tarjetas:</span>
+                </span>
+                <span className="text-slate-300 font-medium">
+                  Amarillas: <strong className="text-yellow-400 font-mono font-black text-sm">{teamTotals.tarjetas_amarillas}</strong>
+                </span>
+                <span className="text-slate-700 font-bold">|</span>
+                <span className="text-slate-300 font-medium">
+                  Rojas: <strong className="text-rose-500 font-mono font-black text-sm">{teamTotals.tarjetas_rojas}</strong>
+                </span>
+              </div>
+
+            </div>
           </div>
-          <div className="bg-slate-900/60 rounded-xl p-1.5 border border-slate-800">
-            <span className="text-[9px] text-slate-400 font-extrabold uppercase block">Córners (F / C)</span>
-            <span className="text-sm font-black text-blue-400">{teamTotals.corners_favor} <span className="text-slate-600 font-normal">/</span> <span className="text-red-400">{teamTotals.corners_contra}</span></span>
-          </div>
-          <div className="bg-slate-900/60 rounded-xl p-1.5 border border-slate-800">
-            <span className="text-[9px] text-slate-400 font-extrabold uppercase block">Faltas (F / C)</span>
-            <span className="text-sm font-black text-purple-400">{teamTotals.faltas_favor} <span className="text-slate-600 font-normal">/</span> <span className="text-amber-400">{teamTotals.faltas_contra}</span></span>
-          </div>
-          <div className="bg-slate-900/60 rounded-xl p-1.5 border border-slate-800 col-span-2 sm:col-span-1">
-            <span className="text-[9px] text-slate-400 font-extrabold uppercase block">Tarjetas (A / R)</span>
-            <span className="text-sm font-black text-amber-400">{teamTotals.tarjetas_amarillas} <span className="text-slate-600 font-normal">/</span> <span className="text-red-500">{teamTotals.tarjetas_rojas}</span></span>
-          </div>
+
         </div>
 
         {/* MODAL MAIN CONTENT */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+        <div className="flex-1 min-h-0 overflow-hidden p-2 sm:p-3 flex flex-col">
           
-          {/* TAB 1: REGISTRO RÁPIDO EN DIRECTO */}
+          {/* TAB 1: REGISTRO RÁPIDO EN DIRECTO (TODO VISIBLE EN 1 PANTALLA) */}
           {activeTab === 'rapido' && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 h-full">
+            <div className="flex flex-col lg:flex-row gap-2.5 sm:gap-3 h-full min-h-0 overflow-hidden">
               
-              {/* Left Column: Player Selector list */}
-              <div className="lg:col-span-4 flex flex-col gap-2 bg-slate-950/60 p-3 rounded-2xl border border-slate-850 max-h-[520px] overflow-y-auto">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-850">
-                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                    Convocadas ({playerStats.length})
+              {/* Left Column: Player Selector list (Grupo 1 - Jugadoras 1 a 9) */}
+              <div className="w-full lg:w-56 xl:w-64 shrink-0 flex flex-col h-full min-h-0 bg-slate-950/60 p-2 rounded-2xl border border-slate-850 overflow-hidden">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-850 shrink-0">
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
+                    <Users className="w-3 h-3 text-cyan-400" />
+                    <span>Convocadas (1 - {Math.min(maxPerBox, leftSquadPlayers.length)})</span>
                   </span>
-                  <span className="text-[9px] text-cyan-400 font-bold">Selecciona jugadora</span>
+                  <span className="text-[9px] font-bold text-slate-500">Total: {filteredPlayerStats.length}</span>
                 </div>
 
-                <div className="space-y-1.5">
-                  {playerStats.map((p) => {
+                {/* Quick Search Ultra-compact */}
+                <div className="py-1 shrink-0">
+                  <div className="relative">
+                    <Search className="w-3 h-3 text-slate-500 absolute left-2 top-1.5" />
+                    <input
+                      type="text"
+                      value={playerSearch}
+                      onChange={(e) => setPlayerSearch(e.target.value)}
+                      placeholder="Buscar jugadora..."
+                      className="w-full pl-6 pr-2 py-0.5 h-6 bg-slate-900/90 border border-slate-800 rounded-md text-[10px] text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Player List Group 1 (Fits 9 rows without scroll) */}
+                <div className="flex-1 min-h-0 flex flex-col justify-between gap-0.5 overflow-hidden">
+                  {leftSquadPlayers.map((p) => {
                     const isSelected = p.playerId === selectedPlayerId;
                     return (
                       <button
                         key={p.playerId}
                         onClick={() => setSelectedPlayerId(p.playerId)}
-                        className={`w-full p-2.5 rounded-xl border text-left transition-all flex items-center justify-between cursor-pointer ${
+                        className={`w-full flex-1 min-h-[30px] max-h-[38px] px-2 py-1 rounded-lg border text-left transition-all flex items-center justify-between cursor-pointer ${
                           isSelected 
-                            ? 'bg-cyan-950/60 border-cyan-500 text-white shadow-md' 
+                            ? 'bg-cyan-950/70 border-cyan-500 text-white shadow-sm ring-1 ring-cyan-500/30' 
                             : 'bg-slate-900/40 border-slate-850 text-slate-300 hover:bg-slate-850'
                         }`}
                       >
-                        <div className="flex items-center gap-2.5">
-                          <span className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs ${
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className={`w-5 h-5 rounded-md flex items-center justify-center font-black text-[10px] shrink-0 ${
                             isSelected ? 'bg-cyan-500 text-black' : 'bg-slate-800 text-slate-300'
                           }`}>
                             #{p.dorsal || '-'}
                           </span>
-                          <div>
-                            <span className="font-bold text-xs block text-white truncate max-w-[130px]">
+                          <div className="min-w-0">
+                            <span className="font-bold text-[11px] block text-white truncate max-w-[105px] leading-tight">
                               {p.nombre} {p.apellidos}
                             </span>
-                            <span className="text-[9px] font-extrabold uppercase text-slate-500">
+                            <span className="text-[8px] font-extrabold uppercase text-slate-500 block truncate leading-none">
                               {p.posicion}
                             </span>
                           </div>
                         </div>
 
                         {/* Quick Mini Badges */}
-                        <div className="flex items-center gap-1.5 text-[10px] font-black">
+                        <div className="flex items-center gap-0.5 text-[8px] font-black shrink-0">
                           {(p.goles_metidos || 0) > 0 && (
-                            <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded">
-                              ⚽ {p.goles_metidos}
+                            <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1 py-0 rounded leading-tight">
+                              ⚽{p.goles_metidos}
                             </span>
                           )}
                           {(p.asistencias || 0) > 0 && (
-                            <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded">
-                              🎯 {p.asistencias}
+                            <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1 py-0 rounded leading-tight">
+                              🎯{p.asistencias}
                             </span>
                           )}
                           {(p.recuperaciones_balon || 0) > 0 && (
-                            <span className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.5 rounded">
-                              ⚡ {p.recuperaciones_balon}
+                            <span className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-1 py-0 rounded leading-tight">
+                              ⚡{p.recuperaciones_balon}
                             </span>
                           )}
                           {(p.tarjetas_amarillas || 0) > 0 && (
-                            <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded">
-                              🟨 {p.tarjetas_amarillas}
+                            <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-0.5 py-0 rounded leading-tight">
+                              🟨
+                            </span>
+                          )}
+                          {(p.tarjetas_rojas || 0) > 0 && (
+                            <span className="bg-red-500/20 text-red-400 border border-red-500/30 px-0.5 py-0 rounded leading-tight">
+                              🟥
                             </span>
                           )}
                         </div>
                       </button>
                     );
                   })}
+                  {leftSquadPlayers.length === 0 && (
+                    <div className="h-full flex items-center justify-center text-center text-slate-500 text-xs">
+                      No hay jugadoras
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Middle Column: Fast Action Button Grid for Selected Player */}
+              {/* Middle Column: Fast Action Button Grid (Single-screen Keypad) */}
               {selectedPlayer ? (
-                <div className="lg:col-span-5 flex flex-col gap-4">
-                  {/* Selected Player Profile Card */}
-                  <div className="bg-gradient-to-r from-slate-950 to-slate-900 border border-cyan-500/40 p-4 rounded-2xl flex items-center justify-between">
+                <div className="flex-1 flex flex-col h-full min-h-0 gap-2 overflow-hidden justify-between">
+                  {/* Selected Player Profile Card (Compact Horizontal Banner) */}
+                  <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-cyan-500/40 px-3.5 py-2 rounded-xl flex items-center justify-between shrink-0 shadow-md">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center font-black text-cyan-300 text-lg">
+                      <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center font-black text-cyan-300 text-base">
                         #{selectedPlayer.dorsal || '-'}
                       </div>
                       <div>
-                        <span className="text-[10px] font-black uppercase text-cyan-400 tracking-wider">
-                          Jugadora Seleccionada
-                        </span>
-                        <h4 className="font-extrabold text-base text-white">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] font-black uppercase text-cyan-400 tracking-wider">
+                            Jugadora Activa
+                          </span>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase bg-slate-800/80 px-1.5 py-0.2 rounded">
+                            {selectedPlayer.posicion}
+                          </span>
+                        </div>
+                        <h4 className="font-extrabold text-sm sm:text-base text-white leading-tight">
                           {selectedPlayer.nombre} {selectedPlayer.apellidos}
                         </h4>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase">
-                          Posición: {selectedPlayer.posicion}
-                        </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 sm:gap-4">
+                      <div className="text-right hidden sm:block">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase block">Minutos</span>
+                        <span className="text-xs font-black text-slate-200 font-mono">
+                          {selectedPlayer.minutos ?? 0}'
+                        </span>
+                      </div>
                       <div className="text-right">
                         <span className="text-[9px] font-bold text-slate-400 uppercase block">Balance Balones</span>
-                        <span className={`text-sm font-black ${
+                        <span className={`text-xs sm:text-sm font-black ${
                           ((selectedPlayer.recuperaciones_balon || 0) - (selectedPlayer.perdidas_balon || 0)) >= 0 
                             ? 'text-cyan-400' 
                             : 'text-amber-400'
@@ -527,335 +798,270 @@ export default function MatchStatsModal({
                     </div>
                   </div>
 
-                  {/* Action Buttons Grid */}
-                  <div className="grid grid-cols-2 gap-3">
+                  {/* 8-Card Keypad Action Buttons Grid - Only individual player metrics! Fits easily without scrolling */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 flex-1 min-h-0 overflow-y-auto lg:overflow-visible">
                     
                     {/* 1. Gol a Favor */}
-                    <div className="bg-emerald-950/40 border border-emerald-500/30 p-3 rounded-2xl flex flex-col justify-between gap-2 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-black uppercase">
-                          <Target className="w-4 h-4" />
-                          <span>Gol a Favor</span>
+                    <div className="bg-emerald-950/40 border border-emerald-500/40 hover:border-emerald-500/70 p-2.5 rounded-xl flex flex-col justify-between shadow-sm transition-colors">
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-black">
+                          <Target className="w-4 h-4 shrink-0" />
+                          <span className="whitespace-nowrap">Gol a Favor</span>
                         </div>
-                        <span className="text-lg font-black text-emerald-400">
+                        <span className="text-lg font-black text-emerald-300 font-mono">
                           {selectedPlayer.goles_metidos || 0}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 pt-1">
+                      <div className="flex items-center gap-1.5 pt-1.5">
                         <Button
+                          type="button"
                           onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'goles_metidos', -1)}
                           variant="outline"
                           size="sm"
-                          className="h-8 flex-1 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 font-black cursor-pointer rounded-xl"
+                          className="h-8 w-8 p-0 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 font-black cursor-pointer rounded-lg shrink-0"
+                          title="Restar 1 gol"
                         >
                           <Minus className="w-3.5 h-3.5" />
                         </Button>
                         <Button
+                          type="button"
                           onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'goles_metidos', 1)}
                           size="sm"
-                          className="h-8 flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black cursor-pointer rounded-xl shadow-md"
+                          className="h-8 flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs cursor-pointer rounded-lg shadow-sm flex items-center justify-center gap-1 px-1 whitespace-nowrap"
                         >
-                          <Plus className="w-3.5 h-3.5" /> +1 Gol
+                          <Plus className="w-3.5 h-3.5 shrink-0" /> <span>+1 Gol</span>
                         </Button>
                       </div>
                     </div>
 
                     {/* 2. Asistencia de Gol */}
-                    <div className="bg-indigo-950/40 border border-indigo-500/30 p-3 rounded-2xl flex flex-col justify-between gap-2 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-indigo-300 text-xs font-black uppercase">
-                          <Award className="w-4 h-4 text-indigo-400" />
-                          <span>Asistencia Gol</span>
+                    <div className="bg-indigo-950/40 border border-indigo-500/40 hover:border-indigo-500/70 p-2.5 rounded-xl flex flex-col justify-between shadow-sm transition-colors">
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1.5 text-indigo-300 text-xs font-black">
+                          <Award className="w-4 h-4 text-indigo-400 shrink-0" />
+                          <span className="whitespace-nowrap">Asistencia</span>
                         </div>
-                        <span className="text-lg font-black text-indigo-300">
+                        <span className="text-lg font-black text-indigo-300 font-mono">
                           {selectedPlayer.asistencias || 0}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 pt-1">
+                      <div className="flex items-center gap-1.5 pt-1.5">
                         <Button
+                          type="button"
                           onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'asistencias', -1)}
                           variant="outline"
                           size="sm"
-                          className="h-8 flex-1 border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/20 font-black cursor-pointer rounded-xl"
+                          className="h-8 w-8 p-0 border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/20 font-black cursor-pointer rounded-lg shrink-0"
+                          title="Restar 1 asistencia"
                         >
                           <Minus className="w-3.5 h-3.5" />
                         </Button>
                         <Button
+                          type="button"
                           onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'asistencias', 1)}
                           size="sm"
-                          className="h-8 flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-black cursor-pointer rounded-xl shadow-md"
+                          className="h-8 flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs cursor-pointer rounded-lg shadow-sm flex items-center justify-center gap-1 px-1 whitespace-nowrap"
                         >
-                          <Plus className="w-3.5 h-3.5" /> +1 Asistencia
+                          <Plus className="w-3.5 h-3.5 shrink-0" /> <span>+1 Asistencia</span>
                         </Button>
                       </div>
                     </div>
 
-                    {/* 3. Gol en Contra (Portera / Bloque) */}
-                    <div className="bg-red-950/40 border border-red-500/30 p-3 rounded-2xl flex flex-col justify-between gap-2 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-red-400 text-xs font-black uppercase">
-                          <ShieldAlert className="w-4 h-4" />
-                          <span>Gol en Contra</span>
+                    {/* 3. Gol en Contra */}
+                    <div className="bg-rose-950/40 border border-rose-500/40 hover:border-rose-500/70 p-2.5 rounded-xl flex flex-col justify-between shadow-sm transition-colors">
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1.5 text-rose-400 text-xs font-black">
+                          <ShieldAlert className="w-4 h-4 shrink-0" />
+                          <span className="whitespace-nowrap">Gol Encajado</span>
                         </div>
-                        <span className="text-lg font-black text-red-400">
+                        <span className="text-lg font-black text-rose-300 font-mono">
                           {selectedPlayer.goles_encajados || 0}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 pt-1">
+                      <div className="flex items-center gap-1.5 pt-1.5">
                         <Button
+                          type="button"
                           onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'goles_encajados', -1)}
                           variant="outline"
                           size="sm"
-                          className="h-8 flex-1 border-red-500/30 text-red-300 hover:bg-red-500/20 font-black cursor-pointer rounded-xl"
+                          className="h-8 w-8 p-0 border-rose-500/30 text-rose-300 hover:bg-rose-500/20 font-black cursor-pointer rounded-lg shrink-0"
+                          title="Restar 1 gol encajado"
                         >
                           <Minus className="w-3.5 h-3.5" />
                         </Button>
                         <Button
+                          type="button"
                           onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'goles_encajados', 1)}
                           size="sm"
-                          className="h-8 flex-1 bg-red-600 hover:bg-red-500 text-white font-black cursor-pointer rounded-xl shadow-md"
+                          className="h-8 flex-1 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs cursor-pointer rounded-lg shadow-sm flex items-center justify-center gap-1 px-1 whitespace-nowrap"
                         >
-                          <Plus className="w-3.5 h-3.5" /> +1 Encajado
+                          <Plus className="w-3.5 h-3.5 shrink-0" /> <span>+1 Encajado</span>
                         </Button>
                       </div>
                     </div>
 
                     {/* 4. Recuperaciones de Balón */}
-                    <div className="bg-cyan-950/40 border border-cyan-500/30 p-3 rounded-2xl flex flex-col justify-between gap-2 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-cyan-400 text-xs font-black uppercase">
-                          <Zap className="w-4 h-4" />
-                          <span>Recuperación</span>
+                    <div className="bg-cyan-950/40 border border-cyan-500/40 hover:border-cyan-500/70 p-2.5 rounded-xl flex flex-col justify-between shadow-sm transition-colors">
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1.5 text-cyan-400 text-xs font-black">
+                          <Zap className="w-4 h-4 shrink-0" />
+                          <span className="whitespace-nowrap">Recuperación</span>
                         </div>
-                        <span className="text-lg font-black text-cyan-300">
+                        <span className="text-lg font-black text-cyan-300 font-mono">
                           {selectedPlayer.recuperaciones_balon || 0}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 pt-1">
+                      <div className="flex items-center gap-1.5 pt-1.5">
                         <Button
+                          type="button"
                           onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'recuperaciones_balon', -1)}
                           variant="outline"
                           size="sm"
-                          className="h-8 flex-1 border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/20 font-black cursor-pointer rounded-xl"
+                          className="h-8 w-8 p-0 border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/20 font-black cursor-pointer rounded-lg shrink-0"
+                          title="Restar 1 recuperación"
                         >
                           <Minus className="w-3.5 h-3.5" />
                         </Button>
                         <Button
+                          type="button"
                           onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'recuperaciones_balon', 1)}
                           size="sm"
-                          className="h-8 flex-1 bg-cyan-600 hover:bg-cyan-500 text-black font-black cursor-pointer rounded-xl shadow-md"
+                          className="h-8 flex-1 bg-cyan-500 hover:bg-cyan-400 text-black font-black text-xs cursor-pointer rounded-lg shadow-sm flex items-center justify-center gap-1 px-1 whitespace-nowrap"
                         >
-                          <Plus className="w-3.5 h-3.5" /> +1 Robada
+                          <Plus className="w-3.5 h-3.5 shrink-0" /> <span>+1 Recuperación</span>
                         </Button>
                       </div>
                     </div>
 
                     {/* 5. Pérdidas de Balón */}
-                    <div className="bg-amber-950/40 border border-amber-500/30 p-3 rounded-2xl flex flex-col justify-between gap-2 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-amber-400 text-xs font-black uppercase">
-                          <AlertTriangle className="w-4 h-4" />
-                          <span>Pérdida Balón</span>
+                    <div className="bg-amber-950/40 border border-amber-500/40 hover:border-amber-500/70 p-2.5 rounded-xl flex flex-col justify-between shadow-sm transition-colors">
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1.5 text-amber-400 text-xs font-black">
+                          <AlertTriangle className="w-4 h-4 shrink-0" />
+                          <span className="whitespace-nowrap">Pérdida Balón</span>
                         </div>
-                        <span className="text-lg font-black text-amber-300">
+                        <span className="text-lg font-black text-amber-300 font-mono">
                           {selectedPlayer.perdidas_balon || 0}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 pt-1">
+                      <div className="flex items-center gap-1.5 pt-1.5">
                         <Button
+                          type="button"
                           onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'perdidas_balon', -1)}
                           variant="outline"
                           size="sm"
-                          className="h-8 flex-1 border-amber-500/30 text-amber-300 hover:bg-amber-500/20 font-black cursor-pointer rounded-xl"
+                          className="h-8 w-8 p-0 border-amber-500/30 text-amber-300 hover:bg-amber-500/20 font-black cursor-pointer rounded-lg shrink-0"
+                          title="Restar 1 pérdida"
                         >
                           <Minus className="w-3.5 h-3.5" />
                         </Button>
                         <Button
+                          type="button"
                           onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'perdidas_balon', 1)}
                           size="sm"
-                          className="h-8 flex-1 bg-amber-600 hover:bg-amber-500 text-black font-black cursor-pointer rounded-xl shadow-md"
+                          className="h-8 flex-1 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs cursor-pointer rounded-lg shadow-sm flex items-center justify-center gap-1 px-1 whitespace-nowrap"
                         >
-                          <Plus className="w-3.5 h-3.5" /> +1 Pérdida
+                          <Plus className="w-3.5 h-3.5 shrink-0" /> <span>+1 Pérdida</span>
                         </Button>
                       </div>
                     </div>
 
-                    {/* 6. Córner a Favor */}
-                    <div className="bg-blue-950/40 border border-blue-500/30 p-3 rounded-2xl flex flex-col justify-between gap-2 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-blue-400 text-xs font-black uppercase">
-                          <Flag className="w-4 h-4" />
-                          <span>Córner Favor</span>
+                    {/* 6. Tarjeta Amarilla */}
+                    <div className="bg-yellow-950/40 border border-yellow-500/40 hover:border-yellow-500/70 p-2.5 rounded-xl flex flex-col justify-between shadow-sm transition-colors">
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1.5 text-yellow-400 text-xs font-black">
+                          <span className="w-3 h-4 bg-yellow-400 rounded-xs inline-block shadow-sm shrink-0" />
+                          <span className="whitespace-nowrap">Tarjeta Amarilla</span>
                         </div>
-                        <span className="text-lg font-black text-blue-300">
-                          {selectedPlayer.corners_favor || 0}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 pt-1">
-                        <Button
-                          onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'corners_favor', -1)}
-                          variant="outline"
-                          size="sm"
-                          className="h-8 flex-1 border-blue-500/30 text-blue-300 hover:bg-blue-500/20 font-black cursor-pointer rounded-xl"
-                        >
-                          <Minus className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button
-                          onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'corners_favor', 1)}
-                          size="sm"
-                          className="h-8 flex-1 bg-blue-600 hover:bg-blue-500 text-white font-black cursor-pointer rounded-xl shadow-md"
-                        >
-                          <Plus className="w-3.5 h-3.5" /> +1 Córner
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* 7. Córner en Contra */}
-                    <div className="bg-slate-900/60 border border-slate-800 p-3 rounded-2xl flex flex-col justify-between gap-2 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-slate-300 text-xs font-black uppercase">
-                          <Flag className="w-4 h-4 text-red-400" />
-                          <span>Córner Contra</span>
-                        </div>
-                        <span className="text-lg font-black text-red-400">
-                          {selectedPlayer.corners_contra || 0}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 pt-1">
-                        <Button
-                          onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'corners_contra', -1)}
-                          variant="outline"
-                          size="sm"
-                          className="h-8 flex-1 border-slate-700 text-slate-300 hover:bg-slate-800 font-black cursor-pointer rounded-xl"
-                        >
-                          <Minus className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button
-                          onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'corners_contra', 1)}
-                          size="sm"
-                          className="h-8 flex-1 bg-slate-800 hover:bg-slate-700 text-white font-black cursor-pointer rounded-xl"
-                        >
-                          <Plus className="w-3.5 h-3.5" /> +1 Córner
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* 8. Falta Provocada (Favor) */}
-                    <div className="bg-purple-950/40 border border-purple-500/30 p-3 rounded-2xl flex flex-col justify-between gap-2 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-purple-400 text-xs font-black uppercase">
-                          <Shield className="w-4 h-4" />
-                          <span>Falta Favor</span>
-                        </div>
-                        <span className="text-lg font-black text-purple-300">
-                          {selectedPlayer.faltas_favor || 0}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 pt-1">
-                        <Button
-                          onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'faltas_favor', -1)}
-                          variant="outline"
-                          size="sm"
-                          className="h-8 flex-1 border-purple-500/30 text-purple-300 hover:bg-purple-500/20 font-black cursor-pointer rounded-xl"
-                        >
-                          <Minus className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button
-                          onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'faltas_favor', 1)}
-                          size="sm"
-                          className="h-8 flex-1 bg-purple-600 hover:bg-purple-500 text-white font-black cursor-pointer rounded-xl shadow-md"
-                        >
-                          <Plus className="w-3.5 h-3.5" /> +1 Falta
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* 9. Falta Cometida (Contra) */}
-                    <div className="bg-orange-950/40 border border-orange-500/30 p-3 rounded-2xl flex flex-col justify-between gap-2 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-orange-400 text-xs font-black uppercase">
-                          <ShieldAlert className="w-4 h-4" />
-                          <span>Falta Contra</span>
-                        </div>
-                        <span className="text-lg font-black text-orange-300">
-                          {selectedPlayer.faltas_contra || 0}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 pt-1">
-                        <Button
-                          onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'faltas_contra', -1)}
-                          variant="outline"
-                          size="sm"
-                          className="h-8 flex-1 border-orange-500/30 text-orange-300 hover:bg-orange-500/20 font-black cursor-pointer rounded-xl"
-                        >
-                          <Minus className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button
-                          onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'faltas_contra', 1)}
-                          size="sm"
-                          className="h-8 flex-1 bg-orange-600 hover:bg-orange-500 text-white font-black cursor-pointer rounded-xl shadow-md"
-                        >
-                          <Plus className="w-3.5 h-3.5" /> +1 Falta
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* 10. Tarjeta Amarilla */}
-                    <div className="bg-yellow-950/40 border border-yellow-500/30 p-3 rounded-2xl flex flex-col justify-between gap-2 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-yellow-400 text-xs font-black uppercase">
-                          <span className="w-3 h-4 bg-yellow-400 rounded-sm inline-block shadow-sm" />
-                          <span>Amarilla</span>
-                        </div>
-                        <span className="text-lg font-black text-yellow-400">
+                        <span className="text-lg font-black text-yellow-400 font-mono">
                           {selectedPlayer.tarjetas_amarillas || 0}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 pt-1">
+                      <div className="flex items-center gap-1.5 pt-1.5">
                         <Button
+                          type="button"
                           onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'tarjetas_amarillas', -1)}
                           variant="outline"
                           size="sm"
-                          className="h-8 flex-1 border-yellow-500/30 text-yellow-300 hover:bg-yellow-500/20 font-black cursor-pointer rounded-xl"
+                          className="h-8 w-8 p-0 border-yellow-500/30 text-yellow-300 hover:bg-yellow-500/20 font-black cursor-pointer rounded-lg shrink-0"
+                          title="Restar 1 amarilla"
                         >
                           <Minus className="w-3.5 h-3.5" />
                         </Button>
                         <Button
+                          type="button"
                           onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'tarjetas_amarillas', 1)}
                           size="sm"
-                          className="h-8 flex-1 bg-yellow-500 hover:bg-yellow-400 text-black font-black cursor-pointer rounded-xl shadow-md"
+                          className="h-8 flex-1 bg-yellow-500 hover:bg-yellow-400 text-black font-black text-xs cursor-pointer rounded-lg shadow-sm flex items-center justify-center gap-1 px-1 whitespace-nowrap"
                         >
-                          <Plus className="w-3.5 h-3.5" /> +1 Amarilla
+                          <Plus className="w-3.5 h-3.5 shrink-0" /> <span>+1 Amarilla</span>
                         </Button>
                       </div>
                     </div>
 
-                    {/* 11. Tarjeta Roja */}
-                    <div className="bg-red-950/40 border border-red-500/30 p-3 rounded-2xl flex flex-col justify-between gap-2 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-red-400 text-xs font-black uppercase">
-                          <span className="w-3 h-4 bg-red-600 rounded-sm inline-block shadow-sm" />
-                          <span>Tarjeta Roja</span>
+                    {/* 7. Tarjeta Roja */}
+                    <div className="bg-red-950/40 border border-red-500/40 hover:border-red-500/70 p-2.5 rounded-xl flex flex-col justify-between shadow-sm transition-colors">
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1.5 text-red-400 text-xs font-black">
+                          <span className="w-3 h-4 bg-red-600 rounded-xs inline-block shadow-sm shrink-0" />
+                          <span className="whitespace-nowrap">Tarjeta Roja</span>
                         </div>
-                        <span className="text-lg font-black text-red-400">
+                        <span className="text-lg font-black text-red-400 font-mono">
                           {selectedPlayer.tarjetas_rojas || 0}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 pt-1">
+                      <div className="flex items-center gap-1.5 pt-1.5">
                         <Button
+                          type="button"
                           onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'tarjetas_rojas', -1)}
                           variant="outline"
                           size="sm"
-                          className="h-8 flex-1 border-red-500/30 text-red-300 hover:bg-red-500/20 font-black cursor-pointer rounded-xl"
+                          className="h-8 w-8 p-0 border-red-500/30 text-red-300 hover:bg-red-500/20 font-black cursor-pointer rounded-lg shrink-0"
+                          title="Restar 1 roja"
                         >
                           <Minus className="w-3.5 h-3.5" />
                         </Button>
                         <Button
+                          type="button"
                           onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'tarjetas_rojas', 1)}
                           size="sm"
-                          className="h-8 flex-1 bg-red-600 hover:bg-red-500 text-white font-black cursor-pointer rounded-xl shadow-md"
+                          className="h-8 flex-1 bg-red-600 hover:bg-red-500 text-white font-black text-xs cursor-pointer rounded-lg shadow-sm flex items-center justify-center gap-1 px-1 whitespace-nowrap"
                         >
-                          <Plus className="w-3.5 h-3.5" /> +1 Roja
+                          <Plus className="w-3.5 h-3.5 shrink-0" /> <span>+1 Roja</span>
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* 8. Minutos Jugados */}
+                    <div className="bg-teal-950/40 border border-teal-500/40 hover:border-teal-500/70 p-2.5 rounded-xl flex flex-col justify-between shadow-sm transition-colors">
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1.5 text-teal-400 text-xs font-black">
+                          <Clock className="w-4 h-4 shrink-0" />
+                          <span className="whitespace-nowrap">Minutos Campo</span>
+                        </div>
+                        <span className="text-lg font-black text-teal-300 font-mono">
+                          {selectedPlayer.minutos ?? 0}'
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 pt-1.5">
+                        <Button
+                          type="button"
+                          onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'minutos', -5)}
+                          variant="outline"
+                          size="sm"
+                          className="h-8 flex-1 border-teal-500/30 text-teal-300 hover:bg-teal-500/20 font-black text-xs cursor-pointer rounded-lg whitespace-nowrap"
+                          title="Restar 5 minutos"
+                        >
+                          -5 min
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={() => adjustPlayerStat(selectedPlayer.playerId, 'minutos', 5)}
+                          size="sm"
+                          className="h-8 flex-1 bg-teal-600 hover:bg-teal-500 text-white font-black text-xs cursor-pointer rounded-lg shadow-sm whitespace-nowrap"
+                          title="Sumar 5 minutos"
+                        >
+                          +5 min
                         </Button>
                       </div>
                     </div>
@@ -863,61 +1069,96 @@ export default function MatchStatsModal({
                   </div>
                 </div>
               ) : (
-                <div className="lg:col-span-5 flex items-center justify-center p-8 text-slate-500 text-xs">
+                <div className="flex-1 flex items-center justify-center p-8 text-slate-500 text-xs">
                   Selecciona una jugadora para registrar estadísticas
                 </div>
               )}
 
-              {/* Right Column: Live Feed Activity Log */}
-              <div className="lg:col-span-3 bg-slate-950/60 p-3.5 rounded-2xl border border-slate-850 flex flex-col gap-2 max-h-[520px]">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-850">
+              {/* Right Column: Player Selector list (Grupo 2 - Jugadoras 10 a 18) */}
+              <div className="w-full lg:w-56 xl:w-64 shrink-0 bg-slate-950/60 p-2 rounded-2xl border border-slate-850 flex flex-col h-full min-h-0 overflow-hidden">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-850 shrink-0">
                   <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>Registro en Vivo</span>
+                    <Users className="w-3 h-3 text-cyan-400" />
+                    <span>Convocadas ({filteredPlayerStats.length > 9 ? `10 - ${Math.min(18, filteredPlayerStats.length)}` : '10 - 18'})</span>
                   </span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[9px] text-slate-500 font-bold">{eventLogs.length} acciones</span>
-                    {eventLogs.length > 0 && (
-                      <button
-                        onClick={() => setEventLogs([])}
-                        title="Limpiar registro"
-                        className="text-[9px] text-slate-400 hover:text-red-400 font-bold uppercase transition-colors cursor-pointer px-1 py-0.5 rounded hover:bg-slate-800"
-                      >
-                        Limpiar
-                      </button>
-                    )}
-                  </div>
+                  <span className="text-[9px] font-bold text-slate-500">Restantes: {rightSquadPlayers.length}</span>
                 </div>
 
-                <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-                  {eventLogs.length > 0 ? (
-                    eventLogs.map((log) => (
-                      <div 
-                        key={log.id} 
-                        className="bg-slate-900/80 border border-slate-800 p-2 rounded-xl text-xs flex flex-col gap-0.5 animate-in slide-in-from-right-2 duration-150 relative group"
+                {/* Subtitle / Alignment Spacer */}
+                <div className="py-1 shrink-0 flex items-center justify-between px-1 h-6">
+                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
+                    Suplentes / Grupo 2
+                  </span>
+                  <span className="text-[9px] font-mono text-cyan-400 font-bold">
+                    {rightSquadPlayers.length}/9
+                  </span>
+                </div>
+
+                {/* Player List Group 2 (Fits 9 rows without scroll) */}
+                <div className="flex-1 min-h-0 flex flex-col justify-between gap-0.5 overflow-hidden">
+                  {rightSquadPlayers.map((p) => {
+                    const isSelected = p.playerId === selectedPlayerId;
+                    return (
+                      <button
+                        key={p.playerId}
+                        onClick={() => setSelectedPlayerId(p.playerId)}
+                        className={`w-full flex-1 min-h-[30px] max-h-[38px] px-2 py-1 rounded-lg border text-left transition-all flex items-center justify-between cursor-pointer ${
+                          isSelected 
+                            ? 'bg-cyan-950/70 border-cyan-500 text-white shadow-sm ring-1 ring-cyan-500/30' 
+                            : 'bg-slate-900/40 border-slate-850 text-slate-300 hover:bg-slate-850'
+                        }`}
                       >
-                        <div className="flex items-center justify-between text-[9px] font-mono text-cyan-400">
-                          <span>{log.time}</span>
-                          <span className="text-slate-500 uppercase">{log.type.replace('_', ' ')}</span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className={`w-5 h-5 rounded-md flex items-center justify-center font-black text-[10px] shrink-0 ${
+                            isSelected ? 'bg-cyan-500 text-black' : 'bg-slate-800 text-slate-300'
+                          }`}>
+                            #{p.dorsal || '-'}
+                          </span>
+                          <div className="min-w-0">
+                            <span className="font-bold text-[11px] block text-white truncate max-w-[105px] leading-tight">
+                              {p.nombre} {p.apellidos}
+                            </span>
+                            <span className="text-[8px] font-extrabold uppercase text-slate-500 block truncate leading-none">
+                              {p.posicion}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between gap-1">
-                          <p className="text-white font-semibold text-[11px] leading-tight">
-                            {log.text}
-                          </p>
-                          <button
-                            onClick={() => setEventLogs(prev => prev.filter(l => l.id !== log.id))}
-                            className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-opacity p-0.5 cursor-pointer shrink-0"
-                            title="Eliminar evento"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
+
+                        {/* Quick Mini Badges */}
+                        <div className="flex items-center gap-0.5 text-[8px] font-black shrink-0">
+                          {(p.goles_metidos || 0) > 0 && (
+                            <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1 py-0 rounded leading-tight">
+                              ⚽{p.goles_metidos}
+                            </span>
+                          )}
+                          {(p.asistencias || 0) > 0 && (
+                            <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1 py-0 rounded leading-tight">
+                              🎯{p.asistencias}
+                            </span>
+                          )}
+                          {(p.recuperaciones_balon || 0) > 0 && (
+                            <span className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-1 py-0 rounded leading-tight">
+                              ⚡{p.recuperaciones_balon}
+                            </span>
+                          )}
+                          {(p.tarjetas_amarillas || 0) > 0 && (
+                            <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-0.5 py-0 rounded leading-tight">
+                              🟨
+                            </span>
+                          )}
+                          {(p.tarjetas_rojas || 0) > 0 && (
+                            <span className="bg-red-500/20 text-red-400 border border-red-500/30 px-0.5 py-0 rounded leading-tight">
+                              🟥
+                            </span>
+                          )}
                         </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="h-40 flex flex-col items-center justify-center text-center p-4 text-slate-600 text-xs">
-                      <Clock className="w-6 h-6 mb-2 opacity-40" />
-                      <p>Pulsa en los botones para registrar acciones en vivo durante el partido</p>
+                      </button>
+                    );
+                  })}
+                  {rightSquadPlayers.length === 0 && (
+                    <div className="h-full flex flex-col items-center justify-center text-center p-3 text-slate-600 text-xs">
+                      <Users className="w-5 h-5 mb-1 opacity-40" />
+                      <p className="text-[10px]">Todas las convocadas caben en la caja izquierda</p>
                     </div>
                   )}
                 </div>
