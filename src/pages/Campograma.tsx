@@ -31,12 +31,18 @@ import {
   Pencil,
   RotateCcw,
   Move,
-  X
+  X,
+  FileDown,
+  Loader2,
+  Printer
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/store/useAuthStore';
 import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
+import { format } from 'date-fns';
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 import { cleanPhotoUrl, normalizePlayerNameKey, isPlayerMatch } from '@/lib/utils';
 
@@ -1472,6 +1478,572 @@ export default function Campograma() {
     toast.success('Pizarra despejada. Todos los jugadores han sido devueltos al banquillo.');
   };
 
+  // Helper to draw the tactical pitch onto a high-resolution Canvas for PDF export
+  const createTacticalPitchCanvas = (): HTMLCanvasElement => {
+    const canvas = document.createElement('canvas');
+    // High-definition canvas: 1000 x 1380
+    const width = 1000;
+    const height = 1380;
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return canvas;
+
+    // 1. Field Background & Lawn Pattern
+    ctx.fillStyle = '#022c22'; // Emerald 950
+    ctx.fillRect(0, 0, width, height);
+
+    // Alternating lawn grass stripes
+    const stripeHeight = height / 8;
+    for (let i = 0; i < 8; i++) {
+      if (i % 2 === 0) {
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
+        ctx.fillRect(0, i * stripeHeight, width, stripeHeight);
+      }
+    }
+
+    // Outer Pitch Border
+    const pad = 36;
+    ctx.strokeStyle = 'rgba(52, 211, 153, 0.4)';
+    ctx.lineWidth = 3.5;
+    ctx.strokeRect(pad, pad, width - pad * 2, height - pad * 2);
+
+    // Halfway Line
+    const midY = height / 2;
+    ctx.beginPath();
+    ctx.moveTo(pad, midY);
+    ctx.lineTo(width - pad, midY);
+    ctx.stroke();
+
+    // Center Circle
+    ctx.beginPath();
+    ctx.arc(width / 2, midY, width * 0.16, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Center Spot
+    ctx.fillStyle = 'rgba(52, 211, 153, 0.6)';
+    ctx.beginPath();
+    ctx.arc(width / 2, midY, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Penalty Area Top
+    const penWidth = (width - pad * 2) * 0.58;
+    const penHeight = (height - pad * 2) * 0.16;
+    const penX = (width - penWidth) / 2;
+    ctx.strokeRect(penX, pad, penWidth, penHeight);
+
+    // 6-yard Box Top
+    const sixWidth = penWidth * 0.48;
+    const sixHeight = penHeight * 0.36;
+    const sixX = (width - sixWidth) / 2;
+    ctx.strokeRect(sixX, pad, sixWidth, sixHeight);
+
+    // Penalty Spot Top
+    const spotTopY = pad + penHeight * 0.68;
+    ctx.beginPath();
+    ctx.arc(width / 2, spotTopY, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Penalty Arc Top
+    ctx.beginPath();
+    ctx.arc(width / 2, spotTopY, width * 0.12, 0.18 * Math.PI, 0.82 * Math.PI, false);
+    ctx.stroke();
+
+    // Penalty Area Bottom
+    const penBottomY = height - pad - penHeight;
+    ctx.strokeRect(penX, penBottomY, penWidth, penHeight);
+
+    // 6-yard Box Bottom
+    const sixBottomY = height - pad - sixHeight;
+    ctx.strokeRect(sixX, sixBottomY, sixWidth, sixHeight);
+
+    // Penalty Spot Bottom
+    const spotBottomY = height - pad - penHeight * 0.68;
+    ctx.beginPath();
+    ctx.arc(width / 2, spotBottomY, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Penalty Arc Bottom
+    ctx.beginPath();
+    ctx.arc(width / 2, spotBottomY, width * 0.12, 1.18 * Math.PI, 1.82 * Math.PI, false);
+    ctx.stroke();
+
+    // Goals Top & Bottom
+    const goalWidth = penWidth * 0.38;
+    const goalX = (width - goalWidth) / 2;
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(goalX, pad - 8, goalWidth, 8);
+    ctx.fillRect(goalX, height - pad, goalWidth, 8);
+
+    // Helper function for rounded rectangles
+    const drawRoundedRect = (x: number, y: number, w: number, h: number, r: number) => {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    };
+
+    // 2. Draw Positions & Placed Players
+    currentPositions.forEach((pos) => {
+      const assignedIdsRaw = currentLineup[pos.id] || [];
+      const assignedIds = Array.isArray(assignedIdsRaw)
+        ? assignedIdsRaw
+        : (typeof assignedIdsRaw === 'string' && assignedIdsRaw ? [assignedIdsRaw] : []);
+      const assignedPlayers = currentRoster.filter(p => assignedIds.includes(p.id));
+
+      const curCoord = customCoords[pos.id];
+      const posX = curCoord?.x ?? pos.x;
+      const posY = curCoord?.y ?? pos.y;
+
+      const cx = (posX / 100) * width;
+      const cy = (posY / 100) * height;
+      const circleRadius = 38;
+
+      if (assignedPlayers.length > 0) {
+        // Player Blue Circle
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+        ctx.shadowBlur = 10;
+        ctx.shadowOffsetY = 4;
+
+        const grad = ctx.createLinearGradient(cx - circleRadius, cy - circleRadius, cx + circleRadius, cy + circleRadius);
+        grad.addColorStop(0, '#2563eb');
+        grad.addColorStop(1, '#1d4ed8');
+
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, circleRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 3.5;
+        ctx.stroke();
+        ctx.restore();
+
+        // Dorsal Number or Count
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        if (assignedPlayers.length === 1) {
+          const dorsal = getDisplayDorsal(assignedPlayers[0]);
+          ctx.fillText(dorsal || '•', cx, cy);
+        } else {
+          ctx.fillText(`x${assignedPlayers.length}`, cx, cy);
+        }
+
+        // Yellow Position Badge
+        const badgeW = 44;
+        const badgeH = 22;
+        const badgeX = cx + circleRadius - 14;
+        const badgeY = cy - circleRadius - 2;
+
+        ctx.save();
+        ctx.fillStyle = '#facc15'; // Yellow 400
+        drawRoundedRect(badgeX, badgeY, badgeW, badgeH, 5);
+        ctx.fill();
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.fillStyle = '#0f172a';
+        ctx.font = '900 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(pos.shortLabel, badgeX + badgeW / 2, badgeY + badgeH / 2 + 0.5);
+        ctx.restore();
+
+        // Player Name Pills
+        let labelY = cy + circleRadius + 15;
+        assignedPlayers.forEach((p) => {
+          const dText = getDisplayDorsal(p);
+          const nameStr = `${dText ? `[${dText}] ` : ''}${formatCompactName(p.nombre)}`;
+
+          ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+          const textWidth = ctx.measureText(nameStr).width;
+          const pillW = Math.max(textWidth + 26, 115);
+          const pillH = 28;
+          const pillX = cx - pillW / 2;
+
+          ctx.save();
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+          ctx.shadowBlur = 6;
+          ctx.shadowOffsetY = 2;
+
+          ctx.fillStyle = '#020617'; // Slate 950
+          drawRoundedRect(pillX, labelY - pillH / 2, pillW, pillH, 8);
+          ctx.fill();
+
+          ctx.strokeStyle = '#3b82f6'; // Blue 500
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(nameStr, cx, labelY);
+          ctx.restore();
+
+          labelY += 32;
+        });
+
+      } else {
+        // Empty Slot (Dashed Red Circle)
+        ctx.save();
+        ctx.fillStyle = 'rgba(69, 10, 10, 0.35)';
+        ctx.beginPath();
+        ctx.arc(cx, cy, circleRadius - 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)';
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([6, 5]);
+        ctx.beginPath();
+        ctx.arc(cx, cy, circleRadius - 4, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = '#f87171';
+        ctx.font = '900 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(pos.shortLabel, cx, cy);
+        ctx.restore();
+
+        // Red Pill: "⚠️ CAPTACIÓN"
+        const capText = '⚠️ CAPTACIÓN';
+        ctx.font = '900 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        const capW = ctx.measureText(capText).width + 24;
+        const capH = 26;
+        const capX = cx - capW / 2;
+        const capY = cy + circleRadius + 8;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(69, 10, 10, 0.9)';
+        drawRoundedRect(capX, capY, capW, capH, 6);
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.fillStyle = '#fca5a5';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(capText, cx, capY + capH / 2 + 0.5);
+        ctx.restore();
+      }
+    });
+
+    return canvas;
+  };
+
+  // PDF Export State & Handler
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+  const handleExportPDF = async () => {
+    // Close any active player slot popover so it's not rendered
+    setActiveSlotId(null);
+    setIsExportingPdf(true);
+    const toastId = toast.loading('Generando PDF del campograma y pizarra táctica...');
+
+    try {
+      // 1. Generate ultra-crisp pitch image from high-res Canvas
+      const pitchCanvas = createTacticalPitchCanvas();
+      const pitchImgData = pitchCanvas.toDataURL('image/png');
+
+      // 2. Initialize jsPDF Document (A4 Portrait)
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
+      const pageHeight = doc.internal.pageSize.getHeight(); // 297mm
+
+      // 1. Header Banner
+      doc.setFillColor(15, 23, 42); // Slate-900
+      doc.rect(10, 10, 190, 24, 'F');
+
+      // Accent gold strip
+      doc.setFillColor(234, 179, 8); // Yellow-500
+      doc.rect(10, 33.5, 190, 1.5, 'F');
+
+      // Club Title
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(255, 255, 255);
+      doc.text('C.D. U.D. LA POVEDA', 15, 19);
+
+      doc.setFontSize(8.5);
+      doc.setFont('Helvetica', 'bold');
+      doc.setTextColor(147, 197, 253); // Blue-300
+      doc.text('DEPARTAMENTO DE DIRECCIÓN TÉCNICA Y METODOLOGÍA', 15, 24.5);
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(203, 213, 225);
+      doc.text('Pizarra Táctica y Distribución de Posiciones en Campograma', 15, 29.5);
+
+      // Header Right Info
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text(`TEMPORADA ${selectedSeason}`, 195, 19, { align: 'right' });
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(203, 213, 225);
+      doc.text(isF11Mode ? 'MODALIDAD FÚTBOL 11' : 'MODALIDAD FÚTBOL 7', 195, 24.5, { align: 'right' });
+
+      const dateStr = format(new Date(), "dd/MM/yyyy HH:mm");
+      doc.setFontSize(7.5);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Generado: ${dateStr}`, 195, 29.5, { align: 'right' });
+
+      // 2. Info Bar (Team & Formation)
+      doc.setFillColor(241, 245, 249); // Slate-100
+      doc.roundedRect(10, 38, 190, 10, 2, 2, 'F');
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(10, 38, 190, 10, 2, 2, 'D');
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(30, 58, 138); // Blue-900
+      doc.text(`EQUIPO: ${selectedTeam}`, 15, 44.5);
+
+      doc.setTextColor(15, 23, 42);
+      doc.text(`SISTEMA TÁCTICO: ${selectedFormation}`, 105, 44.5);
+
+      const placedCount = Object.values(currentLineup).reduce(
+        (acc, val) => acc + (Array.isArray(val) ? val.length : (val ? 1 : 0)),
+        0
+      );
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(71, 85, 105);
+      doc.text(`Plantilla: ${currentRoster.length} | En Campo: ${placedCount}`, 195, 44.5, { align: 'right' });
+
+      // 3. Pitch Image (Left column)
+      const pitchWidth = 98;
+      const pitchHeight = pitchWidth * (pitchCanvas.height / pitchCanvas.width);
+      const pitchX = 10;
+      const pitchY = 51;
+
+      // Pitch container frame
+      doc.setFillColor(2, 44, 34); // Emerald-950
+      doc.roundedRect(pitchX, pitchY, pitchWidth, pitchHeight, 3, 3, 'F');
+      doc.setDrawColor(30, 41, 59);
+      doc.setLineWidth(0.8);
+      doc.roundedRect(pitchX, pitchY, pitchWidth, pitchHeight, 3, 3, 'D');
+
+      doc.addImage(pitchImgData, 'PNG', pitchX, pitchY, pitchWidth, pitchHeight);
+
+      // 4. Right Column: Tactical Summary & Starting Lineup List
+      const rightX = 112;
+      const rightWidth = 88;
+      let curY = 51;
+
+      // Card 1: Tactical Summary Box
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(rightX, curY, rightWidth, 20, 2, 2, 'F');
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(rightX, curY, rightWidth, 20, 2, 2, 'D');
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text('RESUMEN TÁCTICO DE POSICIONES', rightX + 4, curY + 5.5);
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text(`• Formación: ${selectedFormation} (${isF11Mode ? '11 jugadoras/es' : '7 jugadoras/es'})`, rightX + 4, curY + 10);
+      
+      const unassignedCount = currentRoster.filter(p => !isPlayerAssigned(p.id)).length;
+      const emptyPositions = currentPositions.filter(pos => {
+        const assigned = currentLineup[pos.id];
+        return !assigned || (Array.isArray(assigned) && assigned.length === 0);
+      }).length;
+
+      doc.text(`• Jugadores colocados en campo: ${placedCount} de ${currentRoster.length}`, rightX + 4, curY + 14);
+      doc.text(`• En banquillo: ${unassignedCount} | Posiciones en captación: ${emptyPositions}`, rightX + 4, curY + 18);
+
+      curY += 23;
+
+      // Card 2: Lineup Breakdown (Positions and players)
+      const lineupBoxHeight = pitchHeight - 23;
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(rightX, curY, rightWidth, lineupBoxHeight, 2, 2, 'F');
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(rightX, curY, rightWidth, lineupBoxHeight, 2, 2, 'D');
+
+      doc.setFillColor(15, 23, 42);
+      doc.roundedRect(rightX, curY, rightWidth, 6.5, 2, 2, 'F');
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(255, 255, 255);
+      doc.text('DISTRIBUCIÓN EN EL CAMPO', rightX + 4, curY + 4.5);
+
+      let slotY = curY + 10.5;
+      const maxSlotsY = curY + lineupBoxHeight - 3;
+
+      currentPositions.forEach((pos) => {
+        if (slotY > maxSlotsY) return;
+
+        const assignedIdsRaw = currentLineup[pos.id] || [];
+        const assignedIds = Array.isArray(assignedIdsRaw)
+          ? assignedIdsRaw
+          : (typeof assignedIdsRaw === 'string' && assignedIdsRaw ? [assignedIdsRaw] : []);
+        const assignedPlayers = currentRoster.filter(p => assignedIds.includes(p.id));
+
+        // Position Badge Box
+        doc.setFillColor(234, 179, 8); // Yellow badge
+        doc.roundedRect(rightX + 3, slotY - 3, 9, 4.5, 1, 1, 'F');
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(6.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text(pos.shortLabel, rightX + 7.5, slotY + 0.2, { align: 'center' });
+
+        // Position Name
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(7);
+        doc.setTextColor(30, 41, 59);
+        doc.text(`${pos.label}:`, rightX + 13.5, slotY);
+
+        if (assignedPlayers.length === 0) {
+          doc.setFont('Helvetica', 'bold');
+          doc.setFontSize(6.8);
+          doc.setTextColor(220, 38, 38); // Red-600
+          doc.text('⚠️ EN CAPTACIÓN', rightX + 45, slotY);
+          slotY += 5.2;
+        } else {
+          doc.setFont('Helvetica', 'normal');
+          doc.setFontSize(7);
+          doc.setTextColor(15, 23, 42);
+
+          assignedPlayers.forEach((p, pIdx) => {
+            if (pIdx > 0) {
+              slotY += 4.5;
+              if (slotY > maxSlotsY) return;
+            }
+            const dText = getDisplayDorsal(p);
+            const pNameStr = `${dText ? `[${dText}] ` : ''}${formatCompactName(p.nombre)}`;
+            doc.text(pNameStr, rightX + (pIdx > 0 ? 18 : 45), slotY);
+          });
+          slotY += 5.2;
+        }
+      });
+
+      // 5. Bottom Section: Bench / Substitutes & Notes
+      const bottomY = pitchY + pitchHeight + 4;
+      const bottomHeight = pageHeight - bottomY - 14;
+
+      if (bottomHeight >= 26) {
+        // Bench Box (left half)
+        const benchWidth = 110;
+        doc.setFillColor(248, 250, 252);
+        doc.roundedRect(10, bottomY, benchWidth, bottomHeight, 2, 2, 'F');
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(10, bottomY, benchWidth, bottomHeight, 2, 2, 'D');
+
+        doc.setFillColor(30, 41, 59);
+        doc.roundedRect(10, bottomY, benchWidth, 6, 2, 2, 'F');
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(255, 255, 255);
+        doc.text(`BANQUILLO / SUPLENTES (${unassignedCount})`, 14, bottomY + 4.2);
+
+        const benchPlayers = currentRoster.filter(p => !isPlayerAssigned(p.id));
+        const bY = bottomY + 10;
+        if (benchPlayers.length === 0) {
+          doc.setFont('Helvetica', 'italic');
+          doc.setFontSize(7.5);
+          doc.setTextColor(100, 116, 139);
+          doc.text('Todos los jugadores están asignados a puestos en el campo.', 14, bY);
+        } else {
+          doc.setFont('Helvetica', 'normal');
+          doc.setFontSize(7);
+          doc.setTextColor(15, 23, 42);
+
+          const colWidth = 50;
+          benchPlayers.slice(0, 16).forEach((bp, bIdx) => {
+            const col = bIdx % 2;
+            const row = Math.floor(bIdx / 2);
+            const itemX = 14 + col * colWidth;
+            const itemY = bY + row * 4.2;
+            if (itemY < bottomY + bottomHeight - 2) {
+              const dText = getDisplayDorsal(bp);
+              doc.text(`• ${dText ? `[${dText}] ` : ''}${formatCompactName(bp.nombre)}`, itemX, itemY);
+            }
+          });
+        }
+
+        // Coach Notes Box (right half)
+        const notesX = 124;
+        const notesWidth = 76;
+        doc.setFillColor(248, 250, 252);
+        doc.roundedRect(notesX, bottomY, notesWidth, bottomHeight, 2, 2, 'F');
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(notesX, bottomY, notesWidth, bottomHeight, 2, 2, 'D');
+
+        doc.setFillColor(30, 41, 59);
+        doc.roundedRect(notesX, bottomY, notesWidth, 6, 2, 2, 'F');
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(255, 255, 255);
+        doc.text('INSTRUCCIONES / OBSERVACIONES TÁCTICAS', notesX + 4, bottomY + 4.2);
+
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.2);
+        for (let lineY = bottomY + 13; lineY < bottomY + bottomHeight - 3; lineY += 5.5) {
+          doc.line(notesX + 4, lineY, notesX + notesWidth - 4, lineY);
+        }
+      }
+
+      // 6. Page Footer
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.3);
+      doc.line(10, pageHeight - 9, 200, pageHeight - 9);
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.text('C.D. U.D. La Poveda • Sistema de Gestión y Metodología Táctica', 10, pageHeight - 5);
+      doc.text('Página 1 de 1', 200, pageHeight - 5, { align: 'right' });
+
+      // Save PDF file
+      const cleanTeam = selectedTeam.replace(/\s+/g, '_').toLowerCase();
+      const cleanFormation = selectedFormation.replace(/[^a-zA-Z0-9-]/g, '_');
+      const cleanSeason = selectedSeason.replace(/[^a-zA-Z0-9]/g, '-');
+      const filename = `Campograma_${cleanTeam}_${cleanFormation}_${cleanSeason}.pdf`;
+
+      doc.save(filename);
+      toast.dismiss(toastId);
+      toast.success('¡Campograma exportado en PDF correctamente!');
+    } catch (err: any) {
+      console.error('Error generating PDF:', err);
+      toast.dismiss(toastId);
+      toast.error('Error al generar el PDF: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   return (
     <div className="space-y-6 md:space-y-8 max-w-6xl mx-auto px-4 md:px-0">
       {/* Page Title & Information */}
@@ -1487,7 +2059,7 @@ export default function Campograma() {
         </div>
         
         {/* Quick share actions */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
             onClick={handleAutoAssign}
@@ -1497,6 +2069,25 @@ export default function Campograma() {
           >
             <Shuffle className="w-4 h-4 mr-1.5 text-blue-500" />
             Auto-Alinear
+          </Button>
+
+          <Button
+            size="sm"
+            onClick={handleExportPDF}
+            disabled={isExportingPdf}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer shadow-lg shadow-emerald-950/40 flex items-center gap-1.5 transition-all"
+          >
+            {isExportingPdf ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-white" />
+                Exportando PDF...
+              </>
+            ) : (
+              <>
+                <FileDown className="w-4 h-4 text-white" />
+                Descargar PDF
+              </>
+            )}
           </Button>
         </div>
       </div>
