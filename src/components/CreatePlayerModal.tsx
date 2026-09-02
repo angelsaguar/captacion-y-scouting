@@ -47,6 +47,7 @@ export function CreatePlayerModal({ isOpen, onClose, onPlayerCreated }: CreatePl
   const [apellidos, setApellidos] = useState('');
   const [apodo, setApodo] = useState('');
   const [posicion, setPosicion] = useState('CENTRAL');
+  const [posicionSecundaria, setPosicionSecundaria] = useState('');
   const [estado, setEstado] = useState<'Observado' | 'En seguimiento' | 'Interesa' | 'Fichado' | 'Rechazado'>('Observado');
   const [equipoActual, setEquipoActual] = useState('');
   const [equipoAsignado, setEquipoAsignado] = useState('SENIOR FEMENINO');
@@ -73,6 +74,7 @@ export function CreatePlayerModal({ isOpen, onClose, onPlayerCreated }: CreatePl
     setApellidos('');
     setApodo('');
     setPosicion('CENTRAL');
+    setPosicionSecundaria('');
     setEstado('Observado');
     setEquipoActual('');
     setEquipoAsignado('SENIOR FEMENINO');
@@ -97,6 +99,7 @@ export function CreatePlayerModal({ isOpen, onClose, onPlayerCreated }: CreatePl
       apellidos: apellidos.trim(),
       apodo: apodo.trim() || null,
       posicion,
+      posicion_secundaria: posicionSecundaria || null,
       estado,
       equipo_actual: equipoActual.trim() || null,
       equipo_asignado: equipoAsignado || 'SENIOR FEMENINO',
@@ -119,6 +122,7 @@ export function CreatePlayerModal({ isOpen, onClose, onPlayerCreated }: CreatePl
           apellidos: playerPayload.apellidos,
           apodo: playerPayload.apodo,
           posicion: playerPayload.posicion,
+          posicion_secundaria: playerPayload.posicion_secundaria,
           estado: playerPayload.estado,
           equipo_actual: playerPayload.equipo_actual,
           equipo_asignado: playerPayload.equipo_asignado,
@@ -186,6 +190,7 @@ export function CreatePlayerModal({ isOpen, onClose, onPlayerCreated }: CreatePl
           apellidos: playerPayload.apellidos,
           dorsal: (rosterArr.length + 1).toString(),
           posicion: playerPayload.posicion,
+          posicion_secundaria: playerPayload.posicion_secundaria || undefined,
           foto_url: '',
           anio_nacimiento: playerPayload.anio_nacimiento,
           lateralidad: playerPayload.lateralidad,
@@ -272,9 +277,9 @@ export function CreatePlayerModal({ isOpen, onClose, onPlayerCreated }: CreatePl
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-slate-300">Apodo / Nombre Deportivo</Label>
+                  <Label className="text-xs font-semibold text-slate-300">Apodo / Nombre</Label>
                   <Input 
                     value={apodo} 
                     onChange={e => setApodo(e.target.value)} 
@@ -283,7 +288,7 @@ export function CreatePlayerModal({ isOpen, onClose, onPlayerCreated }: CreatePl
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-slate-300">Demarcación / Posición *</Label>
+                  <Label className="text-xs font-semibold text-slate-300">Posición Principal *</Label>
                   <Select value={posicion} onValueChange={setPosicion}>
                     <SelectTrigger className="bg-slate-800/60 border-slate-700 text-white">
                       <SelectValue placeholder="Seleccionar posición" />
@@ -296,7 +301,21 @@ export function CreatePlayerModal({ isOpen, onClose, onPlayerCreated }: CreatePl
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-slate-300">Estado de Captación *</Label>
+                  <Label className="text-xs font-semibold text-slate-300">Segunda Posición</Label>
+                  <Select value={posicionSecundaria || 'none'} onValueChange={(val) => setPosicionSecundaria(val === 'none' ? '' : val)}>
+                    <SelectTrigger className="bg-slate-800/60 border-slate-700 text-cyan-300">
+                      <SelectValue placeholder="Opcional" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none" className="text-slate-400 italic">-- Ninguna --</SelectItem>
+                      {POSITIONS.map(pos => (
+                        <SelectItem key={pos} value={pos}>{pos}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-slate-300">Estado Captación *</Label>
                   <Select value={estado} onValueChange={(val: any) => setEstado(val)}>
                     <SelectTrigger className="bg-slate-800/60 border-slate-700 text-white font-medium">
                       <SelectValue placeholder="Estado" />

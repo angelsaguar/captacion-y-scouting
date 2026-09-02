@@ -68,6 +68,7 @@ interface TeamPlayer {
   apodo?: string;
   dorsal: string;
   posicion: string;
+  posicion_secundaria?: string;
   foto_url?: string;
   anio_nacimiento?: number;
   fecha_nacimiento?: string;
@@ -2860,6 +2861,7 @@ export default function Plantilla() {
     apodo: '',
     dorsal: '',
     posicion: 'DELANTERO',
+    posicion_secundaria: '',
     foto_url: '',
     anio_nacimiento: new Date().getFullYear() - 18,
     lateralidad: 'Derecho',
@@ -2880,6 +2882,7 @@ export default function Plantilla() {
       apodo: player.apodo || '',
       dorsal: player.dorsal || '',
       posicion: player.posicion,
+      posicion_secundaria: player.posicion_secundaria || '',
       foto_url: player.foto_url || '',
       anio_nacimiento: player.anio_nacimiento,
       lateralidad: player.lateralidad || 'Derecho',
@@ -2905,6 +2908,7 @@ export default function Plantilla() {
       apodo: editRosterFormData.apodo?.trim() || undefined,
       dorsal: editRosterFormData.dorsal?.trim() || editingRosterPlayer.dorsal,
       posicion: editRosterFormData.posicion || editingRosterPlayer.posicion,
+      posicion_secundaria: editRosterFormData.posicion_secundaria?.trim() || undefined,
       foto_url: editRosterFormData.foto_url?.trim() || '',
       anio_nacimiento: editRosterFormData.anio_nacimiento,
       lateralidad: editRosterFormData.lateralidad || 'Derecho',
@@ -2938,6 +2942,7 @@ export default function Plantilla() {
             apodo: updatedPlayer.apodo || scList[scIdx].apodo,
             dorsal: updatedPlayer.dorsal,
             posicion: updatedPlayer.posicion,
+            posicion_secundaria: updatedPlayer.posicion_secundaria || scList[scIdx].posicion_secundaria,
             foto_url: updatedPlayer.foto_url || '',
             telefono: updatedPlayer.telefono,
             email: updatedPlayer.email,
@@ -2957,6 +2962,7 @@ export default function Plantilla() {
         apodo: updatedPlayer.apodo || null,
         dorsal: updatedPlayer.dorsal || null,
         posicion: updatedPlayer.posicion,
+        posicion_secundaria: updatedPlayer.posicion_secundaria || null,
         foto_url: updatedPlayer.foto_url || null,
         anio_nacimiento: updatedPlayer.anio_nacimiento ? parseInt(updatedPlayer.anio_nacimiento as any) : null,
         lateralidad: updatedPlayer.lateralidad || 'Derecho',
@@ -3056,6 +3062,7 @@ export default function Plantilla() {
               foto_url: scPlayer.foto_url !== undefined && scPlayer.foto_url !== '' ? cleanPhotoUrl(scPlayer.foto_url) : cleanPhotoUrl(p.foto_url),
               dorsal: scPlayer.dorsal || p.dorsal,
               posicion: scPlayer.posicion || p.posicion,
+              posicion_secundaria: scPlayer.posicion_secundaria || p.posicion_secundaria,
               telefono: scPlayer.telefono || p.telefono,
               email: scPlayer.email || p.email,
               anio_nacimiento: scPlayer.anio_nacimiento || p.anio_nacimiento,
@@ -3412,6 +3419,7 @@ export default function Plantilla() {
           if (existing.foto_url !== latestFoto || 
               (sp.dorsal && existing.dorsal !== sp.dorsal) || 
               (sp.posicion && existing.posicion !== sp.posicion) ||
+              (sp.posicion_secundaria && existing.posicion_secundaria !== sp.posicion_secundaria) ||
               (sp.telefono && existing.telefono !== sp.telefono) ||
               (sp.email && existing.email !== sp.email)) {
             roster[existingIdx] = {
@@ -3419,6 +3427,7 @@ export default function Plantilla() {
               foto_url: latestFoto,
               dorsal: sp.dorsal || existing.dorsal,
               posicion: sp.posicion || existing.posicion,
+              posicion_secundaria: sp.posicion_secundaria || existing.posicion_secundaria,
               telefono: sp.telefono || existing.telefono,
               email: sp.email || existing.email,
               anio_nacimiento: sp.anio_nacimiento || existing.anio_nacimiento,
@@ -3432,6 +3441,7 @@ export default function Plantilla() {
             apellidos: sp.apellidos.trim() === 'Marta Pulido' ? 'Pulido' : sp.apellidos.trim(),
             dorsal: sp.dorsal || (roster.length + 1).toString(),
             posicion: sp.posicion,
+            posicion_secundaria: sp.posicion_secundaria || undefined,
             foto_url: cleanPhotoUrl(sp.foto_url) || '',
             anio_nacimiento: sp.anio_nacimiento || 2005,
             lateralidad: sp.lateralidad || 'Derecho',
@@ -3525,6 +3535,7 @@ export default function Plantilla() {
           nombre: player.nombre,
           apellidos: player.apellidos,
           posicion: player.posicion,
+          posicion_secundaria: player.posicion_secundaria || null,
           dorsal: player.dorsal || null,
           lateralidad: player.lateralidad || 'Derecho',
           anio_nacimiento: player.anio_nacimiento ? parseInt(player.anio_nacimiento as any) : null,
@@ -3919,6 +3930,7 @@ export default function Plantilla() {
         apodo: newPlayer.apodo || null,
         dorsal: newPlayer.dorsal || null,
         posicion: newPlayer.posicion,
+        posicion_secundaria: newPlayer.posicion_secundaria || null,
         foto_url: newPlayer.foto_url || null,
         anio_nacimiento: newPlayer.anio_nacimiento ? parseInt(newPlayer.anio_nacimiento as any) : null,
         lateralidad: newPlayer.lateralidad || 'Derecho',
@@ -4186,12 +4198,35 @@ export default function Plantilla() {
                     className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1"
                   >
                     <option value="PORTERO">PORTERO</option>
+                    <option value="LATERAL DERECHO">LATERAL DERECHO</option>
+                    <option value="LATERAL IZQUIERDO">LATERAL IZQUIERDO</option>
                     <option value="CENTRAL">CENTRAL</option>
-                    <option value="LATERAL">LATERAL</option>
-                    <option value="MEDIO CENTRO DEFENSIVO">MEDIO CENTRO DEFENSIVO</option>
+                    <option value="PIVOTE">PIVOTE</option>
                     <option value="INTERIOR">INTERIOR</option>
                     <option value="MEDIA PUNTA">MEDIA PUNTA</option>
-                    <option value="EXTREMO">EXTREMO</option>
+                    <option value="EXTREMO DERECHO">EXTREMO DERECHO</option>
+                    <option value="EXTREMO IZQUIERDO">EXTREMO IZQUIERDO</option>
+                    <option value="DELANTERO">DELANTERO</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-400">Segunda Posición (Opcional)</label>
+                  <select 
+                    value={formData.posicion_secundaria || ''}
+                    onChange={(e) => setFormData({...formData, posicion_secundaria: e.target.value})}
+                    className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-cyan-300 focus:outline-none focus:border-cyan-500 transition-all mt-1"
+                  >
+                    <option value="">-- Sin segunda posición --</option>
+                    <option value="PORTERO">PORTERO</option>
+                    <option value="LATERAL DERECHO">LATERAL DERECHO</option>
+                    <option value="LATERAL IZQUIERDO">LATERAL IZQUIERDO</option>
+                    <option value="CENTRAL">CENTRAL</option>
+                    <option value="PIVOTE">PIVOTE</option>
+                    <option value="INTERIOR">INTERIOR</option>
+                    <option value="MEDIA PUNTA">MEDIA PUNTA</option>
+                    <option value="EXTREMO DERECHO">EXTREMO DERECHO</option>
+                    <option value="EXTREMO IZQUIERDO">EXTREMO IZQUIERDO</option>
                     <option value="DELANTERO">DELANTERO</option>
                   </select>
                 </div>
@@ -4523,9 +4558,16 @@ export default function Plantilla() {
                       </span>
                     )}
                   </h4>
-                  <p className="text-xs text-blue-400 font-bold uppercase tracking-wider">
-                    {selectedPlayerProfile.posicion} • Dorsal {selectedPlayerProfile.dorsal}
-                  </p>
+                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-0.5">
+                    <p className="text-xs text-blue-400 font-bold uppercase tracking-wider">
+                      {selectedPlayerProfile.posicion} • Dorsal {selectedPlayerProfile.dorsal}
+                    </p>
+                    {selectedPlayerProfile.posicion_secundaria && (
+                      <span className="text-[10px] font-bold text-cyan-300 bg-cyan-950/70 border border-cyan-500/30 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                        2ª Pos: {selectedPlayerProfile.posicion_secundaria}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1 text-[11px] text-slate-300">
                     <span className={`w-2.5 h-2.5 rounded-full ${
                       selectedPlayerProfile.estado_fisico === 'Disponible' ? 'bg-emerald-500' :
@@ -5926,7 +5968,7 @@ export default function Plantilla() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
                   <label className="text-xs font-semibold text-emerald-400 block mb-1">Apodo / Alias</label>
                   <input 
@@ -5948,12 +5990,32 @@ export default function Plantilla() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1">Posición</label>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Posición Principal</label>
                   <select 
                     value={editRosterFormData.posicion || 'DELANTERO'}
                     onChange={(e) => setEditRosterFormData({ ...editRosterFormData, posicion: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
                   >
+                    <option value="PORTERO">PORTERO</option>
+                    <option value="LATERAL DERECHO">LATERAL DERECHO</option>
+                    <option value="LATERAL IZQUIERDO">LATERAL IZQUIERDO</option>
+                    <option value="CENTRAL">CENTRAL</option>
+                    <option value="PIVOTE">PIVOTE</option>
+                    <option value="INTERIOR">INTERIOR</option>
+                    <option value="MEDIA PUNTA">MEDIA PUNTA</option>
+                    <option value="EXTREMO DERECHO">EXTREMO DERECHO</option>
+                    <option value="EXTREMO IZQUIERDO">EXTREMO IZQUIERDO</option>
+                    <option value="DELANTERO">DELANTERO</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Segunda Posición (Opcional)</label>
+                  <select 
+                    value={editRosterFormData.posicion_secundaria || ''}
+                    onChange={(e) => setEditRosterFormData({ ...editRosterFormData, posicion_secundaria: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-cyan-300 focus:outline-none focus:border-cyan-500 transition-colors"
+                  >
+                    <option value="">-- Sin segunda posición --</option>
                     <option value="PORTERO">PORTERO</option>
                     <option value="LATERAL DERECHO">LATERAL DERECHO</option>
                     <option value="LATERAL IZQUIERDO">LATERAL IZQUIERDO</option>

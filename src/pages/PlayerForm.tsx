@@ -61,6 +61,7 @@ const playerSchema = z.object({
   equipo_asignado: z.string().nullable().optional(),
   dorsal: z.string().nullable().optional(),
   posicion: z.string().min(1, 'Posición requerida'),
+  posicion_secundaria: z.string().nullable().optional(),
   lateralidad: z.string().nullable().optional(),
   anio_nacimiento: z.union([z.number(), z.string()]).nullable().optional(),
   fecha_nacimiento: z.string().nullable().optional(),
@@ -225,6 +226,7 @@ export default function PlayerForm() {
               equipo_asignado: loadedPlayer.equipo_asignado || '',
               dorsal: loadedPlayer.dorsal || '',
               posicion: loadedPlayer.posicion,
+              posicion_secundaria: loadedPlayer.posicion_secundaria || '',
               lateralidad: loadedPlayer.lateralidad as any || 'Derecho',
               anio_nacimiento: loadedPlayer.anio_nacimiento,
               fecha_nacimiento: loadedPlayer.fecha_nacimiento || '',
@@ -373,6 +375,7 @@ export default function PlayerForm() {
       const playerPayload = {
         ...values,
         apodo: values.apodo?.trim() || null,
+        posicion_secundaria: values.posicion_secundaria?.trim() || null,
         foto_url: finalFotoUrl,
         fecha_seguimiento: values.fecha_seguimiento || null,
         telefono: values.telefono?.trim() || null,
@@ -513,6 +516,7 @@ export default function PlayerForm() {
                     nombre: playerPayload.nombre,
                     apellidos: playerPayload.apellidos,
                     posicion: playerPayload.posicion || p.posicion,
+                    posicion_secundaria: playerPayload.posicion_secundaria || p.posicion_secundaria,
                     dorsal: playerPayload.dorsal || p.dorsal,
                     foto_url: finalFotoUrl || '',
                     telefono: playerPayload.telefono || p.telefono,
@@ -563,6 +567,7 @@ export default function PlayerForm() {
                 nombre: playerPayload.nombre,
                 apellidos: playerPayload.apellidos,
                 posicion: playerPayload.posicion || p.posicion,
+                posicion_secundaria: playerPayload.posicion_secundaria || p.posicion_secundaria,
                 dorsal: playerPayload.dorsal || p.dorsal,
                 foto_url: finalFotoUrl || '',
                 telefono: playerPayload.telefono || p.telefono,
@@ -579,6 +584,7 @@ export default function PlayerForm() {
             apellidos: playerPayload.apellidos,
             dorsal: playerPayload.dorsal || (rosterArr.length + 1).toString(),
             posicion: playerPayload.posicion,
+            posicion_secundaria: playerPayload.posicion_secundaria || undefined,
             foto_url: finalFotoUrl || '',
             anio_nacimiento: playerPayload.anio_nacimiento || 2005,
             lateralidad: playerPayload.lateralidad || 'Derecho',
@@ -684,7 +690,7 @@ export default function PlayerForm() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <Label>Posición Principal</Label>
                   <Select 
@@ -695,6 +701,23 @@ export default function PlayerForm() {
                       <SelectValue placeholder="Seleccionar" />
                     </SelectTrigger>
                     <SelectContent>
+                      {Object.keys(POSITION_ATTRIBUTES).map(pos => (
+                        <SelectItem key={pos} value={pos}>{pos}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-cyan-400">Segunda Posición (Opcional)</Label>
+                  <Select 
+                    value={form.watch('posicion_secundaria') || 'none'} 
+                    onValueChange={(val) => form.setValue('posicion_secundaria', val === 'none' ? '' : val)}
+                  >
+                    <SelectTrigger className="border-cyan-500/30 text-cyan-300">
+                      <SelectValue placeholder="Sin asignar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none" className="text-slate-400 italic">-- Ninguna / Sin segunda posición --</SelectItem>
                       {Object.keys(POSITION_ATTRIBUTES).map(pos => (
                         <SelectItem key={pos} value={pos}>{pos}</SelectItem>
                       ))}

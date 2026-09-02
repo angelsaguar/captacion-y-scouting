@@ -24,6 +24,7 @@ export interface Player {
   equipo_asignado?: string; // New field for assigned team in La Poveda club
   dorsal?: string;
   posicion: string;
+  posicion_secundaria?: string;
   lateralidad?: Lateralidad;
   anio_nacimiento?: number;
   fecha_nacimiento?: string;

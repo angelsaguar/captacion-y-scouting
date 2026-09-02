@@ -91,6 +91,7 @@ export default function PlayerDetail() {
         apellidos: player.apellidos,
         apodo: player.apodo || '',
         posicion: player.posicion,
+        posicion_secundaria: player.posicion_secundaria || '',
         equipo_actual: player.equipo_actual || '',
         equipo_asignado: player.equipo_asignado || '',
         anio_nacimiento: player.anio_nacimiento,
@@ -177,6 +178,7 @@ export default function PlayerDetail() {
         apellidos: editPersonalData.apellidos.trim(),
         apodo: editPersonalData.apodo?.trim() || null,
         posicion: editPersonalData.posicion || player.posicion,
+        posicion_secundaria: editPersonalData.posicion_secundaria?.trim() || null,
         equipo_actual: editPersonalData.equipo_actual?.trim() || null,
         equipo_asignado: editPersonalData.equipo_asignado?.trim() || null,
         anio_nacimiento: editPersonalData.anio_nacimiento || null,
@@ -219,6 +221,7 @@ export default function PlayerDetail() {
       const updatedObj = {
         ...player,
         ...payload,
+        posicion_secundaria: payload.posicion_secundaria || undefined,
         foto_url: payload.foto_url || ''
       };
       setPlayer(updatedObj);
@@ -260,6 +263,7 @@ export default function PlayerDetail() {
                     nombre: updatedObj.nombre,
                     apellidos: updatedObj.apellidos,
                     posicion: updatedObj.posicion || p.posicion,
+                    posicion_secundaria: updatedObj.posicion_secundaria || p.posicion_secundaria,
                     dorsal: updatedObj.dorsal || p.dorsal,
                     foto_url: payload.foto_url || '',
                     telefono: updatedObj.telefono || p.telefono,
@@ -440,12 +444,21 @@ export default function PlayerDetail() {
     doc.setFontSize(10);
     doc.setFont('Helvetica', 'normal');
     doc.text(`Nombre: ${player.nombre} ${player.apellidos}${player.apodo ? ` ("${player.apodo}")` : ''}`, 15, 65);
-    doc.text(`Posición: ${player.posicion}`, 15, 72);
-    doc.text(`Año Nacimiento: ${player.anio_nacimiento || '-'}`, 15, 79);
-    doc.text(`Procedencia: ${player.equipo_actual || '-'}`, 15, 86);
-    doc.text(`Asignación Club: ${player.equipo_asignado || '-'}`, 15, 93);
-    doc.text(`Dorsal: ${player.dorsal || '-'}`, 15, 100);
-    doc.text(`Lateralidad: ${player.lateralidad || '-'}`, 15, 107);
+    doc.text(`Posición Principal: ${player.posicion}`, 15, 72);
+    if (player.posicion_secundaria) {
+      doc.text(`Segunda Posición: ${player.posicion_secundaria}`, 15, 79);
+      doc.text(`Año Nacimiento: ${player.anio_nacimiento || '-'}`, 15, 86);
+      doc.text(`Procedencia: ${player.equipo_actual || '-'}`, 15, 93);
+      doc.text(`Asignación Club: ${player.equipo_asignado || '-'}`, 15, 100);
+      doc.text(`Dorsal: ${player.dorsal || '-'}`, 15, 107);
+      doc.text(`Lateralidad: ${player.lateralidad || '-'}`, 15, 114);
+    } else {
+      doc.text(`Año Nacimiento: ${player.anio_nacimiento || '-'}`, 15, 79);
+      doc.text(`Procedencia: ${player.equipo_actual || '-'}`, 15, 86);
+      doc.text(`Asignación Club: ${player.equipo_asignado || '-'}`, 15, 93);
+      doc.text(`Dorsal: ${player.dorsal || '-'}`, 15, 100);
+      doc.text(`Lateralidad: ${player.lateralidad || '-'}`, 15, 107);
+    }
     
     // Right Column Info (Scouting Status)
     doc.setFontSize(14);
@@ -573,7 +586,8 @@ export default function PlayerDetail() {
       { Campo: 'Nombre', Valor: player.nombre },
       { Campo: 'Apellidos', Valor: player.apellidos },
       { Campo: 'Apodo / Alias', Valor: player.apodo || '-' },
-      { Campo: 'Posición', Valor: player.posicion },
+      { Campo: 'Posición Principal', Valor: player.posicion },
+      { Campo: 'Segunda Posición', Valor: player.posicion_secundaria || '-' },
       { Campo: 'Procedencia', Valor: player.equipo_actual || '-' },
       { Campo: 'Asignación Club', Valor: player.equipo_asignado || '-' },
       { Campo: 'Potencial', Valor: `${player.potencial}/5` },
@@ -726,7 +740,12 @@ export default function PlayerDetail() {
                 </DropdownMenu>
               </div>
               <div className="flex flex-wrap items-center gap-y-1 gap-x-3 mt-1.5 text-[9px] sm:text-[10px] text-slate-500 font-black uppercase tracking-widest">
-                <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {player.posicion}</span>
+                <span className="flex items-center gap-1"><Users className="w-3 h-3 text-blue-400" /> {player.posicion}</span>
+                {player.posicion_secundaria && (
+                  <span className="flex items-center gap-1 text-cyan-300 bg-cyan-950/40 border border-cyan-500/30 px-2 py-0.5 rounded-md text-[9px] font-bold">
+                    2ª Posición: {player.posicion_secundaria}
+                  </span>
+                )}
                 <span className="flex items-center gap-1"><Trophy className="w-3 h-3" /> {player.equipo_actual || 'Sin club'}</span>
                 {player.equipo_asignado && (
                   <span className="flex items-center gap-1 text-emerald-400 bg-emerald-950/20 border border-emerald-500/10 px-1.5 py-0.5 rounded-md text-[9px] font-bold">
@@ -1395,14 +1414,34 @@ export default function PlayerDetail() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1">Posición</label>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Posición Principal</label>
                   <select 
                     value={editPersonalData.posicion || 'CENTRAL'}
                     onChange={(e) => setEditPersonalData({ ...editPersonalData, posicion: e.target.value as any })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
                   >
+                    <option value="PORTERO">PORTERO</option>
+                    <option value="LATERAL DERECHO">LATERAL DERECHO</option>
+                    <option value="LATERAL IZQUIERDO">LATERAL IZQUIERDO</option>
+                    <option value="CENTRAL">CENTRAL</option>
+                    <option value="PIVOTE">PIVOTE</option>
+                    <option value="INTERIOR">INTERIOR</option>
+                    <option value="MEDIA PUNTA">MEDIA PUNTA</option>
+                    <option value="EXTREMO DERECHO">EXTREMO DERECHO</option>
+                    <option value="EXTREMO IZQUIERDO">EXTREMO IZQUIERDO</option>
+                    <option value="DELANTERO">DELANTERO</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Segunda Posición (Opcional)</label>
+                  <select 
+                    value={editPersonalData.posicion_secundaria || ''}
+                    onChange={(e) => setEditPersonalData({ ...editPersonalData, posicion_secundaria: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-cyan-300 focus:outline-none focus:border-cyan-500 transition-colors"
+                  >
+                    <option value="">-- Sin segunda posición --</option>
                     <option value="PORTERO">PORTERO</option>
                     <option value="LATERAL DERECHO">LATERAL DERECHO</option>
                     <option value="LATERAL IZQUIERDO">LATERAL IZQUIERDO</option>
@@ -1437,16 +1476,6 @@ export default function PlayerDetail() {
                     onChange={(e) => setEditPersonalData({ ...editPersonalData, fecha_nacimiento: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
                     placeholder="Ej. 23/08/2005"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1">Año de Nacimiento</label>
-                  <input 
-                    type="number" 
-                    value={editPersonalData.anio_nacimiento || ''}
-                    onChange={(e) => setEditPersonalData({ ...editPersonalData, anio_nacimiento: parseInt(e.target.value) || undefined })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
-                    placeholder="Ej. 2008"
                   />
                 </div>
               </div>
