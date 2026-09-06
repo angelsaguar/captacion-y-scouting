@@ -1601,7 +1601,8 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                       <p className="text-xs text-slate-500 italic">No hay jugadoras en la plantilla activa para este equipo. Agrega jugadoras en el apartado Plantilla.</p>
                     </div>
                   ) : (
-                    <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                    <div className="space-y-2 max-h-[500px] overflow-y-auto overflow-x-auto pr-1">
+                      <div className="min-w-[620px] space-y-2">
                       {/* Grid Header */}
                       <div className="grid grid-cols-12 gap-1 px-2 py-1.5 text-[9px] font-black uppercase text-slate-500 tracking-wider">
                         <div className="col-span-3">Jugadora</div>
@@ -1761,6 +1762,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                           </div>
                         </div>
                       ))}
+                      </div>
                     </div>
                   )}
                 </div>
