@@ -39,7 +39,8 @@ import {
   Target,
   ShieldCheck,
   Zap,
-  Activity
+  Activity,
+  User
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { toPng } from 'html-to-image';
@@ -48,6 +49,8 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { generateLocalTacticalAdvice, getTacticalAdvice } from '@/lib/tacticalAdvisor';
 import MatchStatsModal from '@/components/partidos/MatchStatsModal';
+import { cleanPhotoUrl, isPlayerMatch, normalizePlayerNameKey } from '@/lib/utils';
+import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 
 interface MatchPlayerStat {
   playerId: string;
@@ -167,7 +170,7 @@ export default function Partidos() {
   // Convocatoria & Corporate WhatsApp Modal state
   const [showConvocatoriaModal, setShowConvocatoriaModal] = useState<Match | null>(null);
   const [showStatsTrackerModal, setShowStatsTrackerModal] = useState<Match | null>(null);
-  const [activeConvocatoriaTab, setActiveConvocatoriaTab] = useState<'fifa' | 'editor' | 'whatsapp'>('fifa');
+  const [activeConvocatoriaTab, setActiveConvocatoriaTab] = useState<'fifa' | 'hoja' | 'editor' | 'whatsapp'>('fifa');
   const [selectedConvocadas, setSelectedConvocadas] = useState<string[]>([]);
   const [citacionHora, setCitacionHora] = useState<string>('');
   const [citacionLugar, setCitacionLugar] = useState<string>('');
@@ -464,11 +467,64 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
   };
 
+  // Helper to sync latest player photos from Plantilla / LocalStorage / Scouting / Official list
+  const syncLatestPlayerPhotos = (currentPlayers: any[], teamName: string) => {
+    try {
+      const rosterKey = `team_roster_${teamName}`;
+      const savedRoster = localStorage.getItem(rosterKey);
+      const localList: any[] = savedRoster ? JSON.parse(savedRoster) : [];
+      
+      let scList: any[] = [];
+      try {
+        const savedSc = localStorage.getItem('scouting_local_players');
+        if (savedSc) scList = JSON.parse(savedSc);
+      } catch {}
+
+      return currentPlayers.map(p => {
+        let bestFoto = cleanPhotoUrl(p.foto_url);
+        
+        // 1. Check localList (Plantilla)
+        if (!bestFoto) {
+          const matchedLocal = localList.find(lp => isPlayerMatch(lp, p));
+          if (matchedLocal?.foto_url) {
+            bestFoto = cleanPhotoUrl(matchedLocal.foto_url);
+          }
+        }
+
+        // 2. Check scouting_local_players
+        if (!bestFoto && scList.length > 0) {
+          const matchedSc = scList.find(sp => isPlayerMatch(sp, p));
+          if (matchedSc?.foto_url) {
+            bestFoto = cleanPhotoUrl(matchedSc.foto_url);
+          }
+        }
+
+        // 3. Check JUGADORAS_ADJUNTAS
+        if (!bestFoto) {
+          const matchedOj = JUGADORAS_ADJUNTAS.find(oj => isPlayerMatch(oj, p));
+          if (matchedOj?.foto_url) {
+            bestFoto = cleanPhotoUrl(matchedOj.foto_url);
+          }
+        }
+
+        return {
+          ...p,
+          foto_url: bestFoto || p.foto_url || ''
+        };
+      });
+    } catch {
+      return currentPlayers;
+    }
+  };
+
   // Open convocatoria modal
   const handleOpenConvocatoriaModal = (match: Match) => {
+    // Re-sync latest player photos from Plantilla so newly uploaded photos appear immediately
+    const updatedPlayers = syncLatestPlayerPhotos(players, selectedTeam);
+    setPlayers(updatedPlayers);
     setShowConvocatoriaModal(match);
     
-    const validPlayerIds = new Set(players.map(p => p.id));
+    const validPlayerIds = new Set(updatedPlayers.map(p => p.id));
     const rawConv = match.convocatoria || match.estadisticas?.convocatoria || [];
     // Ensure we only load unique, valid IDs for active players in the current team
     const cleanConv = rawConv.filter((id, idx, arr) => validPlayerIds.has(id) && arr.indexOf(id) === idx);
@@ -501,12 +557,14 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
   // Helper to generate poster image data URL using html-to-image with html2canvas fallback
   const getPosterDataUrl = async (el: HTMLElement): Promise<string> => {
+    const isLight = el.id === 'hoja-oficial-export';
+    const bg = isLight ? '#ffffff' : '#07090e';
     // Primary approach: html-to-image (handles modern Tailwind v4 oklch colors natively)
     try {
       const dataUrl = await toPng(el, {
         quality: 0.95,
         pixelRatio: 2,
-        backgroundColor: '#07090e',
+        backgroundColor: bg,
         cacheBust: true
       });
       if (dataUrl && dataUrl.length > 200) {
@@ -522,10 +580,10 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
         scale: 2,
         useCORS: true,
         allowTaint: true,
-        backgroundColor: '#07090e',
+        backgroundColor: bg,
         logging: false,
         onclone: (clonedDoc) => {
-          const clonedEl = clonedDoc.getElementById('fifa-poster-export');
+          const clonedEl = clonedDoc.getElementById(el.id);
           if (clonedEl) {
             clonedEl.style.transform = 'none';
             clonedEl.style.maxHeight = 'none';
@@ -590,6 +648,39 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
     }
   };
 
+  // Export Official Matchday Sheet A4 (Hoja de Convocatoria A4) to PDF
+  const handleExportHojaA4Pdf = async () => {
+    const el = document.getElementById('hoja-oficial-export');
+    if (!el) {
+      toast.error('No se encontró el documento de la hoja de convocatoria.');
+      return;
+    }
+    const toastId = toast.loading('Generando PDF de la Hoja de Convocatoria Oficial...');
+    try {
+      const imgData = await getPosterDataUrl(el);
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      // A4 dimensions: 210mm x 297mm
+      pdf.addImage(imgData, 'PNG', 0, 0, 210, 297);
+      
+      const cleanTeam = selectedTeam.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const cleanRival = (showConvocatoriaModal?.rival || 'Rival').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `Hoja_Convocatoria_${cleanTeam}_vs_${cleanRival}.pdf`;
+      pdf.save(filename);
+      
+      toast.dismiss(toastId);
+      toast.success('¡Hoja oficial de convocatoria en PDF A4 descargada correctamente!');
+    } catch (err) {
+      console.error('Error al exportar PDF:', err);
+      toast.dismiss(toastId);
+      toast.error('Ocurrió un error al generar el PDF de la hoja.');
+    }
+  };
+
   // Export FIFA Convocatoria Poster to PNG for direct WhatsApp attachment
   const handleExportFifaPng = async () => {
     const el = document.getElementById('fifa-poster-export');
@@ -651,34 +742,89 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       const savedRoster = localStorage.getItem(rosterKey);
       let localList: any[] = savedRoster ? JSON.parse(savedRoster) : [];
 
+      let scList: any[] = [];
+      try {
+        const savedSc = localStorage.getItem('scouting_local_players');
+        if (savedSc) scList = JSON.parse(savedSc);
+      } catch {}
+
       try {
         const { data: dbPlayers } = await supabase
           .from('players')
           .select('*')
           .or(`equipo.eq.${selectedTeam},equipo.is.null,equipo.eq.''`);
 
+        const map = new Map<string, any>();
+
+        // 1. Add from localList (from Plantilla)
+        localList.forEach(p => {
+          if (p && p.id) {
+            map.set(p.id, {
+              ...p,
+              foto_url: cleanPhotoUrl(p.foto_url) || p.foto_url || ''
+            });
+          }
+        });
+
+        // 2. Merge from dbPlayers
         if (dbPlayers && dbPlayers.length > 0) {
-          const map = new Map<string, any>();
-          localList.forEach(p => map.set(p.id, p));
           dbPlayers.forEach(p => {
+            const dbFoto = cleanPhotoUrl(p.foto_url) || p.foto_url || '';
             if (!map.has(p.id)) {
               map.set(p.id, {
                 id: p.id,
                 nombre: p.nombre || '',
                 apellidos: p.apellidos || '',
                 dorsal: p.dorsal || '',
-                posicion: p.posicion || 'Jugadora'
+                posicion: p.posicion || 'Jugadora',
+                foto_url: dbFoto
               });
+            } else {
+              const existing = map.get(p.id);
+              if (!existing.foto_url && dbFoto) {
+                existing.foto_url = dbFoto;
+              }
+              if (!existing.dorsal && p.dorsal) existing.dorsal = p.dorsal;
+              if ((!existing.posicion || existing.posicion === 'Jugadora') && p.posicion) {
+                existing.posicion = p.posicion;
+              }
             }
           });
-          const merged = Array.from(map.values());
-          setPlayers(merged);
-          localStorage.setItem(rosterKey, JSON.stringify(merged));
-        } else {
-          setPlayers(localList);
         }
+
+        // 3. Fallback matching with scList
+        if (scList && scList.length > 0) {
+          map.forEach((player) => {
+            if (!player.foto_url) {
+              const matchedSc = scList.find(sp => isPlayerMatch(sp, player));
+              if (matchedSc && matchedSc.foto_url) {
+                player.foto_url = cleanPhotoUrl(matchedSc.foto_url);
+              }
+            }
+          });
+        }
+
+        // 4. Fallback matching with JUGADORAS_ADJUNTAS
+        JUGADORAS_ADJUNTAS.forEach(oj => {
+          const ojFoto = cleanPhotoUrl(oj.foto_url);
+          if (ojFoto) {
+            map.forEach((player) => {
+              if (!player.foto_url && isPlayerMatch(oj, player)) {
+                player.foto_url = ojFoto;
+              }
+            });
+          }
+        });
+
+        const merged = Array.from(map.values());
+        setPlayers(merged);
+        localStorage.setItem(rosterKey, JSON.stringify(merged));
       } catch (err) {
-        setPlayers(localList);
+        const cleanList = localList.map(p => ({
+          ...p,
+          foto_url: cleanPhotoUrl(p.foto_url) || p.foto_url || ''
+        }));
+        setPlayers(cleanList);
       }
 
       try {
@@ -1829,6 +1975,19 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
                   <button
                     type="button"
+                    onClick={() => setActiveConvocatoriaTab('hoja')}
+                    className={`px-3 py-1.5 rounded-xl font-black uppercase transition-all flex items-center gap-1.5 ${
+                      activeConvocatoriaTab === 'hoja'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>📄 Hoja Oficial A4 ({selectedPlayersList.length})</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => setActiveConvocatoriaTab('editor')}
                     className={`px-3 py-1.5 rounded-xl font-black uppercase transition-all flex items-center gap-1.5 ${
                       activeConvocatoriaTab === 'editor'
@@ -1837,7 +1996,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                     }`}
                   >
                     <Users className="w-3.5 h-3.5" />
-                    <span>⚙️ Selección y Citación ({selectedPlayersList.length})</span>
+                    <span>⚙️ Selección y Citación</span>
                   </button>
                 </div>
 
@@ -2007,7 +2166,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                               No se han seleccionado jugadoras convocadas aún.
                             </div>
                           ) : (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                               {selectedPlayersList.map((player) => {
                                 const pos = player.posicion || 'Jugadora';
                                 const isPor = pos.toLowerCase().includes('port') || pos.toLowerCase().includes('gk');
@@ -2023,28 +2182,63 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                                 return (
                                   <div 
                                     key={`fifa-card-${player.id}`}
-                                    className="bg-gradient-to-b from-blue-900/40 via-slate-900 to-slate-950 border-2 border-slate-300/60 rounded-2xl p-2 flex flex-col justify-between shadow-lg relative overflow-hidden"
+                                    className="bg-gradient-to-b from-blue-950/70 via-slate-900 to-slate-950 border-2 border-slate-300/50 rounded-2xl p-2 sm:p-2.5 flex flex-col justify-between shadow-lg relative overflow-hidden transition-all group"
                                   >
-                                    <div className="flex items-start justify-between">
-                                      <span className="text-base font-black text-slate-200 font-mono leading-none">
+                                    {/* Top Row: Dorsal + Position Badge */}
+                                    <div className="flex items-start justify-between relative z-10">
+                                      <span className="text-base sm:text-lg font-black text-slate-100 font-mono leading-none drop-shadow">
                                         #{player.dorsal || '•'}
                                       </span>
-                                      <span className={`text-[8px] font-black px-1.5 py-0.5 rounded border uppercase ${posBg}`}>
+                                      <span className={`text-[8px] font-black px-1.5 py-0.5 rounded border uppercase tracking-wider ${posBg}`}>
                                         {posTag}
                                       </span>
                                     </div>
 
-                                    <div className="my-1">
-                                      <p className="font-extrabold text-xs text-white uppercase tracking-tight truncate leading-tight">
+                                    {/* Center: Player Photo / Avatar from Plantilla */}
+                                    <div className="my-1.5 flex justify-center items-center relative z-10">
+                                      {player.foto_url ? (
+                                        <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden border-2 border-slate-300/50 shadow-xl bg-slate-950 flex items-center justify-center shrink-0">
+                                          <img 
+                                            src={player.foto_url} 
+                                            alt={`${player.nombre} ${player.apellidos || ''}`}
+                                            className="w-full h-full object-cover object-top"
+                                            crossOrigin="anonymous"
+                                            referrerPolicy="no-referrer"
+                                            onError={(e) => {
+                                              (e.currentTarget as HTMLElement).style.display = 'none';
+                                              const parent = (e.currentTarget as HTMLElement).parentElement;
+                                              if (parent) {
+                                                parent.classList.add('bg-gradient-to-b', 'from-blue-900/60', 'to-slate-950');
+                                                const fallbackSpan = document.createElement('span');
+                                                fallbackSpan.className = 'text-xs font-black text-slate-300 font-mono';
+                                                fallbackSpan.innerText = '#' + (player.dorsal || '•');
+                                                parent.appendChild(fallbackSpan);
+                                              }
+                                            }}
+                                          />
+                                          <div className="absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-slate-950/70 to-transparent pointer-events-none" />
+                                        </div>
+                                      ) : (
+                                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl border-2 border-slate-400/30 bg-gradient-to-b from-blue-900/40 via-slate-900 to-slate-950 flex flex-col items-center justify-center shadow-inner text-slate-300 shrink-0">
+                                          <Shirt className="w-7 h-7 sm:w-8 sm:h-8 text-blue-300/80 mb-0.5" />
+                                          <span className="text-[9px] font-black text-slate-400 font-mono">#{player.dorsal || '•'}</span>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Player Name and Surname */}
+                                    <div className="my-0.5 text-center relative z-10 px-0.5">
+                                      <p className="font-black text-xs sm:text-[13px] text-white uppercase tracking-tight truncate leading-tight">
                                         {player.nombre}
                                       </p>
-                                      <p className="font-bold text-[9px] text-slate-300 uppercase truncate">
+                                      <p className="font-bold text-[9px] text-slate-300 uppercase truncate leading-tight mt-0.5">
                                         {player.apellidos}
                                       </p>
                                     </div>
 
-                                    <div className="flex items-center justify-between border-t border-slate-300/20 pt-1 mt-0.5">
-                                      <span className="text-[8px] font-extrabold text-slate-400 uppercase tracking-widest truncate">
+                                    {/* Bottom Footer Bar */}
+                                    <div className="flex items-center justify-between border-t border-slate-300/20 pt-1 mt-1 relative z-10">
+                                      <span className="text-[8px] font-extrabold text-slate-300 uppercase tracking-widest truncate">
                                         LA POVEDA
                                       </span>
                                       <span className="text-[9px]">⚽</span>
@@ -2075,6 +2269,216 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                           </p>
                         </div>
 
+                      </div>
+                    </div>
+                  </div>
+                ) : activeConvocatoriaTab === 'hoja' ? (
+                  /* TAB 2: HOJA OFICIAL DE CONVOCATORIA A4 IMPRIMIBLE Y PDF */
+                  <div className="space-y-6">
+                    {/* Top Action Bar */}
+                    <div className="bg-slate-950/80 border border-blue-500/30 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-lg">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="w-3 h-3 rounded-full bg-blue-400 animate-pulse" />
+                        <span className="font-extrabold text-blue-300 uppercase tracking-wide">
+                          Hoja Oficial de Convocatoria A4 Imprimible ({selectedPlayersList.length} Convocadas)
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          onClick={handleExportHojaA4Pdf}
+                          className="bg-blue-600 hover:bg-blue-500 text-white font-black text-xs uppercase px-4 py-2 rounded-xl flex items-center gap-2 shadow-lg shadow-blue-950/50"
+                        >
+                          <FileDown className="w-4 h-4" />
+                          <span>Descargar PDF A4</span>
+                        </Button>
+
+                        <Button
+                          type="button"
+                          onClick={() => setActiveConvocatoriaTab('editor')}
+                          className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs uppercase px-3 py-2 rounded-xl flex items-center gap-1.5"
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                          <span>Modificar Lista</span>
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* A4 Sheet Container */}
+                    <div className="flex justify-center overflow-x-auto pb-6">
+                      <div
+                        id="hoja-oficial-export"
+                        className="w-[794px] min-h-[1123px] bg-white text-slate-900 p-8 shadow-2xl flex flex-col justify-between font-sans relative border border-slate-200"
+                        style={{ boxSizing: 'border-box' }}
+                      >
+                        {/* Header */}
+                        <div>
+                          <div className="flex items-center justify-between border-b-2 border-blue-900 pb-4 mb-4">
+                            <div className="flex items-center gap-3">
+                              <UDLaPovedaLogo className="w-12 h-12 shrink-0" />
+                              <div>
+                                <h1 className="text-xl font-black tracking-tight text-blue-950 uppercase leading-none">
+                                  U.D. LA POVEDA
+                                </h1>
+                                <p className="text-xs font-bold text-slate-600 uppercase tracking-widest mt-1">
+                                  HOJA OFICIAL DE CONVOCATORIA DE PARTIDO
+                                </p>
+                                <p className="text-[11px] font-extrabold text-blue-700 uppercase">
+                                  {selectedTeam}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="text-right text-xs">
+                              <span className="inline-block bg-blue-950 text-white font-black text-[10px] uppercase px-2.5 py-1 rounded">
+                                COMPETICIÓN OFICIAL
+                              </span>
+                              <p className="text-[11px] font-bold text-slate-500 mt-1">
+                                Temporada 2024 / 2025
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Match Info Strip */}
+                          <div className="grid grid-cols-3 gap-3 bg-slate-100 p-3 rounded-xl border border-slate-300 mb-5 text-xs">
+                            <div>
+                              <span className="text-[9px] font-black text-slate-500 uppercase block">ENCUENTRO:</span>
+                              <p className="font-extrabold text-blue-950 text-sm truncate">
+                                {showConvocatoriaModal.tipo === 'Local' ? `U.D. LA POVEDA vs ${showConvocatoriaModal.rival}` : `${showConvocatoriaModal.rival} vs U.D. LA POVEDA`}
+                              </p>
+                              <p className="text-[10px] text-slate-600 font-semibold mt-0.5">
+                                Condición: <strong className="text-blue-900 font-bold">{showConvocatoriaModal.tipo || 'Oficial'}</strong>
+                              </p>
+                            </div>
+
+                            <div>
+                              <span className="text-[9px] font-black text-slate-500 uppercase block">FECHA & HORARIOS:</span>
+                              <p className="font-bold text-slate-800">
+                                📅 {showConvocatoriaModal.fecha} • {showConvocatoriaModal.hora || 'Por definir'}
+                              </p>
+                              <p className="text-[11px] font-extrabold text-amber-700 mt-0.5">
+                                ⏰ Citación: {citacionHora || 'Consultar'}
+                              </p>
+                            </div>
+
+                            <div>
+                              <span className="text-[9px] font-black text-slate-500 uppercase block">UBICACIÓN & EQUIPACIÓN:</span>
+                              <p className="font-semibold text-slate-800 text-[11px] truncate">
+                                📍 {citacionLugar || 'Polideportivo La Poveda'}
+                              </p>
+                              <p className="text-[10px] text-slate-600 truncate mt-0.5">
+                                👕 {citacionEquipacion || '1ª Equipación Oficial'}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Player Grid with Photos */}
+                          <div className="mb-4">
+                            <div className="flex items-center justify-between border-b border-slate-300 pb-1 mb-3">
+                              <span className="text-xs font-black text-blue-950 uppercase tracking-wide">
+                                RELACIÓN DE JUGADORAS CONVOCADAS ({selectedPlayersList.length})
+                              </span>
+                              <span className="text-[10px] font-bold text-slate-500">
+                                Con fotografía oficial de plantilla
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2.5">
+                              {selectedPlayersList.map((player) => {
+                                const pos = player.posicion || 'Jugadora';
+                                const isPor = pos.toLowerCase().includes('port') || pos.toLowerCase().includes('gk');
+                                const isDef = pos.toLowerCase().includes('def') || pos.toLowerCase().includes('lat') || pos.toLowerCase().includes('centr');
+                                const isMed = pos.toLowerCase().includes('med') || pos.toLowerCase().includes('pivote') || pos.toLowerCase().includes('mc');
+                                
+                                let posTag = 'DEL';
+                                let posBg = 'bg-blue-100 text-blue-900 border-blue-300';
+                                if (isPor) { posTag = 'POR'; posBg = 'bg-amber-100 text-amber-900 border-amber-300'; }
+                                else if (isDef) { posTag = 'DEF'; posBg = 'bg-slate-200 text-slate-800 border-slate-300'; }
+                                else if (isMed) { posTag = 'MED'; posBg = 'bg-cyan-100 text-cyan-900 border-cyan-300'; }
+
+                                return (
+                                  <div
+                                    key={`hoja-row-${player.id}`}
+                                    className="flex items-center gap-3 p-2 rounded-xl border border-slate-200 bg-slate-50/80 shadow-xs"
+                                  >
+                                    {/* Player Photo */}
+                                    <div className="w-12 h-14 rounded-lg overflow-hidden border border-slate-300 bg-slate-200 shrink-0 flex items-center justify-center relative">
+                                      {player.foto_url ? (
+                                        <img
+                                          src={player.foto_url}
+                                          alt={player.nombre}
+                                          className="w-full h-full object-cover object-top"
+                                          crossOrigin="anonymous"
+                                          referrerPolicy="no-referrer"
+                                        />
+                                      ) : (
+                                        <User className="w-6 h-6 text-slate-400" />
+                                      )}
+                                    </div>
+
+                                    {/* Info */}
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center justify-between gap-1">
+                                        <span className="font-mono font-black text-blue-950 text-base leading-none">
+                                          #{player.dorsal || '•'}
+                                        </span>
+                                        <span className={`text-[8px] font-black px-1.5 py-0.5 rounded border uppercase ${posBg}`}>
+                                          {posTag}
+                                        </span>
+                                      </div>
+                                      <p className="font-black text-xs text-slate-900 uppercase truncate mt-0.5">
+                                        {player.nombre}
+                                      </p>
+                                      <p className="text-[10px] font-bold text-slate-600 uppercase truncate">
+                                        {player.apellidos || ''}
+                                      </p>
+                                      <p className="text-[9px] text-slate-500 font-medium truncate">
+                                        {player.posicion || 'Jugadora'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Footer with Notes & Signatures */}
+                        <div className="mt-4 pt-3 border-t-2 border-slate-300 space-y-4">
+                          {citacionNotas && (
+                            <div className="bg-slate-100 p-2.5 rounded-lg border border-slate-300 text-xs">
+                              <span className="text-[9px] font-black text-slate-700 uppercase block mb-0.5">
+                                📌 INDICACIONES Y PAUTAS TÉCNICAS:
+                              </span>
+                              <p className="text-slate-700 text-[10px] leading-relaxed whitespace-pre-line font-medium">
+                                {citacionNotas}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Signatures */}
+                          <div className="grid grid-cols-3 gap-4 text-center pt-2">
+                            <div className="border-t border-slate-400 pt-1">
+                              <p className="text-[9px] font-black uppercase text-slate-600">Primer Entrenador</p>
+                              <p className="text-[8px] text-slate-400 italic mt-3">Firma / Conforme</p>
+                            </div>
+                            <div className="border-t border-slate-400 pt-1">
+                              <p className="text-[9px] font-black uppercase text-slate-600">Delegado de Equipo</p>
+                              <p className="text-[8px] text-slate-400 italic mt-3">Firma / Conforme</p>
+                            </div>
+                            <div className="border-t border-slate-400 pt-1">
+                              <p className="text-[9px] font-black uppercase text-slate-600">Árbitro / Mesa</p>
+                              <p className="text-[8px] text-slate-400 italic mt-3">Firma / Revisión</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[8px] text-slate-500 font-semibold uppercase tracking-wider pt-2 border-t border-slate-200">
+                            <span>U.D. LA POVEDA • ARGANDA DEL REY</span>
+                            <span>DOCUMENTO OFICIAL DE CLUB</span>
+                            <span>{new Date().toLocaleDateString('es-ES')}</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2186,13 +2590,28 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                             }`}
                           >
                             <div className="flex items-center gap-2.5 truncate">
-                              <span className={`w-6 h-6 rounded-lg flex items-center justify-center font-black text-[10px] ${
-                                isSelected ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-400'
-                              }`}>
-                                {p.dorsal || '•'}
-                              </span>
+                              <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-slate-700 bg-slate-800 shrink-0 flex items-center justify-center">
+                                {p.foto_url ? (
+                                  <img 
+                                    src={p.foto_url} 
+                                    alt={p.nombre} 
+                                    className="w-full h-full object-cover object-top" 
+                                    crossOrigin="anonymous"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                ) : (
+                                  <span className={`w-full h-full flex items-center justify-center font-black text-[10px] ${
+                                    isSelected ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-400'
+                                  }`}>
+                                    {p.dorsal || '•'}
+                                  </span>
+                                )}
+                              </div>
                               <div className="truncate">
-                                <p className="font-bold text-xs truncate leading-tight text-white">{p.nombre} {p.apellidos}</p>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono font-black text-[11px] text-amber-400">#{p.dorsal || '•'}</span>
+                                  <p className="font-bold text-xs truncate leading-tight text-white">{p.nombre} {p.apellidos}</p>
+                                </div>
                                 <p className="text-[9px] text-slate-500 uppercase font-semibold">{p.posicion || 'Jugadora'}</p>
                               </div>
                             </div>
