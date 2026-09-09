@@ -40,7 +40,8 @@ import {
   ShieldCheck,
   Zap,
   Activity,
-  User
+  User,
+  Flame
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { toPng } from 'html-to-image';
@@ -49,6 +50,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { generateLocalTacticalAdvice, getTacticalAdvice } from '@/lib/tacticalAdvisor';
 import MatchStatsModal from '@/components/partidos/MatchStatsModal';
+import MatchdayPosterModal from '@/components/partidos/MatchdayPosterModal';
 import { cleanPhotoUrl, isPlayerMatch, normalizePlayerNameKey } from '@/lib/utils';
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 
@@ -169,6 +171,7 @@ export default function Partidos() {
 
   // Convocatoria & Corporate WhatsApp Modal state
   const [showConvocatoriaModal, setShowConvocatoriaModal] = useState<Match | null>(null);
+  const [showMatchdayPosterModal, setShowMatchdayPosterModal] = useState<Match | null>(null);
   const [showStatsTrackerModal, setShowStatsTrackerModal] = useState<Match | null>(null);
   const [activeConvocatoriaTab, setActiveConvocatoriaTab] = useState<'fifa' | 'hoja' | 'editor' | 'whatsapp'>('fifa');
   const [selectedConvocadas, setSelectedConvocadas] = useState<string[]>([]);
@@ -871,6 +874,19 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
         setMatches(JSON.parse(saved));
       } else {
         const defaults: Match[] = [
+          { 
+            id: 'm-coslada', 
+            rival: 'COSLADA', 
+            fecha: '2026-09-12', 
+            hora: '13:15', 
+            tipo: 'Local', 
+            competicion: 'Amistoso', 
+            estado: 'Programado',
+            lugar: 'Polideportivo Municipal La Poveda (Campo Principal)',
+            hora_citacion: '12:00 h (1h 15m antes)',
+            equipacion: '1ª Equipación Oficial + Chándal',
+            observaciones: '• Acudir con puntualidad a la hora fijada.\n• Confirmar recepción del mensaje en el grupo de WhatsApp.'
+          },
           { id: 'm1', rival: 'A.D. Arganda', fecha: new Date().toISOString().split('T')[0], hora: '12:00', tipo: 'Local', competicion: 'Liga', estado: 'Programado' },
           { id: 'm2', rival: 'F.C. Rivas Vaciamadrid', fecha: '2026-05-15', hora: '11:30', tipo: 'Visitante', competicion: 'Liga', estado: 'Finalizado', goles_favor: 3, goles_contra: 1, acta: 'Excelente partido de posesión y presión alta. Destacó el juego defensivo por bandas.' }
         ];
@@ -1178,6 +1194,18 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <Button 
+            onClick={() => {
+              const nextMatch = matches.find(m => m.estado === 'Programado') || matches[0] || null;
+              setShowMatchdayPosterModal(nextMatch);
+            }}
+            className="text-xs font-black uppercase tracking-wider bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white flex items-center justify-center gap-2 h-10 px-4 rounded-xl cursor-pointer shadow-lg shadow-blue-600/25"
+            title="Abrir y generar el Cartel Oficial MATCHDAY del partido de fútbol"
+          >
+            <Trophy className="w-4 h-4 text-amber-300" />
+            <span>Cartel de Partido (Matchday)</span>
+          </Button>
+
+          <Button 
             onClick={() => handleOpenPlanPartidoModal(null)}
             className="text-xs font-bold uppercase tracking-wider bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 flex items-center justify-center gap-2 h-10 px-4 rounded-xl cursor-pointer"
           >
@@ -1444,6 +1472,15 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                 {/* Match footer actions / Report display */}
                 <div className="border-t border-slate-900/60 pt-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      onClick={() => setShowMatchdayPosterModal(match)}
+                      className="text-[10px] font-black text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 flex items-center gap-1.5 px-3 h-8 rounded-xl uppercase shadow-md transition-all cursor-pointer"
+                      title="Generar Cartel Oficial de Partido para esta jornada"
+                    >
+                      <Trophy className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Cartel Matchday</span>
+                    </Button>
+
                     <Button
                       onClick={() => handleOpenConvocatoriaModal(match)}
                       className="text-[10px] font-black text-white bg-green-600 hover:bg-green-500 flex items-center gap-1.5 px-3 h-8 rounded-xl uppercase shadow-md transition-all cursor-pointer"
@@ -1971,6 +2008,18 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                   >
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>🎮 Cartel FIFA (PDF)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMatchdayPosterModal(showConvocatoriaModal);
+                    }}
+                    className="px-3 py-1.5 rounded-xl font-black uppercase text-amber-300 hover:text-white bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 transition-all flex items-center gap-1.5 cursor-pointer"
+                    title="Abrir Cartel FIFA MATCHDAY (Anuncio de Partido)"
+                  >
+                    <Flame className="w-3.5 h-3.5 fill-current text-amber-400" />
+                    <span>Anuncio MATCHDAY</span>
                   </button>
 
                   <button
@@ -3071,22 +3120,36 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
             </div>
 
             {/* Modal Footer */}
-            <div className="p-6 border-t border-slate-800 bg-slate-950/60 flex items-center justify-end gap-3">
+            <div className="p-6 border-t border-slate-800 bg-slate-950/60 flex flex-wrap items-center justify-between gap-3">
               <Button
                 type="button"
-                variant="outline"
-                onClick={() => setEditingMatch(null)}
-                className="text-xs font-bold border-slate-800 text-slate-300 hover:bg-slate-800 rounded-xl cursor-pointer"
+                onClick={() => {
+                  setShowMatchdayPosterModal(editingMatch);
+                }}
+                className="text-xs font-black bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 rounded-xl cursor-pointer flex items-center gap-1.5 shadow-md h-10 px-4"
+                title="Generar Cartel FIFA MATCHDAY con los datos actuales de este partido"
               >
-                Cancelar
+                <Flame className="w-3.5 h-3.5 fill-current text-slate-950" />
+                <span>Ver Cartel FIFA MATCHDAY</span>
               </Button>
-              <Button
-                type="submit"
-                className="text-xs font-black uppercase bg-blue-600 hover:bg-blue-500 text-white rounded-xl gap-2 cursor-pointer shadow-lg shadow-blue-600/20 px-5 h-10"
-              >
-                <Save className="w-4 h-4" />
-                <span>Guardar Cambios</span>
-              </Button>
+
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEditingMatch(null)}
+                  className="text-xs font-bold border-slate-800 text-slate-300 hover:bg-slate-800 rounded-xl cursor-pointer"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  className="text-xs font-black uppercase bg-blue-600 hover:bg-blue-500 text-white rounded-xl gap-2 cursor-pointer shadow-lg shadow-blue-600/20 px-5 h-10"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Guardar Cambios</span>
+                </Button>
+              </div>
             </div>
           </form>
         </div>
@@ -3418,6 +3481,18 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
           allPlayers={players}
           onClose={() => setShowStatsTrackerModal(null)}
           onSaveMatch={handleSaveStatsTracker}
+        />
+      )}
+
+      {/* Official FIFA Matchday Announcement Poster Modal */}
+      {showMatchdayPosterModal && (
+        <MatchdayPosterModal
+          isOpen={!!showMatchdayPosterModal}
+          onClose={() => setShowMatchdayPosterModal(null)}
+          currentMatch={showMatchdayPosterModal}
+          allMatches={matches}
+          teamName={selectedTeam}
+          players={players}
         />
       )}
     </div>
