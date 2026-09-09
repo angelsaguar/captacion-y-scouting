@@ -26,7 +26,8 @@ import {
   Palette,
   Check,
   Mail,
-  Award
+  Award,
+  Shirt
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -71,6 +72,7 @@ interface MatchdayPosterModalProps {
 }
 
 export type PosterTheme =
+  | 'convocatoria_modern' // Modelo de Convocatoria Oficial Moderno (fondo azul noche, duelo de equipos, logística detallada, jugadoras y lema oficial)
   | 'vintage_60s'      // Authentic 1960s letterpress Spanish football match poster (woodblock type, aged paper & vintage player)
   | 'poveda_captacion' // Flagship: Official U.D. La Poveda poster with blue sky, paint splatters, watermark, dynamic player & brush ribbons
   | 'stadium_night'    // Authentic Matchday stadium under bright floodlights
@@ -133,8 +135,8 @@ export default function MatchdayPosterModal({
   // Poster theme: defaulting to 1960s authentic vintage football match poster
   const [posterTheme, setPosterTheme] = useState<PosterTheme>('vintage_60s');
 
-  // Quick Preset Mode for Match announcement: 'vintage_60s' | 'dia_de_partido' | 'matchday' | 'aficion' | 'custom'
-  const [posterPreset, setPosterPreset] = useState<'vintage_60s' | 'dia_de_partido' | 'matchday' | 'aficion' | 'custom'>('vintage_60s');
+  // Quick Preset Mode for Match announcement: 'vintage_60s' | 'convocatoria_modern' | 'dia_de_partido' | 'matchday' | 'aficion' | 'custom'
+  const [posterPreset, setPosterPreset] = useState<'vintage_60s' | 'convocatoria_modern' | 'dia_de_partido' | 'matchday' | 'aficion' | 'custom'>('vintage_60s');
 
   // Background color palette: defaulting to authentic 1960s aged paper with letterpress ink
   const [bgColor, setBgColor] = useState<PosterBgColor>('papel_60s');
@@ -179,6 +181,27 @@ export default function MatchdayPosterModal({
   const featuredPlayer = useMemo(() => {
     return players.find(p => p.id === selectedPlayerId) || null;
   }, [players, selectedPlayerId]);
+
+  // Player roster for the Convocatoria theme
+  const calledUpPlayers = useMemo(() => {
+    if (activeMatch?.convocatoria && Array.isArray(activeMatch.convocatoria) && activeMatch.convocatoria.length > 0) {
+      const matchCalled = players.filter(p => 
+        activeMatch.convocatoria?.includes(p.id) || 
+        activeMatch.convocatoria?.includes(p.nombre) ||
+        activeMatch.convocatoria?.includes(String(p.dorsal))
+      );
+      if (matchCalled.length > 0) return matchCalled;
+    }
+    // Fallback: squad players from team or default placeholders
+    return players.length > 0 ? players.slice(0, 6) : [
+      { id: '1', nombre: 'SARA', apellidos: 'ESQUER', dorsal: '9', posicion: 'DEL' },
+      { id: '2', nombre: 'CANDELA', apellidos: 'DE LA PEÑA', dorsal: '8', posicion: 'DEF' },
+      { id: '3', nombre: 'MARTA', apellidos: 'PASTOR', dorsal: '25', posicion: 'DEF' },
+      { id: '4', nombre: 'MARTA', apellidos: 'LARA', dorsal: '13', posicion: 'MED' },
+      { id: '5', nombre: 'PUERTO', apellidos: 'PEQUEÑO', dorsal: '8', posicion: 'DEF' },
+      { id: '6', nombre: 'MARÍA ÁNGELES', apellidos: 'PAREJA', dorsal: '11', posicion: 'DEF' }
+    ];
+  }, [activeMatch?.convocatoria, players]);
 
   if (!isOpen || !activeMatch) return null;
 
@@ -451,7 +474,7 @@ export default function MatchdayPosterModal({
   const activePhotoSrc = getPlayerPhotoSrc();
 
   // Quick preset applicator specifically for MATCHDAY ANNOUNCEMENT
-  const applyPreset = (preset: 'vintage_60s' | 'dia_de_partido' | 'matchday' | 'aficion') => {
+  const applyPreset = (preset: 'vintage_60s' | 'convocatoria_modern' | 'dia_de_partido' | 'matchday' | 'aficion') => {
     setPosterPreset(preset);
 
     if (preset === 'vintage_60s') {
@@ -471,6 +494,26 @@ export default function MatchdayPosterModal({
       setContactEmail('COLEGIO OFICIAL DE ÁRBITROS');
       setContactPhone('PRECIOS POPULARES');
       toast.success('Cartel: Estilo Clásico Años 60');
+      return;
+    }
+
+    if (preset === 'convocatoria_modern') {
+      setPosterTheme('convocatoria_modern');
+      setCharacterMode('captacion_player');
+      setBgColor('azul_poveda');
+      setIconBarMode('partido');
+      setTopHeadline('¡DÍA DE PARTIDO!');
+      setRibbonLine1(`${(teamName || 'SENIOR FEMENINO').toUpperCase()} • ${(matchCompeticion || 'AMISTOSO').toUpperCase()}`);
+      setRibbonLine2(`${formattedDate.bannerDate} • ${matchHora} H`);
+      setImpactLine1(isLocal ? 'UD LA POVEDA' : rivalName.toUpperCase());
+      setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS UD LA POVEDA');
+      setBodyMessage('¡Ven al campo a animar a nuestro equipo! Tu aliento desde la grada es fundamental para conseguir la victoria.');
+      setActionBannerText('¡ENTRADA GENERAL LIBRE!');
+      setSloganLine1(matchLugar.toUpperCase());
+      setSloganLine2('¡CONFIANZA, ENTREGA Y VICTORIA! ¡A POR TODAS!');
+      setContactEmail(isLocal ? 'POLIDEPORTIVO MUNICIPAL LA POVEDA' : matchLugar.toUpperCase());
+      setContactPhone('ENTRADA GRATUITA');
+      toast.success('Cartel: Anuncio de Partido (Estilo Convocatoria)');
       return;
     }
 
@@ -541,7 +584,9 @@ export default function MatchdayPosterModal({
   const getPosterDataUrl = async (el: HTMLElement): Promise<string> => {
     const bg = posterTheme === 'vintage_60s'
       ? '#faf4e6'
-      : (currentBg.isDark ? '#020617' : '#ffffff');
+      : posterTheme === 'convocatoria_modern'
+        ? '#06142e'
+        : (currentBg.isDark ? '#020617' : '#ffffff');
 
     // 1. Primary: toPng (from html-to-image) - fast, preserves SVG logos and modern CSS without canvas tainting
     try {
@@ -679,6 +724,9 @@ export default function MatchdayPosterModal({
       // Color sheet background according to poster theme
       if (posterTheme === 'vintage_60s') {
         pdf.setFillColor(250, 244, 230); // #faf4e6
+        pdf.rect(0, 0, pageWidth, pageHeight, 'F');
+      } else if (posterTheme === 'convocatoria_modern') {
+        pdf.setFillColor(6, 20, 46); // #06142e deep midnight navy
         pdf.rect(0, 0, pageWidth, pageHeight, 'F');
       } else if (currentBg.isDark) {
         pdf.setFillColor(2, 6, 23); // #020617
@@ -926,7 +974,27 @@ export default function MatchdayPosterModal({
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                {/* 0. Moderno Azul (Estilo Convocatoria) */}
+                <button
+                  type="button"
+                  onClick={() => applyPreset('convocatoria_modern')}
+                  className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                    posterPreset === 'convocatoria_modern'
+                      ? 'bg-gradient-to-r from-blue-700 to-indigo-900 border-cyan-300 text-white font-black shadow-lg ring-2 ring-cyan-400/50 scale-[1.02]'
+                      : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-1">
+                    <span className="text-cyan-300 text-xs">⚽</span>
+                    <span className="text-[11px] font-black uppercase">Moderno Azul</span>
+                  </div>
+                  <span className="text-[8px] text-cyan-200 block mt-0.5 leading-tight">
+                    Estilo Convocatoria
+                  </span>
+                </button>
+
+                {/* 1. Vintage 1960s */}
                 <button
                   type="button"
                   onClick={() => applyPreset('vintage_60s')}
@@ -1109,7 +1177,43 @@ export default function MatchdayPosterModal({
               </label>
 
               <div className="grid grid-cols-2 gap-2">
-                {/* 0. Vintage 1960s Poster */}
+                {/* 0. Cartel de Partido (Estilo Convocatoria) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPosterTheme('convocatoria_modern');
+                    setBgColor('azul_poveda');
+                    setCharacterMode('captacion_player');
+                    setTopHeadline('¡DÍA DE PARTIDO!');
+                    setRibbonLine1(`${(teamName || 'SENIOR FEMENINO').toUpperCase()} • ${(matchCompeticion || 'AMISTOSO').toUpperCase()}`);
+                    setRibbonLine2(`${formattedDate.bannerDate} • ${matchHora} H`);
+                    setImpactLine1(isLocal ? 'UD LA POVEDA' : rivalName.toUpperCase());
+                    setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS UD LA POVEDA');
+                    setBodyMessage('¡Ven al campo a animar a nuestro equipo! Tu aliento desde la grada es fundamental para conseguir la victoria.');
+                    setActionBannerText('¡ENTRADA GENERAL LIBRE!');
+                    setSloganLine2('¡CONFIANZA, ENTREGA Y VICTORIA! ¡A POR TODAS!');
+                  }}
+                  className={`p-2.5 rounded-xl border text-xs font-black uppercase text-left transition-all cursor-pointer col-span-2 ${
+                    posterTheme === 'convocatoria_modern'
+                      ? 'bg-blue-950/80 border-cyan-400 text-cyan-200 ring-2 ring-cyan-500/50 shadow-lg'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-cyan-400 text-base">⚽</span>
+                      <span className="leading-tight font-black text-white">Cartel de Partido (Estilo Convocatoria)</span>
+                    </div>
+                    <span className="text-[9px] bg-cyan-400/20 text-cyan-300 border border-cyan-400/30 px-2 py-0.5 rounded-full font-bold">
+                      Estilo Convocatoria
+                    </span>
+                  </div>
+                  <span className="text-[9px] text-cyan-200/80 font-normal normal-case block mt-1">
+                    Anuncio del partido con la estética de la convocatoria: azul noche, gran duelo de equipos, logística detallada y llamamiento a la afición
+                  </span>
+                </button>
+
+                {/* 1. Vintage 1960s Poster */}
                 <button
                   type="button"
                   onClick={() => {
@@ -2016,6 +2120,230 @@ export default function MatchdayPosterModal({
                       <div className="text-center text-[6px] sm:text-[7px] font-serif text-stone-500 mt-0.5 uppercase tracking-widest">
                         Tipografía y Litografía Municipal • Depósito Legal M-1964 • ¡Viva el Deporte!
                       </div>
+                    </div>
+
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================================= */}
+              {/* THEME CONVOCATORIA MODERNO: CARTEL ANUNCIANDO EL PARTIDO (ESTILO CONVOCATORIA) */}
+              {/* ========================================================================= */}
+              {posterTheme === 'convocatoria_modern' && (
+                <div 
+                  className="w-full h-full relative flex flex-col justify-between overflow-hidden bg-gradient-to-br from-[#06142e] via-[#091a38] to-[#020713] text-white p-3.5 sm:p-4 select-none"
+                  style={{
+                    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                  }}
+                >
+                  {/* Atmospheric lighting glows */}
+                  <div className="absolute -top-12 -right-12 w-64 h-64 bg-cyan-500/15 rounded-full blur-3xl pointer-events-none" />
+                  <div className="absolute -bottom-12 -left-12 w-64 h-64 bg-blue-600/20 rounded-full blur-3xl pointer-events-none" />
+                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-700/20 via-transparent to-transparent pointer-events-none" />
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 opacity-[0.04] pointer-events-none rotate-12">
+                    <UDLaPovedaLogo className="w-full h-full" />
+                  </div>
+
+                  {/* Outer border frame matching the official convocatoria card */}
+                  <div className="absolute inset-2 sm:inset-2.5 rounded-2xl border border-blue-400/35 pointer-events-none z-20 shadow-inner" />
+                  {/* Subtle corner decorative cyan accents */}
+                  <div className="absolute top-3 left-3 w-3 h-3 border-t-2 border-l-2 border-cyan-400/70 pointer-events-none z-20" />
+                  <div className="absolute top-3 right-3 w-3 h-3 border-t-2 border-r-2 border-cyan-400/70 pointer-events-none z-20" />
+                  <div className="absolute bottom-3 left-3 w-3 h-3 border-b-2 border-l-2 border-cyan-400/70 pointer-events-none z-20" />
+                  <div className="absolute bottom-3 right-3 w-3 h-3 border-b-2 border-r-2 border-cyan-400/70 pointer-events-none z-20" />
+
+                  {/* Inner Content Container */}
+                  <div className="relative z-10 flex flex-col justify-between h-full space-y-2">
+                    
+                    {/* 1. TOP HEADER BANNER */}
+                    <div className="text-center pb-1.5 border-b border-blue-400/25">
+                      {/* Crest Badge */}
+                      <div className="w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-gradient-to-b from-blue-700 to-[#06142e] border-2 border-cyan-300/80 p-1.5 shadow-2xl flex items-center justify-center mx-auto mb-1 shrink-0 ring-2 ring-blue-500/30">
+                        <UDLaPovedaLogo className="w-full h-full drop-shadow" />
+                      </div>
+
+                      {/* Club Title */}
+                      <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white uppercase italic leading-none drop-shadow-md">
+                        UD LA POVEDA
+                      </h1>
+
+                      {/* Category & Competition */}
+                      <p className="text-[10px] sm:text-[11px] font-black text-sky-300 uppercase tracking-widest mt-0.5">
+                        {(teamName || 'SENIOR FEMENINO').toUpperCase()} • {(matchCompeticion || 'AMISTOSO').toUpperCase()}
+                      </p>
+
+                      {/* Badges Row: Date + Home/Away */}
+                      <div className="flex items-center justify-center gap-2 mt-1.5">
+                        <span className="inline-flex items-center gap-1 font-extrabold text-slate-100 bg-[#081836] px-2.5 py-0.5 rounded-lg border border-blue-400/30 shadow-sm text-[9.5px] sm:text-[10.5px]">
+                          <span>📅</span>
+                          <span>{formattedDate.shortDate}</span>
+                        </span>
+                        <span className={`inline-flex items-center gap-1 text-[9.5px] sm:text-[10.5px] font-black px-2.5 py-0.5 rounded-lg uppercase shadow-sm border ${
+                          isLocal 
+                            ? 'bg-blue-600 text-white border-blue-400' 
+                            : 'bg-indigo-700 text-white border-indigo-400'
+                        }`}>
+                          <span>{isLocal ? '🏠' : '🚌'}</span>
+                          <span>{isLocal ? 'PARTIDO EN CASA' : 'PARTIDO FUERA'}</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 2. MATCHDAY ANNOUNCEMENT BANNER */}
+                    <div className="text-center">
+                      <div className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 via-cyan-500 to-blue-600 text-slate-950 font-black uppercase italic tracking-wider text-[11px] sm:text-xs py-1 px-4 sm:px-5 rounded-full shadow-lg border border-cyan-300">
+                        <span>⚡</span>
+                        <span>{topHeadline || '¡DÍA DE PARTIDO!'}</span>
+                        <span>⚽</span>
+                      </div>
+                    </div>
+
+                    {/* 3. THE EPIC DUEL (LOCAL VS VISITANTE) */}
+                    <div className="bg-gradient-to-b from-[#0d234d] via-[#081836] to-[#040e22] border border-blue-400/40 rounded-2xl p-2.5 sm:p-3 shadow-2xl relative overflow-hidden">
+                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-cyan-500/10 via-transparent to-transparent pointer-events-none" />
+                      
+                      <div className="relative z-10 flex items-center justify-between text-center gap-2">
+                        {/* Team Local */}
+                        <div className="flex-1 min-w-0 flex flex-col items-center">
+                          <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-full bg-[#071736] border-2 border-cyan-400/80 p-1.5 shadow-lg flex items-center justify-center mb-1 ring-2 ring-cyan-500/20">
+                            {isLocal ? (
+                              <UDLaPovedaLogo className="w-full h-full drop-shadow" />
+                            ) : (
+                              <div className="flex flex-col items-center justify-center text-amber-300">
+                                <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-amber-400" />
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-[7.5px] sm:text-[8px] font-black text-cyan-300 uppercase tracking-widest block">
+                            LOCAL
+                          </span>
+                          <p className="text-[11px] sm:text-xs md:text-sm font-black text-white uppercase tracking-tight leading-tight mt-0.5 line-clamp-2">
+                            {isLocal ? 'UD LA POVEDA' : rivalName.toUpperCase()}
+                          </p>
+                        </div>
+
+                        {/* Center VS Badge */}
+                        <div className="flex flex-col items-center justify-center shrink-0 px-1">
+                          <div className="w-9 h-9 sm:w-11 sm:h-11 bg-gradient-to-br from-[#0b2456] to-[#040f25] border-2 border-cyan-400 rounded-full flex items-center justify-center text-white font-black text-xs sm:text-sm italic shadow-2xl ring-4 ring-cyan-500/25">
+                            VS
+                          </div>
+                          <div className="mt-1 bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 px-2 py-0.5 rounded-full text-[8px] sm:text-[9px] font-black tracking-wider whitespace-nowrap">
+                            {matchHora} H
+                          </div>
+                        </div>
+
+                        {/* Team Visitante */}
+                        <div className="flex-1 min-w-0 flex flex-col items-center">
+                          <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-full bg-[#071736] border-2 border-amber-400/80 p-1.5 shadow-lg flex items-center justify-center mb-1 ring-2 ring-amber-500/20">
+                            {isLocal ? (
+                              <div className="flex flex-col items-center justify-center text-amber-300">
+                                <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-amber-400" />
+                              </div>
+                            ) : (
+                              <UDLaPovedaLogo className="w-full h-full drop-shadow" />
+                            )}
+                          </div>
+                          <span className="text-[7.5px] sm:text-[8px] font-black text-amber-400 uppercase tracking-widest block">
+                            VISITANTE
+                          </span>
+                          <p className="text-[11px] sm:text-xs md:text-sm font-black text-white uppercase tracking-tight leading-tight mt-0.5 line-clamp-2">
+                            {isLocal ? rivalName.toUpperCase() : 'UD LA POVEDA'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 4. PLAYER HERO / DYNAMIC ACTION VISUAL */}
+                    {activePhotoSrc && characterMode !== 'duel_badges' ? (
+                      <div className="relative h-24 sm:h-28 flex items-center justify-center overflow-hidden my-0.5">
+                        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-cyan-500/15 to-blue-600/10 rounded-2xl blur-lg pointer-events-none" />
+                        <img 
+                          src={activePhotoSrc} 
+                          alt="Jugador del Partido" 
+                          className="h-full max-h-[105px] sm:max-h-[120px] object-contain drop-shadow-[0_10px_20px_rgba(6,182,212,0.3)] relative z-10"
+                          crossOrigin="anonymous"
+                        />
+                        <div className="absolute bottom-1 right-2 bg-[#06142e]/90 border border-cyan-400/40 px-2 py-0.5 rounded-lg text-[8px] font-black text-cyan-200 uppercase tracking-wider shadow">
+                          {featuredPlayer ? `${featuredPlayer.nombre} #${featuredPlayer.dorsal}` : 'MATCHDAY'}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="relative h-20 sm:h-24 flex items-center justify-center overflow-hidden my-0.5">
+                        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-cyan-500/15 to-blue-600/10 rounded-2xl blur-lg pointer-events-none" />
+                        <img 
+                          src={povedaPlayerBrushImg} 
+                          alt="Jugador UD La Poveda" 
+                          className="h-full max-h-[95px] sm:max-h-[110px] object-contain drop-shadow-[0_10px_20px_rgba(6,182,212,0.3)] relative z-10 transform -scale-x-100"
+                          crossOrigin="anonymous"
+                        />
+                      </div>
+                    )}
+
+                    {/* 5. MATCH LOGISTICS (Estilo Tarjetas Convocatoria) */}
+                    <div className="grid grid-cols-2 gap-1.5 text-xs">
+                      <div className="bg-[#051024]/90 p-1.5 sm:p-2 rounded-xl border border-blue-500/25 flex items-center gap-2">
+                        <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-blue-300 shrink-0">
+                          <Clock className="w-3.5 h-3.5 text-cyan-300" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-[7px] sm:text-[7.5px] text-sky-300 font-extrabold uppercase block leading-none mb-0.5">⚽ HORA PARTIDO</span>
+                          <span className="font-black text-white text-[11px] sm:text-xs leading-tight">{matchHora} h</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-[#051024]/90 p-1.5 sm:p-2 rounded-xl border border-blue-500/25 flex items-center gap-2">
+                        <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-blue-300 shrink-0">
+                          <Users className="w-3.5 h-3.5 text-cyan-300" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-[7px] sm:text-[7.5px] text-slate-300 font-extrabold uppercase block leading-none mb-0.5">⏱️ APERTURA / PREVIA</span>
+                          <span className="font-black text-slate-100 text-[11px] sm:text-xs leading-tight">{horaCitacion}</span>
+                        </div>
+                      </div>
+
+                      <div className="col-span-2 bg-[#051024]/90 p-1.5 sm:p-2 rounded-xl border border-blue-500/25 flex items-center gap-2">
+                        <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-blue-300 shrink-0">
+                          <MapPin className="w-3.5 h-3.5 text-cyan-300" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className="text-[7px] sm:text-[7.5px] text-sky-300 font-extrabold uppercase block leading-none mb-0.5">📍 CAMPO DE JUEGO / ESTADIO</span>
+                          <span className="font-bold text-white text-[9.5px] sm:text-[10.5px] leading-tight block truncate">{matchLugar}</span>
+                        </div>
+                      </div>
+
+                      <div className="col-span-2 bg-gradient-to-r from-[#07193b] to-[#0a275e] p-1.5 sm:p-2 rounded-xl border border-cyan-400/30 flex items-center justify-between text-cyan-200">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <Award className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                          <span className="font-black text-[9px] sm:text-[10px] uppercase tracking-wider text-white truncate">
+                            {actionBannerText || '¡ENTRADA LIBRE! • ACCESO GRATUITO'}
+                          </span>
+                        </div>
+                        <span className="text-[8.5px] bg-cyan-400/20 border border-cyan-300/40 px-2 py-0.5 rounded-md font-black text-cyan-200 uppercase shrink-0">
+                          {isLocal ? 'EN CASA' : 'FUERA'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 6. CALL TO SUPPORTERS / MENSAJE AFICIÓN */}
+                    <div className="bg-[#051024]/90 border border-blue-400/25 rounded-xl p-1.5 sm:p-2 text-xs">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-amber-400 text-xs">📢</span>
+                        <span className="text-[8px] sm:text-[9px] font-black text-sky-300 uppercase tracking-wide">
+                          ¡AFICIÓN, OS ESPERAMOS EN LA GRADA!
+                        </span>
+                      </div>
+                      <p className="text-slate-200 text-[8.5px] sm:text-[9.5px] leading-snug font-medium line-clamp-2">
+                        {bodyMessage || 'Ven a animar a nuestro equipo. Tu aliento desde la grada es fundamental para conseguir la victoria.'}
+                      </p>
+                    </div>
+
+                    {/* 7. MOTIVATIONAL FOOTER (Firma Oficial de la Convocatoria) */}
+                    <div className="border-t border-blue-400/30 pt-1 text-center">
+                      <p className="text-slate-100 flex items-center justify-center gap-1 text-[8.5px] sm:text-[10px] font-black uppercase tracking-wider italic">
+                        <span className="not-italic">🔵⚪</span>
+                        <span>{sloganLine2 || '¡CONFIANZA, ENTREGA Y VICTORIA! ¡A POR TODAS!'}</span>
+                        <span className="not-italic">⚽🔥</span>
+                      </p>
                     </div>
 
                   </div>
