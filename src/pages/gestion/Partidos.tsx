@@ -60,6 +60,8 @@ interface MatchPlayerStat {
   apellidos: string;
   dorsal: string;
   posicion: string;
+  posicionActiva?: string;
+  stats_por_posicion?: Record<string, any>;
   titular: boolean;
   suplente: boolean;
   minutos: number;
