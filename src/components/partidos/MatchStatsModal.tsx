@@ -33,11 +33,13 @@ import {
   Square,
   RotateCcw,
   FastForward,
-  Timer
+  Timer,
+  ArrowRightLeft
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { toast } from 'sonner';
+import MatchTacticalPitch, { MatchSubstitution } from './MatchTacticalPitch';
 
 export const POSICIONES_CAMPO = [
   'Portero',
@@ -278,7 +280,10 @@ export default function MatchStatsModal({
   if (!isOpen || !match) return null;
 
   // Active sub-tab
-  const [activeTab, setActiveTab] = useState<'rapido' | 'matriz' | 'resumen'>('rapido');
+  const [activeTab, setActiveTab] = useState<'rapido' | 'matriz' | 'campo' | 'resumen'>('rapido');
+
+  // Substitutions history and active state
+  const [substitutions, setSubstitutions] = useState<MatchSubstitution[]>([]);
 
   // Selected player in Quick Tracker
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>('');
@@ -592,6 +597,24 @@ export default function MatchStatsModal({
       tarjetas_amarillas: sumTA,
       tarjetas_rojas: sumTR
     });
+
+    // 4. Initialize existing substitutions
+    const existingCambios: any[] = match.estadisticas?.cambios || [];
+    const initialCambios: MatchSubstitution[] = existingCambios.map((c: any, idx: number) => ({
+      id: c.id || `sub-${idx}-${c.minuto || 45}`,
+      saleId: String(c.saleId),
+      saleNombre: c.saleNombre || '',
+      saleDorsal: String(c.saleDorsal || ''),
+      salePosicion: c.salePosicion || '',
+      entraId: String(c.entraId),
+      entraNombre: c.entraNombre || '',
+      entraDorsal: String(c.entraDorsal || ''),
+      posicionEntra: c.posicionEntra || '',
+      minuto: Number(c.minuto) || 0,
+      minutoStr: c.minutoStr || `${c.minuto}'`,
+      timestamp: c.timestamp || ''
+    }));
+    setSubstitutions(initialCambios);
   }, [match, allPlayers]);
 
   // Handler to switch player active position on field
@@ -626,6 +649,75 @@ export default function MatchStatsModal({
     setPlayerStats(nextStats);
 
     addEventLog(`📍 ${targetPlayer.nombre} #${targetPlayer.dorsal} jugando como ${newPos}`, 'posicion');
+  };
+
+  // Realizar sustitución en el campo: actualiza lista de cambios, minutos de ambas jugadoras y su posición táctica
+  const handleExecuteSubstitution = (newSub: MatchSubstitution) => {
+    setSubstitutions(prev => [...prev, newSub]);
+
+    const estimatedTotalMins = 80;
+    const subMin = newSub.minuto;
+
+    setPlayerStats(prev => prev.map(p => {
+      // 1. Jugadora que SALE
+      if (p.playerId === newSub.saleId) {
+        const activePos = p.posicionActiva || newSub.salePosicion;
+        const currentPosStats = { ...(p.stats_por_posicion || {}) };
+        const posRecord = { ...(currentPosStats[activePos] || {}) };
+        
+        // Asignar minutos jugados hasta el momento del cambio
+        const minsPlayed = subMin;
+        posRecord.minutos = minsPlayed;
+        currentPosStats[activePos] = posRecord;
+
+        return {
+          ...p,
+          minutos: minsPlayed,
+          stats_por_posicion: currentPosStats
+        };
+      }
+
+      // 2. Jugadora que ENTRA
+      if (p.playerId === newSub.entraId) {
+        const newPos = newSub.posicionEntra || newSub.salePosicion;
+        const currentPosStats = { ...(p.stats_por_posicion || {}) };
+        const posRecord = { ...(currentPosStats[newPos] || {}) };
+
+        // Minutos restantes estimados
+        const minsRemaining = Math.max(0, estimatedTotalMins - subMin);
+        posRecord.minutos = minsRemaining;
+        currentPosStats[newPos] = posRecord;
+
+        return {
+          ...p,
+          suplente: true,
+          posicionActiva: newPos,
+          minutos: minsRemaining,
+          stats_por_posicion: currentPosStats
+        };
+      }
+
+      return p;
+    }));
+
+    // Registro cronológico oficial en el timeline del partido
+    addEventLog(
+      `🔄 CAMBIO (Min ${newSub.minutoStr}): Sale #${newSub.saleDorsal} ${newSub.saleNombre} (${newSub.salePosicion}) ➔ Entra #${newSub.entraDorsal} ${newSub.entraNombre} (${newSub.posicionEntra})`,
+      'cambio',
+      newSub.minutoStr
+    );
+
+    toast.success(`Cambio en Min ${newSub.minutoStr}: Entra ${newSub.entraNombre} por ${newSub.saleNombre} en ${newSub.posicionEntra}`);
+  };
+
+  // Deshacer / Eliminar una sustitución registrada
+  const handleRemoveSubstitution = (subId: string) => {
+    const subToRemove = substitutions.find(s => s.id === subId);
+    if (!subToRemove) return;
+
+    setSubstitutions(prev => prev.filter(s => s.id !== subId));
+    addEventLog(`🗑️ Cambio deshecho: #${subToRemove.entraDorsal} ${subToRemove.entraNombre} por #${subToRemove.saleDorsal} ${subToRemove.saleNombre}`, 'cambio');
+    toast.info('Sustitución eliminada');
   };
 
   // Adjust minutes directly for the active position
@@ -836,6 +928,7 @@ export default function MatchStatsModal({
       estadisticas: {
         ...(match.estadisticas || {}),
         jugadoras_stats: playerStats,
+        cambios: substitutions,
         totales_equipo: teamTotals,
         cronometro: {
           seconds: chronoSeconds,
@@ -922,44 +1015,66 @@ export default function MatchStatsModal({
             </div>
           </div>
 
-          {/* TAB BUTTONS */}
-          <div className="flex items-center gap-1 bg-slate-900 p-0.5 rounded-xl border border-slate-800">
+          {/* TAB BUTTONS & VISUALIZAR CAMPO */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* BOTÓN PROMINENTE VISUALIZAR CAMPO */}
             <button
-              onClick={() => setActiveTab('rapido')}
-              className={`px-2 sm:px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-black uppercase transition-all flex items-center gap-1 cursor-pointer ${
-                activeTab === 'rapido'
-                  ? 'bg-cyan-500 text-black shadow-sm'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-850'
+              type="button"
+              onClick={() => setActiveTab('campo')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-md ${
+                activeTab === 'campo'
+                  ? 'bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 ring-2 ring-emerald-300 font-black shadow-emerald-950/60'
+                  : 'bg-emerald-950/90 hover:bg-emerald-900/90 text-emerald-300 border border-emerald-500/50 hover:border-emerald-400'
               }`}
+              title="Visualizar colocación de jugadoras en el campo y gestionar sustituciones"
             >
-              <Zap className="w-3 h-3" />
-              <span>Registro Rápido</span>
+              <Compass className="w-3.5 h-3.5 text-emerald-400" />
+              <span>VISUALIZAR CAMPO</span>
+              {substitutions.length > 0 && (
+                <span className="text-[10px] font-mono px-1.5 py-0.2 bg-emerald-900/90 border border-emerald-400 text-emerald-200 rounded-full font-bold">
+                  {substitutions.length}
+                </span>
+              )}
             </button>
 
-            <button
-              onClick={() => setActiveTab('matriz')}
-              className={`px-2 sm:px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-black uppercase transition-all flex items-center gap-1 cursor-pointer ${
-                activeTab === 'matriz'
-                  ? 'bg-cyan-500 text-black shadow-sm'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-850'
-              }`}
-            >
-              <ListOrdered className="w-3 h-3" />
-              <span className="hidden sm:inline">Matriz Jugadoras</span>
-              <span className="sm:hidden">Matriz</span>
-            </button>
+            <div className="flex items-center gap-1 bg-slate-900 p-0.5 rounded-xl border border-slate-800">
+              <button
+                onClick={() => setActiveTab('rapido')}
+                className={`px-2 sm:px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-black uppercase transition-all flex items-center gap-1 cursor-pointer ${
+                  activeTab === 'rapido'
+                    ? 'bg-cyan-500 text-black shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-850'
+                }`}
+              >
+                <Zap className="w-3 h-3" />
+                <span>Registro Rápido</span>
+              </button>
 
-            <button
-              onClick={() => setActiveTab('resumen')}
-              className={`px-2 sm:px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-black uppercase transition-all flex items-center gap-1 cursor-pointer ${
-                activeTab === 'resumen'
-                  ? 'bg-cyan-500 text-black shadow-sm'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-850'
-              }`}
-            >
-              <BarChart2 className="w-3 h-3" />
-              <span>Totales</span>
-            </button>
+              <button
+                onClick={() => setActiveTab('matriz')}
+                className={`px-2 sm:px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-black uppercase transition-all flex items-center gap-1 cursor-pointer ${
+                  activeTab === 'matriz'
+                    ? 'bg-cyan-500 text-black shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-850'
+                }`}
+              >
+                <ListOrdered className="w-3 h-3" />
+                <span className="hidden sm:inline">Matriz Jugadoras</span>
+                <span className="sm:hidden">Matriz</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('resumen')}
+                className={`px-2 sm:px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-black uppercase transition-all flex items-center gap-1 cursor-pointer ${
+                  activeTab === 'resumen'
+                    ? 'bg-cyan-500 text-black shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-850'
+                }`}
+              >
+                <BarChart2 className="w-3 h-3" />
+                <span>Totales</span>
+              </button>
+            </div>
           </div>
 
           <button
@@ -1644,8 +1759,19 @@ export default function MatchStatsModal({
                         </div>
 
                         <div className="flex items-center justify-between text-[9px] text-slate-400 font-medium mt-1">
-                          <span className="truncate">Registrando para:</span>
-                          <span className="font-black text-cyan-300 truncate ml-1">{activePos}</span>
+                          <div className="flex items-center gap-1 truncate">
+                            <span className="truncate">Registrando para:</span>
+                            <span className="font-black text-cyan-300 truncate ml-1">{activePos}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('campo')}
+                            className="text-emerald-400 hover:text-emerald-300 font-black hover:underline flex items-center gap-0.5 shrink-0 ml-2 cursor-pointer bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-500/30"
+                            title="Ver colocación en la pizarra táctica del campo"
+                          >
+                            <span>Ver en Campo</span>
+                            <ChevronRight className="w-3 h-3" />
+                          </button>
                         </div>
                       </div>
 
@@ -2477,6 +2603,25 @@ export default function MatchStatsModal({
             </div>
           )}
 
+          {/* TAB: VISUALIZAR CAMPO & GESTIÓN DE SUSTITUCIONES */}
+          {activeTab === 'campo' && (
+            <div className="flex-1 min-h-0 flex flex-col overflow-y-auto pr-1">
+              <MatchTacticalPitch
+                playerStats={playerStats}
+                substitutions={substitutions}
+                onExecuteSubstitution={handleExecuteSubstitution}
+                onRemoveSubstitution={handleRemoveSubstitution}
+                onPositionChange={handlePositionChange}
+                onSelectPlayerForStats={(p) => {
+                  setSelectedPlayerId(p.playerId);
+                  setActiveTab('rapido');
+                }}
+                chronoSeconds={chronoSeconds}
+                currentMinuteStr={chronoDisplay.matchMinuteStr}
+              />
+            </div>
+          )}
+
           {/* TAB 3: TOTALES DE EQUIPO */}
           {activeTab === 'resumen' && (
             <div className="space-y-3 sm:space-y-4 overflow-y-auto p-1">
@@ -2786,6 +2931,47 @@ export default function MatchStatsModal({
                 </div>
               </div>
 
+              </div>
+
+              {/* Resumen de Sustituciones Realizadas */}
+              <div className="bg-slate-950/60 border border-slate-850 p-4 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <h5 className="font-extrabold text-xs text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                    <ArrowRightLeft className="w-4 h-4 text-emerald-400" />
+                    <span>Sustituciones Realizadas ({substitutions.length})</span>
+                  </h5>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('campo')}
+                    className="text-xs font-black text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer bg-emerald-950/80 px-2.5 py-1 rounded-lg border border-emerald-500/40"
+                  >
+                    <Compass className="w-3.5 h-3.5" />
+                    <span>Abrir en Pizarra Táctica</span>
+                  </button>
+                </div>
+
+                {substitutions.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {substitutions.map((sub) => (
+                      <div key={sub.id} className="bg-slate-900/80 border border-slate-800 p-2.5 rounded-xl text-xs flex flex-col gap-1">
+                        <div className="flex items-center justify-between text-[10px] font-mono font-bold text-cyan-400">
+                          <span>Minuto {sub.minutoStr || `${sub.minuto}'`}</span>
+                          <span className="text-emerald-400 font-sans">➜ {sub.posicionEntra}</span>
+                        </div>
+                        <div className="text-rose-300 font-medium">
+                          Sale: <strong>#{sub.saleDorsal} {sub.saleNombre}</strong> ({sub.salePosicion})
+                        </div>
+                        <div className="text-emerald-300 font-medium">
+                          Entra: <strong>#{sub.entraDorsal} {sub.entraNombre}</strong>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 italic py-1">
+                    No se han registrado sustituciones en este partido. Puedes realizarlas desde la pestaña <strong className="text-emerald-400 cursor-pointer hover:underline" onClick={() => setActiveTab('campo')}>Visualizar Campo</strong>.
+                  </p>
+                )}
               </div>
 
               {/* Registro Completo de Eventos e Incidencias del Partido */}
