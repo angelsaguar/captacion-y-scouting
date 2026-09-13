@@ -41,7 +41,8 @@ import {
   Zap,
   Activity,
   User,
-  Flame
+  Flame,
+  CheckCircle2
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { toPng } from 'html-to-image';
@@ -1788,6 +1789,48 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                   ) : (
                     <div className="space-y-2 max-h-[500px] overflow-y-auto overflow-x-auto pr-1">
                       <div className="min-w-[620px] space-y-2">
+                      {/* Aviso y Contador de Jugadoras Titulares (Once Inicial) */}
+                      {(() => {
+                        const titularesCount = matchPlayerStats.filter(s => s.titular).length;
+                        if (titularesCount === 11) {
+                          return (
+                            <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 text-xs font-bold shadow-sm animate-in fade-in">
+                              <div className="flex items-center gap-2">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                                <span>¡Aviso: Once inicial completo! Ya tienes 11 jugadoras puestas de titulares.</span>
+                              </div>
+                              <span className="bg-emerald-500 text-slate-950 px-2 py-0.5 rounded font-black text-[10px] font-mono shrink-0">
+                                11 / 11 TITULARES
+                              </span>
+                            </div>
+                          );
+                        }
+                        if (titularesCount > 11) {
+                          return (
+                            <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-amber-950/80 border border-amber-500/50 text-amber-300 text-xs font-bold shadow-sm animate-in fade-in">
+                              <div className="flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                                <span>Aviso: Tienes {titularesCount} titulares seleccionadas (el máximo reglamentario es 11). Desmarca una antes de guardar.</span>
+                              </div>
+                              <span className="bg-amber-500 text-slate-950 px-2 py-0.5 rounded font-black text-[10px] font-mono shrink-0">
+                                {titularesCount} / 11 TITULARES
+                              </span>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-400">
+                            <div className="flex items-center gap-1.5">
+                              <Users className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                              <span>Alineación titular: <strong className="text-blue-300">{titularesCount} de 11</strong> puestas de titulares {11 - titularesCount > 0 ? `(faltan ${11 - titularesCount} para completar el once)` : ''}</span>
+                            </div>
+                            <span className="text-[10px] font-mono font-bold text-slate-400">
+                              {titularesCount}/11 TIT
+                            </span>
+                          </div>
+                        );
+                      })()}
+
                       {/* Grid Header */}
                       <div className="grid grid-cols-12 gap-1 px-2 py-1.5 text-[9px] font-black uppercase text-slate-500 tracking-wider">
                         <div className="col-span-3">Jugadora</div>
@@ -1829,6 +1872,16 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                               checked={stat.titular}
                               onChange={(e) => {
                                 const checked = e.target.checked;
+                                const currentTitulares = matchPlayerStats.filter(s => s.titular).length;
+                                if (checked) {
+                                  if (currentTitulares >= 11) {
+                                    toast.warning('⚠️ Aviso: ¡Ya tienes 11 jugadoras puestas de titulares! (Once inicial completo). Desmarca una titular antes de agregar otra.');
+                                    return;
+                                  }
+                                  if (currentTitulares + 1 === 11) {
+                                    toast.success('★ ¡Aviso: Once inicial completo! Ya tienes 11 jugadoras puestas de titulares.');
+                                  }
+                                }
                                 setMatchPlayerStats(prev => prev.map((s, i) => 
                                   i === idx ? { ...s, titular: checked, suplente: checked ? false : s.suplente, minutos: checked ? 90 : (s.suplente ? 30 : 0) } : s
                                 ));

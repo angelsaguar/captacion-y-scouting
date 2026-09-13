@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { 
   ArrowRightLeft, 
   Clock, 
@@ -8,13 +8,10 @@ import {
   UserMinus, 
   UserPlus, 
   Compass, 
-  Shield, 
   RotateCcw, 
-  AlertCircle,
-  ChevronDown,
-  Sparkles,
   Users,
-  Trophy
+  Layers,
+  Move
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -45,15 +42,157 @@ interface MatchTacticalPitchProps {
   substitutions: MatchSubstitution[];
   onExecuteSubstitution: (sub: MatchSubstitution) => void;
   onRemoveSubstitution: (subId: string) => void;
-  onPositionChange: (playerId: string, newPos: string) => void;
-  onSelectPlayerForStats: (player: MatchPlayerStat) => void;
+  onPositionChange?: (playerId: string, newPos: PosicionCampo) => void;
+  onSelectPlayerForStats?: (player: MatchPlayerStat) => void;
   chronoSeconds: number;
   currentMinuteStr: string;
   onClose?: () => void;
 }
 
-// Tactical 2D coordinates for the 11 positions on a standard vertical pitch (0-100%)
-// Defending goal at the bottom (y=90), attacking goal at the top (y=10)
+// Supported Tactical Systems (Formaciones de juego)
+export type TacticalSystem = 
+  | '1-4-3-3' 
+  | '1-4-4-2' 
+  | '1-4-2-3-1' 
+  | '1-3-5-2' 
+  | '1-3-4-3' 
+  | '1-5-3-2' 
+  | '1-4-1-4-1';
+
+export interface TacticalSlot {
+  id: string;
+  name: PosicionCampo;
+  roleType: 'portero' | 'defensa' | 'medio' | 'delantero';
+  label: string; // e.g. 'POR', 'LI', 'CZ', 'CD', 'LD', 'MC', 'II', 'ID', 'EI', 'DC', 'ED'
+  x: number;     // 0 - 100 (%)
+  y: number;     // 0 - 100 (%)
+  color: string;
+}
+
+// Tactical coordinates for all available formations
+export const TACTICAL_SYSTEMS: Record<TacticalSystem, { name: string; desc: string; slots: TacticalSlot[] }> = {
+  '1-4-3-3': {
+    name: '1-4-3-3',
+    desc: '4 defensas, pivote + 2 interiores, 2 extremos y delantero',
+    slots: [
+      { id: 'por', name: 'Portero', roleType: 'portero', label: 'POR', x: 50, y: 88, color: 'from-amber-500 to-yellow-600' },
+      { id: 'li', name: 'Lateral Izquierdo', roleType: 'defensa', label: 'LI', x: 16, y: 72, color: 'from-blue-500 to-cyan-600' },
+      { id: 'cz', name: 'Central Zurdo', roleType: 'defensa', label: 'CZ', x: 38, y: 74, color: 'from-blue-600 to-indigo-600' },
+      { id: 'cd', name: 'Central Diestro', roleType: 'defensa', label: 'CD', x: 62, y: 74, color: 'from-blue-600 to-indigo-600' },
+      { id: 'ld', name: 'Lateral Derecho', roleType: 'defensa', label: 'LD', x: 84, y: 72, color: 'from-blue-500 to-cyan-600' },
+      { id: 'ii', name: 'Interior Izquierda', roleType: 'medio', label: 'II', x: 28, y: 52, color: 'from-emerald-500 to-teal-600' },
+      { id: 'mc', name: 'Medio Centro', roleType: 'medio', label: 'MC', x: 50, y: 58, color: 'from-teal-500 to-cyan-600' },
+      { id: 'id', name: 'Interior Derecha', roleType: 'medio', label: 'ID', x: 72, y: 52, color: 'from-emerald-500 to-teal-600' },
+      { id: 'ei', name: 'Extremo Izquierda', roleType: 'delantero', label: 'EI', x: 20, y: 28, color: 'from-purple-500 to-pink-600' },
+      { id: 'del', name: 'Delantero', roleType: 'delantero', label: 'DC', x: 50, y: 20, color: 'from-rose-500 to-red-600' },
+      { id: 'ed', name: 'Extremo Derecha', roleType: 'delantero', label: 'ED', x: 80, y: 28, color: 'from-purple-500 to-pink-600' },
+    ]
+  },
+  '1-4-4-2': {
+    name: '1-4-4-2',
+    desc: '4 defensas, 2 medios y 2 bandas abiertas, con 2 delanteras',
+    slots: [
+      { id: 'por', name: 'Portero', roleType: 'portero', label: 'POR', x: 50, y: 88, color: 'from-amber-500 to-yellow-600' },
+      { id: 'li', name: 'Lateral Izquierdo', roleType: 'defensa', label: 'LI', x: 16, y: 72, color: 'from-blue-500 to-cyan-600' },
+      { id: 'cz', name: 'Central Zurdo', roleType: 'defensa', label: 'CZ', x: 38, y: 74, color: 'from-blue-600 to-indigo-600' },
+      { id: 'cd', name: 'Central Diestro', roleType: 'defensa', label: 'CD', x: 62, y: 74, color: 'from-blue-600 to-indigo-600' },
+      { id: 'ld', name: 'Lateral Derecho', roleType: 'defensa', label: 'LD', x: 84, y: 72, color: 'from-blue-500 to-cyan-600' },
+      { id: 'ei', name: 'Extremo Izquierda', roleType: 'medio', label: 'MI', x: 18, y: 50, color: 'from-emerald-500 to-teal-600' },
+      { id: 'ii', name: 'Interior Izquierda', roleType: 'medio', label: 'MC', x: 39, y: 52, color: 'from-teal-500 to-cyan-600' },
+      { id: 'id', name: 'Interior Derecha', roleType: 'medio', label: 'MC', x: 61, y: 52, color: 'from-teal-500 to-cyan-600' },
+      { id: 'ed', name: 'Extremo Derecha', roleType: 'medio', label: 'MD', x: 82, y: 50, color: 'from-emerald-500 to-teal-600' },
+      { id: 'del1', name: 'Delantero', roleType: 'delantero', label: 'DC', x: 37, y: 22, color: 'from-rose-500 to-red-600' },
+      { id: 'del2', name: 'Delantero', roleType: 'delantero', label: 'DC', x: 63, y: 22, color: 'from-rose-500 to-red-600' },
+    ]
+  },
+  '1-4-2-3-1': {
+    name: '1-4-2-3-1',
+    desc: 'Doble pivote defensivo con mediapunta y 3 atacantes',
+    slots: [
+      { id: 'por', name: 'Portero', roleType: 'portero', label: 'POR', x: 50, y: 88, color: 'from-amber-500 to-yellow-600' },
+      { id: 'li', name: 'Lateral Izquierdo', roleType: 'defensa', label: 'LI', x: 16, y: 72, color: 'from-blue-500 to-cyan-600' },
+      { id: 'cz', name: 'Central Zurdo', roleType: 'defensa', label: 'CZ', x: 38, y: 74, color: 'from-blue-600 to-indigo-600' },
+      { id: 'cd', name: 'Central Diestro', roleType: 'defensa', label: 'CD', x: 62, y: 74, color: 'from-blue-600 to-indigo-600' },
+      { id: 'ld', name: 'Lateral Derecho', roleType: 'defensa', label: 'LD', x: 84, y: 72, color: 'from-blue-500 to-cyan-600' },
+      { id: 'piv1', name: 'Medio Centro', roleType: 'medio', label: 'PIV', x: 38, y: 60, color: 'from-teal-600 to-cyan-700' },
+      { id: 'piv2', name: 'Medio Centro', roleType: 'medio', label: 'PIV', x: 62, y: 60, color: 'from-teal-600 to-cyan-700' },
+      { id: 'ei', name: 'Extremo Izquierda', roleType: 'medio', label: 'MI', x: 20, y: 38, color: 'from-purple-500 to-pink-600' },
+      { id: 'mp', name: 'Interior Izquierda', roleType: 'medio', label: 'MCO', x: 50, y: 40, color: 'from-emerald-500 to-teal-600' },
+      { id: 'ed', name: 'Extremo Derecha', roleType: 'medio', label: 'MD', x: 80, y: 38, color: 'from-purple-500 to-pink-600' },
+      { id: 'del', name: 'Delantero', roleType: 'delantero', label: 'DC', x: 50, y: 19, color: 'from-rose-500 to-red-600' },
+    ]
+  },
+  '1-3-5-2': {
+    name: '1-3-5-2',
+    desc: '3 centrales con carrileros de recorrido largo y 3 mediocentros',
+    slots: [
+      { id: 'por', name: 'Portero', roleType: 'portero', label: 'POR', x: 50, y: 88, color: 'from-amber-500 to-yellow-600' },
+      { id: 'cz', name: 'Central Zurdo', roleType: 'defensa', label: 'CI', x: 28, y: 75, color: 'from-blue-600 to-indigo-600' },
+      { id: 'cc', name: 'Central Diestro', roleType: 'defensa', label: 'CC', x: 50, y: 77, color: 'from-blue-700 to-indigo-700' },
+      { id: 'cd', name: 'Central Diestro', roleType: 'defensa', label: 'CD', x: 72, y: 75, color: 'from-blue-600 to-indigo-600' },
+      { id: 'li', name: 'Lateral Izquierdo', roleType: 'defensa', label: 'CAR', x: 14, y: 52, color: 'from-blue-500 to-cyan-600' },
+      { id: 'ii', name: 'Interior Izquierda', roleType: 'medio', label: 'II', x: 34, y: 52, color: 'from-emerald-500 to-teal-600' },
+      { id: 'mc', name: 'Medio Centro', roleType: 'medio', label: 'MC', x: 50, y: 58, color: 'from-teal-500 to-cyan-600' },
+      { id: 'id', name: 'Interior Derecha', roleType: 'medio', label: 'ID', x: 66, y: 52, color: 'from-emerald-500 to-teal-600' },
+      { id: 'ld', name: 'Lateral Derecho', roleType: 'defensa', label: 'CAR', x: 86, y: 52, color: 'from-blue-500 to-cyan-600' },
+      { id: 'del1', name: 'Delantero', roleType: 'delantero', label: 'DC', x: 38, y: 22, color: 'from-rose-500 to-red-600' },
+      { id: 'del2', name: 'Delantero', roleType: 'delantero', label: 'DC', x: 62, y: 22, color: 'from-rose-500 to-red-600' },
+    ]
+  },
+  '1-3-4-3': {
+    name: '1-3-4-3',
+    desc: '3 centrales, línea de 4 centrocampistas y tridente ofensivo',
+    slots: [
+      { id: 'por', name: 'Portero', roleType: 'portero', label: 'POR', x: 50, y: 88, color: 'from-amber-500 to-yellow-600' },
+      { id: 'cz', name: 'Central Zurdo', roleType: 'defensa', label: 'CI', x: 26, y: 75, color: 'from-blue-600 to-indigo-600' },
+      { id: 'cc', name: 'Central Diestro', roleType: 'defensa', label: 'CC', x: 50, y: 77, color: 'from-blue-700 to-indigo-700' },
+      { id: 'cd', name: 'Central Diestro', roleType: 'defensa', label: 'CD', x: 74, y: 75, color: 'from-blue-600 to-indigo-600' },
+      { id: 'li', name: 'Lateral Izquierdo', roleType: 'medio', label: 'MI', x: 18, y: 52, color: 'from-emerald-500 to-teal-600' },
+      { id: 'ii', name: 'Interior Izquierda', roleType: 'medio', label: 'MC', x: 39, y: 54, color: 'from-teal-500 to-cyan-600' },
+      { id: 'id', name: 'Interior Derecha', roleType: 'medio', label: 'MC', x: 61, y: 54, color: 'from-teal-500 to-cyan-600' },
+      { id: 'ld', name: 'Interior Derecha', roleType: 'medio', label: 'MD', x: 82, y: 52, color: 'from-emerald-500 to-teal-600' },
+      { id: 'ei', name: 'Extremo Izquierda', roleType: 'delantero', label: 'EI', x: 20, y: 26, color: 'from-purple-500 to-pink-600' },
+      { id: 'del', name: 'Delantero', roleType: 'delantero', label: 'DC', x: 50, y: 20, color: 'from-rose-500 to-red-600' },
+      { id: 'ed', name: 'Extremo Derecha', roleType: 'delantero', label: 'ED', x: 80, y: 26, color: 'from-purple-500 to-pink-600' },
+    ]
+  },
+  '1-5-3-2': {
+    name: '1-5-3-2',
+    desc: 'Línea defensiva de 5: solidez con carriles y contraataque',
+    slots: [
+      { id: 'por', name: 'Portero', roleType: 'portero', label: 'POR', x: 50, y: 88, color: 'from-amber-500 to-yellow-600' },
+      { id: 'li', name: 'Lateral Izquierdo', roleType: 'defensa', label: 'CAR', x: 14, y: 70, color: 'from-blue-500 to-cyan-600' },
+      { id: 'cz', name: 'Central Zurdo', roleType: 'defensa', label: 'CI', x: 32, y: 76, color: 'from-blue-600 to-indigo-600' },
+      { id: 'cc', name: 'Central Diestro', roleType: 'defensa', label: 'CC', x: 50, y: 78, color: 'from-blue-700 to-indigo-700' },
+      { id: 'cd', name: 'Central Diestro', roleType: 'defensa', label: 'CD', x: 68, y: 76, color: 'from-blue-600 to-indigo-600' },
+      { id: 'ld', name: 'Lateral Derecho', roleType: 'defensa', label: 'CAR', x: 86, y: 70, color: 'from-blue-500 to-cyan-600' },
+      { id: 'ii', name: 'Interior Izquierda', roleType: 'medio', label: 'II', x: 30, y: 50, color: 'from-emerald-500 to-teal-600' },
+      { id: 'mc', name: 'Medio Centro', roleType: 'medio', label: 'MC', x: 50, y: 54, color: 'from-teal-500 to-cyan-600' },
+      { id: 'id', name: 'Interior Derecha', roleType: 'medio', label: 'ID', x: 70, y: 50, color: 'from-emerald-500 to-teal-600' },
+      { id: 'del1', name: 'Delantero', roleType: 'delantero', label: 'DC', x: 38, y: 22, color: 'from-rose-500 to-red-600' },
+      { id: 'del2', name: 'Delantero', roleType: 'delantero', label: 'DC', x: 62, y: 22, color: 'from-rose-500 to-red-600' },
+    ]
+  },
+  '1-4-1-4-1': {
+    name: '1-4-1-4-1',
+    desc: 'Pivote entre líneas, bloque medio de 4 y delantero centro',
+    slots: [
+      { id: 'por', name: 'Portero', roleType: 'portero', label: 'POR', x: 50, y: 88, color: 'from-amber-500 to-yellow-600' },
+      { id: 'li', name: 'Lateral Izquierdo', roleType: 'defensa', label: 'LI', x: 16, y: 72, color: 'from-blue-500 to-cyan-600' },
+      { id: 'cz', name: 'Central Zurdo', roleType: 'defensa', label: 'CZ', x: 38, y: 74, color: 'from-blue-600 to-indigo-600' },
+      { id: 'cd', name: 'Central Diestro', roleType: 'defensa', label: 'CD', x: 62, y: 74, color: 'from-blue-600 to-indigo-600' },
+      { id: 'ld', name: 'Lateral Derecho', roleType: 'defensa', label: 'LD', x: 84, y: 72, color: 'from-blue-500 to-cyan-600' },
+      { id: 'piv', name: 'Medio Centro', roleType: 'medio', label: 'MCD', x: 50, y: 62, color: 'from-teal-700 to-cyan-800' },
+      { id: 'ei', name: 'Extremo Izquierda', roleType: 'medio', label: 'MI', x: 18, y: 46, color: 'from-purple-500 to-pink-600' },
+      { id: 'ii', name: 'Interior Izquierda', roleType: 'medio', label: 'MC', x: 38, y: 46, color: 'from-emerald-500 to-teal-600' },
+      { id: 'id', name: 'Interior Derecha', roleType: 'medio', label: 'MC', x: 62, y: 46, color: 'from-emerald-500 to-teal-600' },
+      { id: 'ed', name: 'Extremo Derecha', roleType: 'medio', label: 'MD', x: 82, y: 46, color: 'from-purple-500 to-pink-600' },
+      { id: 'del', name: 'Delantero', roleType: 'delantero', label: 'DC', x: 50, y: 20, color: 'from-rose-500 to-red-600' },
+    ]
+  }
+};
+
+// Fallback legacy coordinates mapping for backward compatibility
 export const TACTICAL_COORDINATES: Record<PosicionCampo, { x: number; y: number; code: string; color: string }> = {
   'Portero': { x: 50, y: 88, code: 'POR', color: 'from-amber-500 to-yellow-600' },
   'Lateral Izquierdo': { x: 16, y: 72, code: 'LI', color: 'from-blue-500 to-cyan-600' },
@@ -68,6 +207,14 @@ export const TACTICAL_COORDINATES: Record<PosicionCampo, { x: number; y: number;
   'Extremo Derecha': { x: 82, y: 28, code: 'ED', color: 'from-purple-500 to-pink-600' },
 };
 
+function getPlayerRoleCategory(pos: string): 'portero' | 'defensa' | 'medio' | 'delantero' {
+  const p = (pos || '').toLowerCase().trim();
+  if (p.includes('port') || p === 'por') return 'portero';
+  if (p.includes('delan') || p.includes('punta') || p.includes('ariete') || p.includes('ext') || p === 'dc' || p === 'ei' || p === 'ed' || p === 'del') return 'delantero';
+  if (p.includes('lat') || p.includes('carril') || p.includes('cierre') || (p.includes('centr') && !p.includes('centrocamp')) || p.includes('def') || p === 'cz' || p === 'cd' || p === 'li' || p === 'ld' || p === 'ci') return 'defensa';
+  return 'medio';
+}
+
 export default function MatchTacticalPitch({
   playerStats,
   substitutions,
@@ -79,6 +226,15 @@ export default function MatchTacticalPitch({
   currentMinuteStr,
   onClose
 }: MatchTacticalPitchProps) {
+  // Tactical System selection state (Desplegable de sistema de juego)
+  const [tacticalSystem, setTacticalSystem] = useState<TacticalSystem>('1-4-3-3');
+  
+  // Custom manual drag coordinates for players: { [playerId]: { x, y } }
+  const [customPositions, setCustomPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [draggingPlayerId, setDraggingPlayerId] = useState<string | null>(null);
+  const pitchContainerRef = useRef<HTMLDivElement>(null);
+  const dragInfoRef = useRef<{ startX: number; startY: number; moved: boolean } | null>(null);
+
   // Dialog / Drawer state for substitution
   const [isSubModalOpen, setIsSubModalOpen] = useState(false);
   const [selectedSaleId, setSelectedSaleId] = useState<string>('');
@@ -93,12 +249,12 @@ export default function MatchTacticalPitch({
 
   const [subMinute, setSubMinute] = useState<number>(currentChronoMinute || 45);
 
-  // Derive which players are currently ON FIELD vs ON BENCH (taking into account all substitutions)
+  // Derive which players are currently ON FIELD vs ON BENCH (taking into account all substitutions and formation needs)
   const { onFieldPlayers, benchPlayers, currentPositionMap } = useMemo(() => {
     const onFieldIds = new Set<string>();
     const posMap: Record<string, string> = {};
 
-    // 1. Initial on-field players (titulares)
+    // 1. Initial on-field players (explicitly marked titulares)
     playerStats.forEach(p => {
       if (p.titular) {
         onFieldIds.add(p.playerId);
@@ -106,16 +262,56 @@ export default function MatchTacticalPitch({
       }
     });
 
-    // If no players are marked titular yet, pick up to 11 convocadas or roster players not marked suplente
-    if (onFieldIds.size === 0) {
-      const candidates = playerStats.filter(p => !p.suplente);
-      candidates.slice(0, 11).forEach(p => {
-        onFieldIds.add(p.playerId);
-        posMap[p.playerId] = p.posicionActiva || getDefaultCampoPosition(p.posicion);
+    // 2. If fewer than 11 players are on field, auto-complete up to 11 from available squad players
+    if (onFieldIds.size < 11) {
+      const activeSystemSlots = TACTICAL_SYSTEMS[tacticalSystem]?.slots || TACTICAL_SYSTEMS['1-4-3-3'].slots;
+
+      // Count roles currently covered on field
+      const currentRoleCounts: Record<string, number> = { portero: 0, defensa: 0, medio: 0, delantero: 0 };
+      onFieldIds.forEach(id => {
+        const role = getPlayerRoleCategory(posMap[id] || '');
+        currentRoleCounts[role] = (currentRoleCounts[role] || 0) + 1;
       });
+
+      // Count roles needed in the chosen formation
+      const neededRoleCounts: Record<string, number> = { portero: 0, defensa: 0, medio: 0, delantero: 0 };
+      activeSystemSlots.forEach(s => {
+        neededRoleCounts[s.roleType] = (neededRoleCounts[s.roleType] || 0) + 1;
+      });
+
+      // Sort candidate players: Convocadas first, non-suplentes first, then players with minutes
+      const candidates = playerStats
+        .filter(p => !onFieldIds.has(p.playerId))
+        .sort((a, b) => {
+          const scoreA = (a.isConvocada ? 4 : 0) + (!a.suplente ? 2 : 0) + ((a.minutos ?? 0) > 0 ? 1 : 0);
+          const scoreB = (b.isConvocada ? 4 : 0) + (!b.suplente ? 2 : 0) + ((b.minutos ?? 0) > 0 ? 1 : 0);
+          return scoreB - scoreA;
+        });
+
+      // Pass A: Fill candidates that match unfilled role needs
+      const remainingCandidates: MatchPlayerStat[] = [];
+      for (const cand of candidates) {
+        if (onFieldIds.size >= 11) break;
+        const candPos = cand.posicionActiva || getDefaultCampoPosition(cand.posicion);
+        const candRole = getPlayerRoleCategory(candPos);
+        if ((currentRoleCounts[candRole] || 0) < (neededRoleCounts[candRole] || 0)) {
+          onFieldIds.add(cand.playerId);
+          posMap[cand.playerId] = candPos;
+          currentRoleCounts[candRole] = (currentRoleCounts[candRole] || 0) + 1;
+        } else {
+          remainingCandidates.push(cand);
+        }
+      }
+
+      // Pass B: Fill any remaining spots up to 11 with remaining candidates
+      for (const cand of remainingCandidates) {
+        if (onFieldIds.size >= 11) break;
+        onFieldIds.add(cand.playerId);
+        posMap[cand.playerId] = cand.posicionActiva || getDefaultCampoPosition(cand.posicion);
+      }
     }
 
-    // 2. Apply substitutions chronologically
+    // 3. Apply substitutions chronologically
     substitutions.forEach(sub => {
       onFieldIds.delete(sub.saleId);
       onFieldIds.add(sub.entraId);
@@ -132,46 +328,237 @@ export default function MatchTacticalPitch({
       benchPlayers: bench,
       currentPositionMap: posMap
     };
-  }, [playerStats, substitutions]);
+  }, [playerStats, substitutions, tacticalSystem]);
 
-  // Group on-field players by their active tactical position (from dropdown or substitution)
-  const playersByTacticalPosition = useMemo(() => {
-    const map: Record<PosicionCampo, MatchPlayerStat[]> = {
-      'Portero': [],
-      'Lateral Izquierdo': [],
-      'Central Zurdo': [],
-      'Central Diestro': [],
-      'Lateral Derecho': [],
-      'Interior Izquierda': [],
-      'Medio Centro': [],
-      'Interior Derecha': [],
-      'Extremo Izquierda': [],
-      'Delantero': [],
-      'Extremo Derecha': []
-    };
+  // Match each on-field player to a formation slot in the active tactical system,
+  // respecting their assigned position, role affinities, and any custom manual drag coordinates
+  const placedLayout = useMemo(() => {
+    const slots = TACTICAL_SYSTEMS[tacticalSystem].slots;
+    const remainingSlots = [...slots];
+    const playerPlacements: Array<{
+      player: MatchPlayerStat;
+      slot: TacticalSlot;
+      x: number;
+      y: number;
+      isManual: boolean;
+      activePosition: string;
+    }> = [];
 
+    const unassigned: MatchPlayerStat[] = [];
+
+    // Pass 1: Goalkeeper direct assignment
     onFieldPlayers.forEach(p => {
-      const assigned = (currentPositionMap[p.playerId] || p.posicionActiva || getDefaultCampoPosition(p.posicion)) as PosicionCampo;
-      if (map[assigned]) {
-        map[assigned].push(p);
+      const pPos = currentPositionMap[p.playerId] || p.posicionActiva || getDefaultCampoPosition(p.posicion);
+      const role = getPlayerRoleCategory(pPos);
+      if (role === 'portero') {
+        const slotIdx = remainingSlots.findIndex(s => s.roleType === 'portero');
+        if (slotIdx !== -1) {
+          const slot = remainingSlots.splice(slotIdx, 1)[0];
+          const custom = customPositions[p.playerId];
+          playerPlacements.push({
+            player: p,
+            slot,
+            x: custom ? custom.x : slot.x,
+            y: custom ? custom.y : slot.y,
+            isManual: !!custom,
+            activePosition: slot.name
+          });
+          return;
+        }
+      }
+      unassigned.push(p);
+    });
+
+    // Pass 2: Exact slot position name match (e.g. "Lateral Izquierdo" -> "Lateral Izquierdo")
+    const afterPass2: MatchPlayerStat[] = [];
+    unassigned.forEach(p => {
+      const pPos = currentPositionMap[p.playerId] || p.posicionActiva || getDefaultCampoPosition(p.posicion);
+      const slotIdx = remainingSlots.findIndex(s => s.name.toLowerCase() === pPos.toLowerCase());
+      if (slotIdx !== -1) {
+        const slot = remainingSlots.splice(slotIdx, 1)[0];
+        const custom = customPositions[p.playerId];
+        playerPlacements.push({
+          player: p,
+          slot,
+          x: custom ? custom.x : slot.x,
+          y: custom ? custom.y : slot.y,
+          isManual: !!custom,
+          activePosition: slot.name
+        });
       } else {
-        // Fallback to closest match
-        const safePos = getDefaultCampoPosition(assigned);
-        map[safePos].push(p);
+        afterPass2.push(p);
       }
     });
 
-    return map;
-  }, [onFieldPlayers, currentPositionMap]);
+    // Pass 3: Role match with directional / tactical affinity
+    const afterPass3: MatchPlayerStat[] = [];
+    afterPass2.forEach(p => {
+      const pPos = currentPositionMap[p.playerId] || p.posicionActiva || getDefaultCampoPosition(p.posicion);
+      const role = getPlayerRoleCategory(pPos);
+      const pText = (p.posicion + ' ' + pPos).toLowerCase();
+
+      let bestSlotIdx = -1;
+
+      if (role === 'defensa') {
+        if (pText.includes('izq') || pText.includes('zur')) {
+          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'defensa' && (s.name.includes('Izquierdo') || s.name.includes('Zurdo')));
+        } else if (pText.includes('der') || pText.includes('die')) {
+          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'defensa' && (s.name.includes('Derecho') || s.name.includes('Diestro')));
+        } else if (pText.includes('centr')) {
+          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'defensa' && s.name.includes('Central'));
+        }
+      } else if (role === 'delantero') {
+        if (pText.includes('izq')) {
+          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'delantero' && s.name.includes('Izquierda'));
+        } else if (pText.includes('der')) {
+          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'delantero' && s.name.includes('Derecha'));
+        } else if (pText.includes('delan') || pText.includes('punta')) {
+          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'delantero' && s.name.includes('Delantero'));
+        }
+      } else if (role === 'medio') {
+        if (pText.includes('pivote') || pText.includes('mcd')) {
+          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'medio' && s.name.includes('Medio Centro'));
+        } else if (pText.includes('izq')) {
+          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'medio' && s.name.includes('Izquierda'));
+        } else if (pText.includes('der')) {
+          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'medio' && s.name.includes('Derecha'));
+        }
+      }
+
+      // If no directional match, match any slot of same role
+      if (bestSlotIdx === -1) {
+        bestSlotIdx = remainingSlots.findIndex(s => s.roleType === role);
+      }
+
+      if (bestSlotIdx !== -1) {
+        const slot = remainingSlots.splice(bestSlotIdx, 1)[0];
+        const custom = customPositions[p.playerId];
+        playerPlacements.push({
+          player: p,
+          slot,
+          x: custom ? custom.x : slot.x,
+          y: custom ? custom.y : slot.y,
+          isManual: !!custom,
+          activePosition: slot.name
+        });
+      } else {
+        afterPass3.push(p);
+      }
+    });
+
+    // Pass 4: Distribute any remaining players into any remaining slots
+    afterPass3.forEach(p => {
+      const pPos = currentPositionMap[p.playerId] || p.posicionActiva || getDefaultCampoPosition(p.posicion);
+      const slot = remainingSlots.shift();
+      const custom = customPositions[p.playerId];
+      if (slot) {
+        playerPlacements.push({
+          player: p,
+          slot,
+          x: custom ? custom.x : slot.x,
+          y: custom ? custom.y : slot.y,
+          isManual: !!custom,
+          activePosition: slot.name
+        });
+      } else {
+        // Fallback if more than 11 players on field
+        playerPlacements.push({
+          player: p,
+          slot: slots[0],
+          x: custom ? custom.x : 50,
+          y: custom ? custom.y : 50,
+          isManual: !!custom,
+          activePosition: pPos
+        });
+      }
+    });
+
+    // Empty slots remaining in the tactical formation (when < 11 players are on field)
+    const emptySlots = remainingSlots;
+
+    return { playerPlacements, emptySlots };
+  }, [onFieldPlayers, tacticalSystem, currentPositionMap, customPositions]);
+
+  // Pointer drag event handlers for manual player repositioning
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>, playerId: string) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    e.stopPropagation();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (_) {}
+
+    setDraggingPlayerId(playerId);
+    dragInfoRef.current = { startX: e.clientX, startY: e.clientY, moved: false };
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>, playerId: string) => {
+    if (draggingPlayerId !== playerId || !dragInfoRef.current || !pitchContainerRef.current) return;
+
+    const dx = Math.abs(e.clientX - dragInfoRef.current.startX);
+    const dy = Math.abs(e.clientY - dragInfoRef.current.startY);
+
+    if (dx > 4 || dy > 4) {
+      dragInfoRef.current.moved = true;
+    }
+
+    if (dragInfoRef.current.moved) {
+      const rect = pitchContainerRef.current.getBoundingClientRect();
+      const xPct = Math.max(7, Math.min(93, ((e.clientX - rect.left) / rect.width) * 100));
+      const yPct = Math.max(6, Math.min(94, ((e.clientY - rect.top) / rect.height) * 100));
+
+      setCustomPositions(prev => ({
+        ...prev,
+        [playerId]: {
+          x: Math.round(xPct * 10) / 10,
+          y: Math.round(yPct * 10) / 10
+        }
+      }));
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>, player: MatchPlayerStat) => {
+    if (draggingPlayerId === player.playerId) {
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch (_) {}
+
+      const moved = dragInfoRef.current?.moved;
+      setDraggingPlayerId(null);
+      dragInfoRef.current = null;
+
+      // If barely moved, treat as a tap/click to open substitution modal!
+      if (!moved) {
+        handleOpenSubForPlayer(player);
+      } else {
+        toast.info(`Posición de ${player.nombre} ajustada manualmente en el campo.`, { duration: 1500 });
+      }
+    }
+  };
+
+  const handlePointerCancel = () => {
+    setDraggingPlayerId(null);
+    dragInfoRef.current = null;
+  };
+
+  // Change tactical formation system
+  const handleSystemChange = (newSystem: TacticalSystem) => {
+    setTacticalSystem(newSystem);
+    setCustomPositions({});
+    toast.success(`Sistema cambiado a ${newSystem}. Jugadoras recolocadas en el campo.`);
+  };
+
+  // Reset all custom positions back to the formation's default slot positions
+  const handleResetToFormation = () => {
+    setCustomPositions({});
+    toast.success(`Posiciones restablecidas según la formación ${tacticalSystem}.`);
+  };
 
   // Open the substitution modal pre-selecting a specific player to come off
   const handleOpenSubForPlayer = (player: MatchPlayerStat) => {
     setSelectedSaleId(player.playerId);
-    // Default position for incoming player matches the position of the player who leaves
     const currentPos = currentPositionMap[player.playerId] || player.posicionActiva || getDefaultCampoPosition(player.posicion);
     setSelectedPosicionEntra(currentPos);
     
-    // Choose first available bench player if not selected
     if (benchPlayers.length > 0 && !selectedEntraId) {
       setSelectedEntraId(benchPlayers[0].playerId);
     }
@@ -201,6 +588,19 @@ export default function MatchTacticalPitch({
     setIsSubModalOpen(true);
   };
 
+  // Click on an empty formation slot
+  const handleEmptySlotClick = (slot: TacticalSlot) => {
+    if (benchPlayers.length === 0) {
+      toast.info(`Posición ${slot.name} (${slot.label}) vacía. No hay jugadoras disponibles en el banquillo.`);
+      return;
+    }
+    setSelectedSaleId(onFieldPlayers.length > 0 ? onFieldPlayers[0].playerId : '');
+    setSelectedEntraId(benchPlayers[0].playerId);
+    setSelectedPosicionEntra(slot.name);
+    setSubMinute(currentChronoMinute || 45);
+    setIsSubModalOpen(true);
+  };
+
   // Submit substitution
   const handleConfirmSubstitution = () => {
     if (!selectedSaleId || !selectedEntraId) {
@@ -221,14 +621,24 @@ export default function MatchTacticalPitch({
     const finalMinuto = Math.max(1, Math.min(120, subMinute || currentChronoMinute || 45));
     const finalMinutoStr = `${finalMinuto}'`;
 
+    // Transfer any custom position to incoming player
+    if (customPositions[salePlayer.playerId]) {
+      setCustomPositions(prev => {
+        const next = { ...prev };
+        next[entraPlayer.playerId] = next[salePlayer.playerId];
+        delete next[salePlayer.playerId];
+        return next;
+      });
+    }
+
     const newSub: MatchSubstitution = {
       id: `sub-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       saleId: salePlayer.playerId,
-      saleNombre: `${salePlayer.nombre} ${salePlayer.apellidos}`.trim(),
+      saleNombre: `${salePlayer.nombre} ${salePlayer.apellidos || ''}`.trim(),
       saleDorsal: String(salePlayer.dorsal || ''),
       salePosicion: salePos,
       entraId: entraPlayer.playerId,
-      entraNombre: `${entraPlayer.nombre} ${entraPlayer.apellidos}`.trim(),
+      entraNombre: `${entraPlayer.nombre} ${entraPlayer.apellidos || ''}`.trim(),
       entraDorsal: String(entraPlayer.dorsal || ''),
       posicionEntra: posEntraFinal,
       minuto: finalMinuto,
@@ -237,9 +647,19 @@ export default function MatchTacticalPitch({
     };
 
     onExecuteSubstitution(newSub);
+
+    if (onPositionChange) {
+      onPositionChange(entraPlayer.playerId, posEntraFinal as PosicionCampo);
+    }
+
     setIsSubModalOpen(false);
     setSelectedSaleId('');
     setSelectedEntraId('');
+    setSelectedPosicionEntra('');
+
+    toast.success(
+      `Sustitución en min ${finalMinuto}': Sale #${salePlayer.dorsal} ${salePlayer.nombre} ➜ Entra #${entraPlayer.dorsal} ${entraPlayer.nombre} (${posEntraFinal})`
+    );
   };
 
   const salePlayerObj = useMemo(() => {
@@ -250,34 +670,78 @@ export default function MatchTacticalPitch({
     return playerStats.find(p => p.playerId === selectedEntraId);
   }, [playerStats, selectedEntraId]);
 
+  const customMovedCount = Object.keys(customPositions).length;
+
   return (
     <div className="flex flex-col lg:flex-row gap-4 w-full h-full min-h-0 select-none">
       
       {/* LEFT / CENTER: THE INTERACTIVE TACTICAL PITCH */}
-      <div className="flex-1 flex flex-col items-center justify-between min-w-0 bg-slate-950/80 border border-emerald-500/30 rounded-2xl p-3 sm:p-4 shadow-xl overflow-hidden relative">
+      <div className="flex-1 flex flex-col items-center min-w-0 bg-slate-950/80 border border-emerald-500/30 rounded-2xl p-2.5 sm:p-3.5 shadow-xl overflow-y-auto relative">
         
-        {/* PITCH TOP BAR: Status & Action Buttons */}
-        <div className="w-full flex flex-wrap items-center justify-between gap-2.5 mb-3 px-1 z-10">
+        {/* PITCH TOP BAR: Tactical System Dropdown, Status & Actions */}
+        <div className="w-full flex flex-wrap items-center justify-between gap-2.5 mb-2 px-1 z-10 shrink-0">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
               <Compass className="w-4 h-4" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h4 className="font-extrabold text-sm sm:text-base text-white flex items-center gap-1.5">
-                  <span>Pizarra Táctica en Vivo</span>
-                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/40">
-                    {onFieldPlayers.length} en Campo
+                  <span>Pizarra Táctica</span>
+                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
+                    onFieldPlayers.length === 11
+                      ? 'text-emerald-300 bg-emerald-950/80 border-emerald-500/50'
+                      : onFieldPlayers.length > 11
+                        ? 'text-amber-300 bg-amber-950/80 border-amber-500/50'
+                        : 'text-blue-300 bg-blue-950/80 border-blue-500/50'
+                  }`}>
+                    {onFieldPlayers.length}/11 en Campo {onFieldPlayers.length === 11 ? '✓ Completo' : ''}
                   </span>
                 </h4>
               </div>
-              <p className="text-[11px] text-slate-400">
-                Posición actual según el desplegable • Toca cualquier jugadora para cambiarla
+              <p className="text-[11px] text-slate-400 truncate">
+                Colocación por posición • Arrastra para mover libremente
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* CONTROLS: Formation Dropdown, Reset, and Sub Button */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* DESPLEGABLE SISTEMA DE JUEGO */}
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-emerald-500/40 hover:border-emerald-400/80 rounded-xl px-2.5 py-1 text-xs shadow-sm transition-colors">
+              <Layers className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <label htmlFor="tactical-system-select" className="text-[10px] font-black uppercase text-slate-400 shrink-0">
+                Sistema:
+              </label>
+              <select
+                id="tactical-system-select"
+                value={tacticalSystem}
+                onChange={(e) => handleSystemChange(e.target.value as TacticalSystem)}
+                className="bg-transparent text-emerald-300 font-black text-xs sm:text-sm focus:outline-none cursor-pointer pr-1"
+                title="Selecciona el sistema táctico de juego"
+              >
+                {Object.entries(TACTICAL_SYSTEMS).map(([key, sys]) => (
+                  <option key={key} value={key} className="bg-slate-950 text-white font-bold py-1">
+                    {sys.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* BOTÓN REAJUSTAR A FORMACIÓN */}
+            <Button
+              type="button"
+              onClick={handleResetToFormation}
+              size="sm"
+              variant="ghost"
+              className="h-8 sm:h-9 px-2.5 text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-850 border border-slate-800 rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Restablecer posiciones según el sistema táctico"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">Reajustar</span>
+            </Button>
+
+            {/* BOTÓN SUSTITUCIÓN */}
             <Button
               type="button"
               onClick={handleOpenGeneralSubModal}
@@ -285,15 +749,31 @@ export default function MatchTacticalPitch({
               className="h-8 sm:h-9 px-3 text-xs font-black bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer transition-all"
             >
               <ArrowRightLeft className="w-3.5 h-3.5" />
-              <span>Hacer Sustitución</span>
+              <span>Sustitución</span>
             </Button>
           </div>
         </div>
 
+        {/* HELPER BANNER: SYSTEM & MANUAL DRAG NOTIFICATION */}
+        <div className="w-full flex items-center justify-between gap-2 px-3 py-1.5 mb-2 bg-emerald-950/40 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-300 shrink-0">
+          <div className="flex items-center gap-1.5 truncate">
+            <Move className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span className="truncate">
+              <strong>{tacticalSystem}</strong>: {TACTICAL_SYSTEMS[tacticalSystem].desc} • <strong>Arrastra libremente</strong> a cualquier jugadora
+            </span>
+          </div>
+          {customMovedCount > 0 && (
+            <span className="text-[10px] bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono font-bold px-1.5 py-0.5 rounded shrink-0">
+              {customMovedCount} movida{customMovedCount > 1 ? 's' : ''} a mano
+            </span>
+          )}
+        </div>
+
         {/* THE SOCCER PITCH (Tactical Board) */}
-        <div className="w-full flex-1 flex items-center justify-center p-1 sm:p-2 min-h-[460px] sm:min-h-[520px]">
+        <div className="w-full flex-1 flex items-center justify-center p-1 sm:p-2">
           <div 
-            className="w-full max-w-[560px] aspect-[1/1.38] bg-gradient-to-b from-[#06331e] via-[#064225] to-[#06331e] border-4 border-slate-900 rounded-3xl relative shadow-[0_0_50px_rgba(6,78,59,0.35)] overflow-hidden"
+            ref={pitchContainerRef}
+            className="w-full max-w-[440px] sm:max-w-[480px] h-[480px] sm:h-[530px] md:h-[560px] max-h-[60vh] aspect-[1/1.36] bg-gradient-to-b from-[#06331e] via-[#064225] to-[#06331e] border-4 border-slate-900 rounded-3xl relative shadow-[0_0_50px_rgba(6,78,59,0.35)] overflow-hidden touch-none mx-auto select-none shrink-0"
           >
             {/* Authentic horizontal grass stripes */}
             <div 
@@ -304,15 +784,17 @@ export default function MatchTacticalPitch({
               }} 
             />
 
-            {/* Tactical pitch chalk lines */}
-            <div className="absolute inset-3 sm:inset-4 border-2 border-emerald-400/30 rounded-xl pointer-events-none" />
-            
-            {/* Halfway line & Center Circle */}
-            <div className="absolute top-1/2 left-0 w-full h-[2px] bg-emerald-400/30 pointer-events-none" />
-            <div className="absolute top-1/2 left-1/2 w-[26%] aspect-square rounded-full border-2 border-emerald-400/30 -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
-            <div className="absolute top-1/2 left-1/2 w-2 h-2 bg-emerald-400/60 rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
+            {/* Field Outer Lines */}
+            <div className="absolute inset-3 sm:inset-4 border-2 border-emerald-400/30 rounded-2xl pointer-events-none" />
 
-            {/* Top Penalty Area (Attacking end) */}
+            {/* Halfway Line */}
+            <div className="absolute top-1/2 left-3 right-3 sm:left-4 sm:right-4 h-0.5 bg-emerald-400/30 -translate-y-1/2 pointer-events-none" />
+
+            {/* Center Circle & Center Spot */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 sm:w-24 sm:h-24 border-2 border-emerald-400/30 rounded-full pointer-events-none" />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-emerald-400/60 rounded-full pointer-events-none" />
+
+            {/* Top Penalty Box & Goal (Attacking direction) */}
             <div className="absolute top-3 sm:top-4 left-1/2 -translate-x-1/2 w-[52%] h-[15%] border-b-2 border-l-2 border-r-2 border-emerald-400/30 rounded-b-lg pointer-events-none" />
             <div className="absolute top-3 sm:top-4 left-1/2 -translate-x-1/2 w-[26%] h-[5.5%] border-b-2 border-l-2 border-r-2 border-emerald-400/30 rounded-b pointer-events-none" />
             <div className="absolute top-[18.5%] left-1/2 -translate-x-1/2 w-[18%] h-[8%] border-b-2 border-emerald-400/30 rounded-b-full pointer-events-none" />
@@ -320,7 +802,7 @@ export default function MatchTacticalPitch({
             {/* Top Goal */}
             <div className="absolute -top-[4px] left-1/2 -translate-x-1/2 w-[22%] h-[6px] bg-white rounded-sm shadow-md pointer-events-none" />
 
-            {/* Bottom Penalty Area (Defending end) */}
+            {/* Bottom Penalty Box & Goal (Defending direction) */}
             <div className="absolute bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 w-[52%] h-[15%] border-t-2 border-l-2 border-r-2 border-emerald-400/30 rounded-t-lg pointer-events-none" />
             <div className="absolute bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 w-[26%] h-[5.5%] border-t-2 border-l-2 border-r-2 border-emerald-400/30 rounded-t pointer-events-none" />
             <div className="absolute bottom-[18.5%] left-1/2 -translate-x-1/2 w-[18%] h-[8%] border-t-2 border-emerald-400/30 rounded-t-full pointer-events-none" />
@@ -334,89 +816,101 @@ export default function MatchTacticalPitch({
             <div className="absolute bottom-3 left-3 w-4 h-4 border-t-2 border-r-2 border-emerald-400/30 rounded-tr-full pointer-events-none" />
             <div className="absolute bottom-3 right-3 w-4 h-4 border-t-2 border-l-2 border-emerald-400/30 rounded-tl-full pointer-events-none" />
 
-            {/* 11 TACTICAL POSITIONS SLOTS (Placed exactly according to POSICIONES_CAMPO) */}
-            {(Object.keys(TACTICAL_COORDINATES) as PosicionCampo[]).map(posName => {
-              const coord = TACTICAL_COORDINATES[posName];
-              const playersInSlot = playersByTacticalPosition[posName] || [];
+            {/* PLAYERS PLACED ON PITCH (ACCORDING TO TACTICAL SYSTEM + MANUAL DRAG) */}
+            {placedLayout.playerPlacements.map(({ player, slot, x, y, isManual, activePosition }) => {
+              const hasEnteredAsSub = substitutions.some(s => s.entraId === player.playerId);
+              const currentMinutes = player.minutos ?? 0;
+              const isDragging = draggingPlayerId === player.playerId;
 
               return (
                 <div
-                  key={posName}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center justify-center gap-1.5 z-20"
-                  style={{ left: `${coord.x}%`, top: `${coord.y}%` }}
+                  key={player.playerId}
+                  onPointerDown={(e) => handlePointerDown(e, player.playerId)}
+                  onPointerMove={(e) => handlePointerMove(e, player.playerId)}
+                  onPointerUp={(e) => handlePointerUp(e, player)}
+                  onPointerCancel={handlePointerCancel}
+                  style={{
+                    left: `${x}%`,
+                    top: `${y}%`,
+                    touchAction: 'none'
+                  }}
+                  className={`absolute -translate-x-1/2 -translate-y-1/2 select-none z-20 group transition-all duration-75 flex flex-col items-center ${
+                    isDragging
+                      ? 'z-50 scale-125 cursor-grabbing drop-shadow-2xl'
+                      : 'cursor-grab hover:scale-110 active:scale-105'
+                  }`}
+                  title={`${player.nombre} #${player.dorsal} (${activePosition}). Arrastra para mover o toca para sustituir.`}
                 >
-                  {playersInSlot.length > 0 ? (
-                    // Render player card(s) placed here
-                    <div className="flex items-center gap-1.5">
-                      {playersInSlot.map(player => {
-                        const hasEnteredAsSub = substitutions.some(s => s.entraId === player.playerId);
-                        const currentMinutes = player.minutos ?? 0;
+                  {/* Dorsal Circle Avatar */}
+                  <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br ${slot.color} border-2 ${
+                    isManual ? 'border-amber-300 ring-2 ring-amber-400/80 shadow-amber-500/40' : 'border-white'
+                  } shadow-lg flex items-center justify-center text-white font-black text-xs sm:text-sm font-mono relative transition-shadow group-hover:ring-4 group-hover:ring-emerald-400/50`}>
+                    <span>{player.dorsal || '-'}</span>
 
-                        return (
-                          <div
-                            key={player.playerId}
-                            onClick={() => handleOpenSubForPlayer(player)}
-                            className="group relative cursor-pointer transition-transform hover:scale-110 active:scale-95 flex flex-col items-center"
-                            title={`Toca para sustituir a ${player.nombre} #${player.dorsal} (${posName})`}
-                          >
-                            {/* Dorsal Circle Avatar */}
-                            <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br ${coord.color} border-2 border-white shadow-lg flex items-center justify-center text-white font-black text-xs sm:text-sm font-mono relative transition-shadow group-hover:ring-4 group-hover:ring-emerald-400/50`}>
-                              <span>{player.dorsal || '-'}</span>
+                    {/* Drag indicator icon on hover */}
+                    <span className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-slate-900 border border-emerald-400 text-emerald-300 flex items-center justify-center shadow">
+                      <Move className="w-2.5 h-2.5" />
+                    </span>
 
-                              {/* Substitute in indicator */}
-                              {hasEnteredAsSub && (
-                                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 text-slate-950 flex items-center justify-center text-[8px] font-black shadow">
-                                  ▲
-                                </span>
-                              )}
+                    {/* Substitute in indicator */}
+                    {hasEnteredAsSub && (
+                      <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 text-slate-950 flex items-center justify-center text-[8px] font-black shadow">
+                        ▲
+                      </span>
+                    )}
 
-                              {/* Goals indicator */}
-                              {(player.goles_metidos || 0) > 0 && (
-                                <span className="absolute -bottom-1 -right-1 bg-amber-400 text-black text-[9px] font-black px-1 rounded-full border border-black shadow">
-                                  ⚽{player.goles_metidos}
-                                </span>
-                              )}
+                    {/* Goals indicator */}
+                    {(player.goles_metidos || 0) > 0 && (
+                      <span className="absolute -bottom-1 -right-1 bg-amber-400 text-black text-[9px] font-black px-1 rounded-full border border-black shadow">
+                        ⚽{player.goles_metidos}
+                      </span>
+                    )}
 
-                              {/* Yellow card */}
-                              {(player.tarjetas_amarillas || 0) > 0 && (
-                                <span className="absolute -top-1 -left-1 w-2.5 h-3.5 bg-yellow-400 border border-black rounded-xs shadow" />
-                              )}
-                            </div>
+                    {/* Yellow card */}
+                    {(player.tarjetas_amarillas || 0) > 0 && (
+                      <span className="absolute -top-1 -left-1 w-2.5 h-3.5 bg-yellow-400 border border-black rounded-xs shadow" />
+                    )}
+                  </div>
 
-                            {/* Player Name and Quick Sub Badge */}
-                            <div className="mt-1 bg-slate-950/90 border border-white/20 rounded-md px-1.5 py-0.5 text-center shadow-md max-w-[85px] sm:max-w-[100px] truncate group-hover:border-emerald-400 transition-colors">
-                              <span className="text-[9px] sm:text-[10px] font-extrabold text-white block truncate leading-tight">
-                                {player.nombre.split(' ')[0]} {player.apellidos ? player.apellidos.charAt(0) + '.' : ''}
-                              </span>
-                              <div className="flex items-center justify-center gap-1 text-[8px] font-bold text-emerald-300">
-                                <span>{coord.code}</span>
-                                <span>•</span>
-                                <span>{currentMinutes}'</span>
-                              </div>
-                            </div>
-
-                            {/* Hover Action Badge */}
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-6 bg-emerald-500 text-slate-950 text-[9px] font-black px-1.5 py-0.5 rounded shadow-lg flex items-center gap-0.5 pointer-events-none whitespace-nowrap z-30">
-                              <ArrowRightLeft className="w-2.5 h-2.5" />
-                              <span>Sustituir</span>
-                            </div>
-                          </div>
-                        );
-                      })}
+                  {/* Player Name and Quick Sub Badge */}
+                  <div className="mt-1 bg-slate-950/90 border border-white/20 rounded-md px-1.5 py-0.5 text-center shadow-md max-w-[85px] sm:max-w-[105px] truncate group-hover:border-emerald-400 transition-colors pointer-events-none">
+                    <span className="text-[9px] sm:text-[10px] font-extrabold text-white block truncate leading-tight">
+                      {player.nombre.split(' ')[0]} {player.apellidos ? player.apellidos.charAt(0) + '.' : ''}
+                    </span>
+                    <div className="flex items-center justify-center gap-1 text-[8px] font-bold text-emerald-300">
+                      <span>{slot.label}</span>
+                      {isManual && <span className="text-[8px] text-amber-300 font-bold" title="Posición ajustada manualmente">●</span>}
+                      <span>•</span>
+                      <span>{currentMinutes}'</span>
                     </div>
-                  ) : (
-                    // Empty slot placeholder
-                    <div 
-                      onClick={handleOpenGeneralSubModal}
-                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-dashed border-emerald-400/40 hover:border-emerald-300 bg-emerald-950/40 hover:bg-emerald-900/60 flex flex-col items-center justify-center text-emerald-400 cursor-pointer transition-all hover:scale-105"
-                      title={`Posición vacía: ${posName}. Toca para hacer una sustitución`}
-                    >
-                      <span className="text-[8px] font-black">{coord.code}</span>
-                    </div>
-                  )}
+                  </div>
+
+                  {/* Hover Action Pill */}
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-6 left-1/2 -translate-x-1/2 bg-slate-950/95 border border-emerald-400 text-emerald-300 text-[9px] font-black px-2 py-0.5 rounded-full shadow-lg flex items-center gap-1 pointer-events-none whitespace-nowrap z-30">
+                    <Move className="w-2.5 h-2.5 text-emerald-400" />
+                    <span>Arrastra o Toca</span>
+                  </div>
                 </div>
               );
             })}
+
+            {/* EMPTY TACTICAL SLOTS IN THE ACTIVE FORMATION */}
+            {placedLayout.emptySlots.map(slot => (
+              <div
+                key={slot.id}
+                style={{ left: `${slot.x}%`, top: `${slot.y}%` }}
+                onClick={() => handleEmptySlotClick(slot)}
+                className="absolute -translate-x-1/2 -translate-y-1/2 z-10 cursor-pointer group flex flex-col items-center"
+                title={`Posición vacía: ${slot.name} (${slot.label}). Toca para incorporar jugadora`}
+              >
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border-2 border-dashed border-emerald-400/40 hover:border-emerald-300 bg-emerald-950/40 hover:bg-emerald-900/60 flex items-center justify-center text-emerald-300 transition-all group-hover:scale-110 shadow-sm">
+                  <span className="text-[8px] font-black">{slot.label}</span>
+                </div>
+                <span className="text-[8px] font-bold text-emerald-400/70 mt-0.5 group-hover:text-emerald-300">
+                  + Libre
+                </span>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -426,8 +920,8 @@ export default function MatchTacticalPitch({
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="font-bold text-slate-300">Minuto Actual: <strong className="text-emerald-400">{currentMinuteStr}</strong></span>
           </div>
-          <span className="text-[11px] text-slate-500 hidden sm:inline">
-            Toca una jugadora en el campo para sustituirla o pulsa "Hacer Sustitución"
+          <span className="text-[11px] text-slate-400 hidden sm:inline">
+            Formación: <strong className="text-white">{tacticalSystem}</strong> • Arrastra para recolocar libremente • Toca para sustitución
           </span>
         </div>
       </div>

@@ -34,7 +34,8 @@ import {
   RotateCcw,
   FastForward,
   Timer,
-  ArrowRightLeft
+  ArrowRightLeft,
+  CheckCircle2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
@@ -59,22 +60,43 @@ export type PosicionCampo = typeof POSICIONES_CAMPO[number];
 
 export function getDefaultCampoPosition(posRaw?: string): PosicionCampo {
   if (!posRaw) return 'Medio Centro';
-  const p = posRaw.toLowerCase();
-  if (p.includes('port')) return 'Portero';
-  if (p.includes('zurdo') && (p.includes('centr') || p.includes('def'))) return 'Central Zurdo';
-  if (p.includes('diestro') && (p.includes('centr') || p.includes('def'))) return 'Central Diestro';
-  if (p.includes('centr') && (p.includes('def') || p.includes('cierre'))) return 'Central Diestro';
-  if (p.includes('izq') && (p.includes('lat') || p.includes('carril'))) return 'Lateral Izquierdo';
-  if (p.includes('der') && (p.includes('lat') || p.includes('carril'))) return 'Lateral Derecho';
-  if (p.includes('lat') || p.includes('carril')) return 'Lateral Derecho';
-  if (p.includes('izq') && p.includes('int')) return 'Interior Izquierda';
-  if (p.includes('der') && p.includes('int')) return 'Interior Derecha';
-  if (p.includes('int')) return 'Interior Derecha';
-  if (p.includes('izq') && p.includes('ext')) return 'Extremo Izquierda';
-  if (p.includes('der') && p.includes('ext')) return 'Extremo Derecha';
-  if (p.includes('ext')) return 'Extremo Derecha';
-  if (p.includes('delant') || p.includes('punta') || p.includes('ariete')) return 'Delantero';
-  if (p.includes('pivote') || p.includes('medio') || p.includes('volante')) return 'Medio Centro';
+  const p = posRaw.toLowerCase().trim();
+  
+  // 1. Portero
+  if (p.includes('port') || p === 'por') return 'Portero';
+
+  // 2. Delantero / Extremos / Puntas
+  if (p.includes('ext') && (p.includes('izq') || p.includes('zur'))) return 'Extremo Izquierda';
+  if (p.includes('ext') && (p.includes('der') || p.includes('die'))) return 'Extremo Derecha';
+  if (p === 'ei') return 'Extremo Izquierda';
+  if (p === 'ed') return 'Extremo Derecha';
+  if (p.includes('extremo')) return 'Extremo Derecha';
+  if (p.includes('delant') || p.includes('punta') || p.includes('ariete') || p === 'dc' || p === 'del') return 'Delantero';
+
+  // 3. Laterales
+  if ((p.includes('lat') || p.includes('carril')) && (p.includes('izq') || p.includes('zur'))) return 'Lateral Izquierdo';
+  if ((p.includes('lat') || p.includes('carril')) && (p.includes('der') || p.includes('die'))) return 'Lateral Derecho';
+  if (p === 'li') return 'Lateral Izquierdo';
+  if (p === 'ld') return 'Lateral Derecho';
+  if (p.includes('lateral') || p.includes('carrilero') || p.includes('carril')) return 'Lateral Derecho';
+
+  // 4. Centrales y Defensas
+  if ((p.includes('centr') || p.includes('def')) && (p.includes('izq') || p.includes('zur'))) return 'Central Zurdo';
+  if ((p.includes('centr') || p.includes('def')) && (p.includes('der') || p.includes('die'))) return 'Central Diestro';
+  if (p === 'cz' || p === 'ci') return 'Central Zurdo';
+  if (p === 'cd') return 'Central Diestro';
+  if (p.includes('central') || p.includes('cierre') || p.includes('defensa') || p === 'def') return 'Central Diestro';
+
+  // 5. Centrocampistas, Interiores, Pivotes
+  if (p.includes('int') && (p.includes('izq') || p.includes('zur'))) return 'Interior Izquierda';
+  if (p.includes('int') && (p.includes('der') || p.includes('die'))) return 'Interior Derecha';
+  if (p === 'ii' || p === 'mi') return 'Interior Izquierda';
+  if (p === 'id' || p === 'md') return 'Interior Derecha';
+  if (p.includes('interior')) return 'Interior Derecha';
+  if (p.includes('media punta') || p.includes('mediapunta') || p === 'mco') return 'Interior Izquierda';
+  if (p.includes('pivote') || p.includes('mcd') || p === 'piv') return 'Medio Centro';
+  if (p.includes('medio') || p.includes('volante') || p.includes('centrocamp') || p === 'mc') return 'Medio Centro';
+
   return 'Medio Centro';
 }
 
@@ -291,8 +313,8 @@ export default function MatchStatsModal({
   // Search filter
   const [playerSearch, setPlayerSearch] = useState<string>('');
 
-  // Filter mode: 'todas' | 'convocadas' | 'con_eventos'
-  const [rosterFilter, setRosterFilter] = useState<'todas' | 'convocadas' | 'con_eventos'>('todas');
+  // Filter mode: 'todas' | 'titulares' | 'convocadas' | 'con_eventos'
+  const [rosterFilter, setRosterFilter] = useState<'todas' | 'titulares' | 'convocadas' | 'con_eventos'>('todas');
 
   // Player Stats array
   const [playerStats, setPlayerStats] = useState<MatchPlayerStat[]>([]);
@@ -822,8 +844,21 @@ export default function MatchStatsModal({
     let newSuplente = false;
 
     if (role === 'titular') {
-      newTitular = !isCurrentlyTitular;
-      newSuplente = false;
+      if (!isCurrentlyTitular) {
+        const currentTitulares = playerStats.filter(p => p.titular).length;
+        if (currentTitulares >= 11) {
+          toast.warning('⚠️ Aviso: ¡Ya tienes 11 jugadoras puestas de titulares! (Once inicial completo). Desmarca una titular antes de agregar otra.');
+          return;
+        }
+        if (currentTitulares + 1 === 11) {
+          toast.success('★ ¡Aviso: Once inicial completo! Ya tienes 11 jugadoras puestas de titulares.');
+        }
+        newTitular = true;
+        newSuplente = false;
+      } else {
+        newTitular = false;
+        newSuplente = false;
+      }
     } else if (role === 'suplente') {
       newSuplente = !isCurrentlySuplente;
       newTitular = false;
@@ -947,6 +982,7 @@ export default function MatchStatsModal({
   const filteredPlayerStats = useMemo(() => {
     return playerStats.filter(p => {
       // 1. Roster filter
+      if (rosterFilter === 'titulares' && !p.titular) return false;
       if (rosterFilter === 'convocadas' && !p.isConvocada) return false;
       if (rosterFilter === 'con_eventos') {
         const hasEvents = (p.goles_metidos || 0) > 0 ||
@@ -975,6 +1011,7 @@ export default function MatchStatsModal({
   // Active selected player
   const selectedPlayer = playerStats.find(p => p.playerId === selectedPlayerId) || filteredPlayerStats[0] || playerStats[0];
 
+  const titularesCount = useMemo(() => playerStats.filter(p => p.titular).length, [playerStats]);
   const convocadasCount = useMemo(() => playerStats.filter(p => p.isConvocada).length, [playerStats]);
   const activeCount = useMemo(() => playerStats.filter(p => 
     (p.goles_metidos || 0) > 0 ||
@@ -1017,6 +1054,26 @@ export default function MatchStatsModal({
 
           {/* TAB BUTTONS & VISUALIZAR CAMPO */}
           <div className="flex items-center gap-1.5 flex-wrap">
+            {/* BADGE AVISO 11 TITULARES */}
+            <div className="hidden xl:flex items-center">
+              {titularesCount === 11 ? (
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 text-[11px] font-bold shadow-sm" title="Once inicial completo">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>11 Titulares (Completo)</span>
+                </span>
+              ) : titularesCount > 11 ? (
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-950/80 border border-amber-500/50 text-amber-300 text-[11px] font-bold shadow-sm" title="Superado el máximo de 11 titulares">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Aviso: {titularesCount}/11 Titulares</span>
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-[11px] font-medium" title={`Faltan ${11 - titularesCount} para completar el once`}>
+                  <Users className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span>Titulares: <strong className="text-blue-300">{titularesCount}/11</strong></span>
+                </span>
+              )}
+            </div>
+
             {/* BOTÓN PROMINENTE VISUALIZAR CAMPO */}
             <button
               type="button"
@@ -1287,7 +1344,8 @@ export default function MatchStatsModal({
 
         </div>
 
-        {/* TEAM COLLECTIVE ACTIONS & LIVE STATUS BAR - Compact, space-saving for iPad */}
+        {/* TEAM COLLECTIVE ACTIONS & LIVE STATUS BAR - Compact, space-saving for iPad (hidden on campo tab to maximize pitch display) */}
+        {activeTab !== 'campo' && (
         <div className="bg-slate-950/90 border-b border-slate-800 px-3 sm:px-4 py-1.5 sm:py-2 flex flex-col gap-1.5 shrink-0">
           
           {/* Row 1: 4 Quick Collective Action Counters */}
@@ -1459,6 +1517,7 @@ export default function MatchStatsModal({
           </div>
 
         </div>
+        )}
 
         {/* MODAL MAIN CONTENT */}
         <div className="flex-1 min-h-0 overflow-hidden p-2 sm:p-3 flex flex-col">
@@ -1483,12 +1542,12 @@ export default function MatchStatsModal({
                   </span>
                 </div>
 
-                {/* Filter Pills: Todas / Convocadas / Con Eventos */}
-                <div className="pt-2 pb-1 shrink-0 flex items-center gap-1">
+                {/* Filter Pills: Todas / Titulares / Convocadas / Con Eventos */}
+                <div className="pt-2 pb-1 shrink-0 grid grid-cols-4 gap-1">
                   <button
                     type="button"
                     onClick={() => setRosterFilter('todas')}
-                    className={`flex-1 py-1 px-1.5 rounded-lg text-[10px] font-black uppercase tracking-tight transition-all cursor-pointer text-center ${
+                    className={`py-1 px-1 rounded-lg text-[9px] font-black uppercase tracking-tight transition-all cursor-pointer text-center truncate ${
                       rosterFilter === 'todas'
                         ? 'bg-cyan-500 text-black shadow-sm'
                         : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
@@ -1498,8 +1557,20 @@ export default function MatchStatsModal({
                   </button>
                   <button
                     type="button"
+                    onClick={() => setRosterFilter('titulares')}
+                    className={`py-1 px-1 rounded-lg text-[9px] font-black uppercase tracking-tight transition-all cursor-pointer text-center truncate ${
+                      rosterFilter === 'titulares'
+                        ? 'bg-blue-600 text-white shadow-sm font-black'
+                        : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                    title="Filtrar por jugadoras titulares (once inicial)"
+                  >
+                    Tit. ({titularesCount}/11)
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setRosterFilter('convocadas')}
-                    className={`flex-1 py-1 px-1.5 rounded-lg text-[10px] font-black uppercase tracking-tight transition-all cursor-pointer text-center ${
+                    className={`py-1 px-1 rounded-lg text-[9px] font-black uppercase tracking-tight transition-all cursor-pointer text-center truncate ${
                       rosterFilter === 'convocadas'
                         ? 'bg-cyan-500 text-black shadow-sm'
                         : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
@@ -1510,7 +1581,7 @@ export default function MatchStatsModal({
                   <button
                     type="button"
                     onClick={() => setRosterFilter('con_eventos')}
-                    className={`flex-1 py-1 px-1.5 rounded-lg text-[10px] font-black uppercase tracking-tight transition-all cursor-pointer text-center ${
+                    className={`py-1 px-1 rounded-lg text-[9px] font-black uppercase tracking-tight transition-all cursor-pointer text-center truncate ${
                       rosterFilter === 'con_eventos'
                         ? 'bg-cyan-500 text-black shadow-sm'
                         : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
@@ -1542,6 +1613,34 @@ export default function MatchStatsModal({
                     )}
                   </div>
                 </div>
+
+                {/* Banner de Aviso Once Inicial (11 Titulares) */}
+                {titularesCount === 11 ? (
+                  <div className="mb-2 p-2 rounded-xl bg-emerald-950/80 border border-emerald-500/50 flex items-center justify-between text-xs text-emerald-300 font-bold shrink-0 shadow-sm animate-in fade-in">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span className="truncate">¡Once inicial completo! (11 titulares)</span>
+                    </div>
+                    <span className="font-mono text-[10px] bg-emerald-500 text-slate-950 px-1.5 py-0.5 rounded font-black shrink-0 ml-1">
+                      11/11
+                    </span>
+                  </div>
+                ) : titularesCount > 11 ? (
+                  <div className="mb-2 p-2 rounded-xl bg-amber-950/80 border border-amber-500/50 flex items-center justify-between text-xs text-amber-300 font-bold shrink-0 shadow-sm animate-in fade-in">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span className="truncate">Aviso: {titularesCount} titulares (máximo 11)</span>
+                    </div>
+                    <span className="font-mono text-[10px] bg-amber-500 text-slate-950 px-1.5 py-0.5 rounded font-black shrink-0 ml-1">
+                      {titularesCount}/11
+                    </span>
+                  </div>
+                ) : (
+                  <div className="mb-2 px-2.5 py-1.5 rounded-lg bg-slate-950/60 border border-slate-800 flex items-center justify-between text-[11px] text-slate-400 shrink-0">
+                    <span className="truncate">Titulares: <strong className="text-blue-300">{titularesCount} de 11</strong> {11 - titularesCount > 0 ? `(faltan ${11 - titularesCount})` : ''}</span>
+                    <span className="font-mono text-[10px] text-blue-400 font-black">{titularesCount}/11 TIT</span>
+                  </div>
+                )}
 
                 {/* SCROLLABLE PLAYER LIST - Renders EVERY player with no truncation */}
                 <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1 overscroll-contain">
@@ -2381,6 +2480,16 @@ export default function MatchStatsModal({
                   </button>
                   <button
                     type="button"
+                    onClick={() => setRosterFilter('titulares')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      rosterFilter === 'titulares' ? 'bg-blue-600 text-white font-black' : 'bg-slate-800 text-slate-300'
+                    }`}
+                    title="Filtrar por jugadoras titulares"
+                  >
+                    Titulares ({titularesCount}/11)
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setRosterFilter('convocadas')}
                     className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       rosterFilter === 'convocadas' ? 'bg-cyan-500 text-black' : 'bg-slate-800 text-slate-300'
@@ -2390,6 +2499,29 @@ export default function MatchStatsModal({
                   </button>
                 </div>
               </div>
+
+              {/* Banner Aviso 11 Titulares en Matriz */}
+              {titularesCount === 11 ? (
+                <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-emerald-950/80 border border-emerald-500/50 text-xs text-emerald-300 font-bold shrink-0 shadow-sm animate-in fade-in">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>¡Aviso: Once inicial completo! Ya tienes 11 jugadoras puestas de titulares.</span>
+                  </div>
+                  <span className="bg-emerald-500 text-slate-950 px-2 py-0.5 rounded font-black text-[10px] font-mono shrink-0">
+                    11 / 11 TITULARES
+                  </span>
+                </div>
+              ) : titularesCount > 11 ? (
+                <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-amber-950/80 border border-amber-500/50 text-xs text-amber-300 font-bold shrink-0 shadow-sm animate-in fade-in">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>Aviso: Tienes {titularesCount} titulares seleccionadas (el máximo reglamentario es 11).</span>
+                  </div>
+                  <span className="bg-amber-500 text-slate-950 px-2 py-0.5 rounded font-black text-[10px] font-mono shrink-0">
+                    {titularesCount} / 11 TITULARES
+                  </span>
+                </div>
+              ) : null}
 
               <div className="flex-1 min-h-0 overflow-auto rounded-2xl border border-slate-800">
                 <table className="w-full text-left text-xs border-collapse min-w-[760px]">
@@ -2605,7 +2737,7 @@ export default function MatchStatsModal({
 
           {/* TAB: VISUALIZAR CAMPO & GESTIÓN DE SUSTITUCIONES */}
           {activeTab === 'campo' && (
-            <div className="flex-1 min-h-0 flex flex-col overflow-y-auto pr-1">
+            <div className="h-full min-h-0 flex flex-col overflow-y-auto pr-0.5">
               <MatchTacticalPitch
                 playerStats={playerStats}
                 substitutions={substitutions}
