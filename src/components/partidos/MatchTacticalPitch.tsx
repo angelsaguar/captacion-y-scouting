@@ -19,6 +19,7 @@ import {
   POSICIONES_CAMPO, 
   PosicionCampo, 
   getDefaultCampoPosition, 
+  getPlayerRoleCategory,
   MatchPlayerStat 
 } from './MatchStatsModal';
 
@@ -207,12 +208,184 @@ export const TACTICAL_COORDINATES: Record<PosicionCampo, { x: number; y: number;
   'Extremo Derecha': { x: 82, y: 28, code: 'ED', color: 'from-purple-500 to-pink-600' },
 };
 
-function getPlayerRoleCategory(pos: string): 'portero' | 'defensa' | 'medio' | 'delantero' {
-  const p = (pos || '').toLowerCase().trim();
-  if (p.includes('port') || p === 'por') return 'portero';
-  if (p.includes('delan') || p.includes('punta') || p.includes('ariete') || p.includes('ext') || p === 'dc' || p === 'ei' || p === 'ed' || p === 'del') return 'delantero';
-  if (p.includes('lat') || p.includes('carril') || p.includes('cierre') || (p.includes('centr') && !p.includes('centrocamp')) || p.includes('def') || p === 'cz' || p === 'cd' || p === 'li' || p === 'ld' || p === 'ci') return 'defensa';
-  return 'medio';
+/**
+ * Calcula la afinidad cuantitativa entre una jugadora y una posición táctica (slot)
+ * basándose estrictamente en su posición oficial registrada en plantilla,
+ * su lateralidad, y cualquier posición especificada en un cambio durante el partido.
+ */
+function calculateSlotAffinity(
+  player: MatchPlayerStat,
+  slot: TacticalSlot,
+  substitutedPos?: string
+): number {
+  // 1. Si la jugadora entró mediante cambio con una posición táctica explícita
+  if (substitutedPos) {
+    const sPosLower = substitutedPos.toLowerCase().trim();
+    if (slot.name.toLowerCase() === sPosLower || slot.label.toLowerCase() === sPosLower) {
+      return 5000;
+    }
+  }
+
+  // 2. Posición oficial registrada en plantilla (máxima prioridad funcional)
+  const registeredRaw = (player.posicion && player.posicion !== 'Campo' ? player.posicion : (player.posicionActiva || '')).toLowerCase().trim();
+  const playerRole = getPlayerRoleCategory(registeredRaw);
+
+  // 3. PORTERO (Aislamiento absoluto de guardameta)
+  if (slot.roleType === 'portero') {
+    return playerRole === 'portero' ? 2500 : -2500;
+  }
+  if (playerRole === 'portero') {
+    return -2500; // Una portera nunca debe ser asignada a jugadora de campo si hay hueco de portera
+  }
+
+  let score = 0;
+
+  // Afinidad de rol base
+  if (playerRole === slot.roleType) {
+    score += 180;
+  } else {
+    // Penalización severa por cruce de líneas
+    score -= 300;
+  }
+
+  // 4. DEFENSAS (Laterales vs Centrales)
+  if (playerRole === 'defensa') {
+    const isLateralIzq = (registeredRaw.includes('lateral') || registeredRaw.includes('carril')) && (registeredRaw.includes('izq') || registeredRaw.includes('zur')) || registeredRaw === 'li';
+    const isLateralDer = (registeredRaw.includes('lateral') || registeredRaw.includes('carril')) && (registeredRaw.includes('der') || registeredRaw.includes('die')) || registeredRaw === 'ld';
+    const isCentral = registeredRaw.includes('central') || registeredRaw.includes('cierre') || registeredRaw.includes('defensa') || registeredRaw === 'cz' || registeredRaw === 'cd' || registeredRaw === 'dfc' || registeredRaw === 'cb';
+
+    if (isLateralIzq) {
+      if (slot.id === 'li' || slot.name === 'Lateral Izquierdo' || slot.label === 'LI' || (slot.label === 'CAR' && slot.x < 30)) {
+        score += 600;
+      } else if (slot.name === 'Central Zurdo') {
+        score += 100;
+      } else if (slot.x < 35 && slot.roleType === 'defensa') {
+        score += 90;
+      }
+    } else if (isLateralDer) {
+      if (slot.id === 'ld' || slot.name === 'Lateral Derecho' || slot.label === 'LD' || (slot.label === 'CAR' && slot.x > 70)) {
+        score += 600;
+      } else if (slot.name === 'Central Diestro') {
+        score += 100;
+      } else if (slot.x > 65 && slot.roleType === 'defensa') {
+        score += 90;
+      }
+    } else if (isCentral) {
+      if (slot.name === 'Central Zurdo' || slot.name === 'Central Diestro' || slot.label === 'CZ' || slot.label === 'CD' || slot.label === 'CC' || slot.label === 'CI') {
+        score += 550;
+        if (slot.name === 'Central Zurdo' && (registeredRaw.includes('izq') || registeredRaw.includes('zur') || registeredRaw === 'cz')) score += 50;
+        if (slot.name === 'Central Diestro' && (registeredRaw.includes('der') || registeredRaw.includes('die') || registeredRaw === 'cd')) score += 50;
+      } else if (slot.roleType === 'defensa') {
+        score += 120;
+      }
+    } else if (registeredRaw.includes('lateral')) {
+      if (slot.name === 'Lateral Izquierdo' || slot.name === 'Lateral Derecho' || slot.label === 'LI' || slot.label === 'LD') {
+        score += 500;
+      }
+    }
+  }
+
+  // 5. MEDIOS / PIVOTES / INTERIORES / MEDIAPUNTAS
+  if (playerRole === 'medio') {
+    const isPivote = registeredRaw.includes('pivote') || registeredRaw.includes('mcd') || registeredRaw === 'piv';
+    const isInteriorIzq = registeredRaw.includes('interior') && (registeredRaw.includes('izq') || registeredRaw.includes('zur')) || registeredRaw === 'ii';
+    const isInteriorDer = registeredRaw.includes('interior') && (registeredRaw.includes('der') || registeredRaw.includes('die')) || registeredRaw === 'id';
+    const isInteriorGeneric = registeredRaw.includes('interior') && !isInteriorIzq && !isInteriorDer;
+    const isMediapunta = registeredRaw.includes('media punta') || registeredRaw.includes('mediapunta') || registeredRaw.includes('enganche') || registeredRaw === 'mco';
+    const isMedioCentro = registeredRaw.includes('medio centro') || registeredRaw.includes('mediocentro') || registeredRaw === 'mc';
+
+    if (isPivote) {
+      // Pivote defensivo prefiere el puesto central/pivote de mediocampo
+      if (slot.name === 'Medio Centro' || slot.label === 'MCD' || slot.label === 'PIV' || slot.id === 'piv' || (slot.label === 'MC' && slot.y > 54)) {
+        score += 620;
+      } else if (slot.roleType === 'medio') {
+        score += 160;
+      }
+    } else if (isInteriorIzq) {
+      if (slot.name === 'Interior Izquierda' || slot.label === 'II' || (slot.label === 'MC' && slot.x < 45)) {
+        score += 600;
+      } else if (slot.label === 'MI' || (slot.roleType === 'medio' && slot.x < 45)) {
+        score += 260;
+      } else if (slot.roleType === 'medio') {
+        score += 130;
+      }
+    } else if (isInteriorDer) {
+      if (slot.name === 'Interior Derecha' || slot.label === 'ID' || (slot.label === 'MC' && slot.x > 55)) {
+        score += 600;
+      } else if (slot.label === 'MD' || (slot.roleType === 'medio' && slot.x > 55)) {
+        score += 260;
+      } else if (slot.roleType === 'medio') {
+        score += 130;
+      }
+    } else if (isInteriorGeneric) {
+      if (slot.name === 'Interior Izquierda' || slot.name === 'Interior Derecha' || slot.label === 'II' || slot.label === 'ID' || slot.label === 'MC') {
+        score += 540;
+      }
+    } else if (isMediapunta) {
+      if (slot.label === 'MCO' || slot.id === 'mp' || (slot.roleType === 'medio' && slot.y < 46)) {
+        score += 600;
+      } else if (slot.name === 'Interior Izquierda' || slot.name === 'Interior Derecha' || slot.label === 'II' || slot.label === 'ID') {
+        score += 380;
+      } else if (slot.roleType === 'medio') {
+        score += 200;
+      }
+    } else if (isMedioCentro) {
+      if (slot.name === 'Medio Centro' || slot.label === 'MC' || slot.id === 'mc') {
+        score += 560;
+      } else if (slot.roleType === 'medio') {
+        score += 220;
+      }
+    }
+  }
+
+  // 6. DELANTEROS / EXTREMOS
+  if (playerRole === 'delantero') {
+    const isExtremoIzq = (registeredRaw.includes('extremo') || registeredRaw.startsWith('ext')) && (registeredRaw.includes('izq') || registeredRaw.includes('zur')) || registeredRaw === 'ei';
+    const isExtremoDer = (registeredRaw.includes('extremo') || registeredRaw.startsWith('ext')) && (registeredRaw.includes('der') || registeredRaw.includes('die')) || registeredRaw === 'ed';
+    const isExtremoGeneric = (registeredRaw.includes('extremo') || registeredRaw.startsWith('ext')) && !isExtremoIzq && !isExtremoDer;
+    const isDelanteroCentro = registeredRaw.includes('delant') || registeredRaw.includes('punta') || registeredRaw.includes('ariete') || registeredRaw === 'dc' || registeredRaw === 'del';
+
+    if (isExtremoIzq) {
+      if (slot.name === 'Extremo Izquierda' || slot.label === 'EI') {
+        score += 600;
+      } else if (slot.label === 'MI' || (slot.roleType === 'delantero' && slot.x < 35)) {
+        score += 350;
+      } else if (slot.roleType === 'delantero') {
+        score += 150;
+      }
+    } else if (isExtremoDer) {
+      if (slot.name === 'Extremo Derecha' || slot.label === 'ED') {
+        score += 600;
+      } else if (slot.label === 'MD' || (slot.roleType === 'delantero' && slot.x > 65)) {
+        score += 350;
+      } else if (slot.roleType === 'delantero') {
+        score += 150;
+      }
+    } else if (isExtremoGeneric) {
+      if (slot.name === 'Extremo Izquierda' || slot.name === 'Extremo Derecha' || slot.label === 'EI' || slot.label === 'ED') {
+        score += 540;
+      }
+    } else if (isDelanteroCentro) {
+      if (slot.name === 'Delantero' || slot.label === 'DC') {
+        score += 600;
+      } else if (slot.roleType === 'delantero') {
+        score += 240;
+      }
+    }
+  }
+
+  // Bonificación por coincidencia de banda (Izquierda / Derecha)
+  if (slot.x < 35 && (registeredRaw.includes('izq') || registeredRaw.includes('zur'))) {
+    score += 60;
+  }
+  if (slot.x > 65 && (registeredRaw.includes('der') || registeredRaw.includes('die'))) {
+    score += 60;
+  }
+  if (slot.x >= 35 && slot.x <= 65 && (registeredRaw.includes('central') || registeredRaw.includes('pivote') || registeredRaw.includes('medio centro') || registeredRaw.includes('delantero'))) {
+    score += 60;
+  }
+
+  return score;
 }
 
 export default function MatchTacticalPitch({
@@ -292,11 +465,11 @@ export default function MatchTacticalPitch({
       const remainingCandidates: MatchPlayerStat[] = [];
       for (const cand of candidates) {
         if (onFieldIds.size >= 11) break;
-        const candPos = cand.posicionActiva || getDefaultCampoPosition(cand.posicion);
-        const candRole = getPlayerRoleCategory(candPos);
+        const candPlantillaPos = cand.posicion && cand.posicion !== 'Campo' ? cand.posicion : (cand.posicionActiva || 'Medio Centro');
+        const candRole = getPlayerRoleCategory(candPlantillaPos);
         if ((currentRoleCounts[candRole] || 0) < (neededRoleCounts[candRole] || 0)) {
           onFieldIds.add(cand.playerId);
-          posMap[cand.playerId] = candPos;
+          posMap[cand.playerId] = candPlantillaPos;
           currentRoleCounts[candRole] = (currentRoleCounts[candRole] || 0) + 1;
         } else {
           remainingCandidates.push(cand);
@@ -307,7 +480,7 @@ export default function MatchTacticalPitch({
       for (const cand of remainingCandidates) {
         if (onFieldIds.size >= 11) break;
         onFieldIds.add(cand.playerId);
-        posMap[cand.playerId] = cand.posicionActiva || getDefaultCampoPosition(cand.posicion);
+        posMap[cand.playerId] = cand.posicion && cand.posicion !== 'Campo' ? cand.posicion : (cand.posicionActiva || getDefaultCampoPosition(cand.posicion));
       }
     }
 
@@ -330,11 +503,10 @@ export default function MatchTacticalPitch({
     };
   }, [playerStats, substitutions, tacticalSystem]);
 
-  // Match each on-field player to a formation slot in the active tactical system,
-  // respecting their assigned position, role affinities, and any custom manual drag coordinates
+  // Match each on-field player to their optimal formation slot in the active tactical system,
+  // respecting their registered position in plantilla, tactical affinities, and manual drag overrides
   const placedLayout = useMemo(() => {
     const slots = TACTICAL_SYSTEMS[tacticalSystem].slots;
-    const remainingSlots = [...slots];
     const playerPlacements: Array<{
       player: MatchPlayerStat;
       slot: TacticalSlot;
@@ -344,137 +516,61 @@ export default function MatchTacticalPitch({
       activePosition: string;
     }> = [];
 
-    const unassigned: MatchPlayerStat[] = [];
+    // Evaluate affinity score for every (player, slot) combination
+    const pairScores: Array<{ player: MatchPlayerStat; slot: TacticalSlot; score: number }> = [];
 
-    // Pass 1: Goalkeeper direct assignment
-    onFieldPlayers.forEach(p => {
-      const pPos = currentPositionMap[p.playerId] || p.posicionActiva || getDefaultCampoPosition(p.posicion);
-      const role = getPlayerRoleCategory(pPos);
-      if (role === 'portero') {
-        const slotIdx = remainingSlots.findIndex(s => s.roleType === 'portero');
-        if (slotIdx !== -1) {
-          const slot = remainingSlots.splice(slotIdx, 1)[0];
-          const custom = customPositions[p.playerId];
-          playerPlacements.push({
-            player: p,
-            slot,
-            x: custom ? custom.x : slot.x,
-            y: custom ? custom.y : slot.y,
-            isManual: !!custom,
-            activePosition: slot.name
-          });
-          return;
-        }
-      }
-      unassigned.push(p);
+    onFieldPlayers.forEach(player => {
+      const subPos = currentPositionMap[player.playerId];
+      slots.forEach(slot => {
+        const score = calculateSlotAffinity(player, slot, subPos);
+        pairScores.push({ player, slot, score });
+      });
     });
 
-    // Pass 2: Exact slot position name match (e.g. "Lateral Izquierdo" -> "Lateral Izquierdo")
-    const afterPass2: MatchPlayerStat[] = [];
-    unassigned.forEach(p => {
-      const pPos = currentPositionMap[p.playerId] || p.posicionActiva || getDefaultCampoPosition(p.posicion);
-      const slotIdx = remainingSlots.findIndex(s => s.name.toLowerCase() === pPos.toLowerCase());
-      if (slotIdx !== -1) {
-        const slot = remainingSlots.splice(slotIdx, 1)[0];
+    // Sort descending by highest affinity score
+    pairScores.sort((a, b) => b.score - a.score);
+
+    const assignedPlayerIds = new Set<string>();
+    const assignedSlotIds = new Set<string>();
+
+    for (const pair of pairScores) {
+      if (assignedPlayerIds.has(pair.player.playerId) || assignedSlotIds.has(pair.slot.id)) {
+        continue;
+      }
+      assignedPlayerIds.add(pair.player.playerId);
+      assignedSlotIds.add(pair.slot.id);
+
+      const custom = customPositions[pair.player.playerId];
+      playerPlacements.push({
+        player: pair.player,
+        slot: pair.slot,
+        x: custom ? custom.x : pair.slot.x,
+        y: custom ? custom.y : pair.slot.y,
+        isManual: !!custom,
+        activePosition: pair.slot.name
+      });
+
+      if (assignedPlayerIds.size === onFieldPlayers.length) break;
+    }
+
+    // Unassigned slots in the formation become emptySlots for visual cues or adding players
+    const emptySlots = slots.filter(s => !assignedSlotIds.has(s.id));
+
+    // Handle any extra on-field players beyond available formation slots
+    if (assignedPlayerIds.size < onFieldPlayers.length) {
+      const unassignedPlayers = onFieldPlayers.filter(p => !assignedPlayerIds.has(p.playerId));
+      unassignedPlayers.forEach((p, idx) => {
         const custom = customPositions[p.playerId];
         playerPlacements.push({
           player: p,
-          slot,
-          x: custom ? custom.x : slot.x,
-          y: custom ? custom.y : slot.y,
-          isManual: !!custom,
-          activePosition: slot.name
-        });
-      } else {
-        afterPass2.push(p);
-      }
-    });
-
-    // Pass 3: Role match with directional / tactical affinity
-    const afterPass3: MatchPlayerStat[] = [];
-    afterPass2.forEach(p => {
-      const pPos = currentPositionMap[p.playerId] || p.posicionActiva || getDefaultCampoPosition(p.posicion);
-      const role = getPlayerRoleCategory(pPos);
-      const pText = (p.posicion + ' ' + pPos).toLowerCase();
-
-      let bestSlotIdx = -1;
-
-      if (role === 'defensa') {
-        if (pText.includes('izq') || pText.includes('zur')) {
-          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'defensa' && (s.name.includes('Izquierdo') || s.name.includes('Zurdo')));
-        } else if (pText.includes('der') || pText.includes('die')) {
-          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'defensa' && (s.name.includes('Derecho') || s.name.includes('Diestro')));
-        } else if (pText.includes('centr')) {
-          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'defensa' && s.name.includes('Central'));
-        }
-      } else if (role === 'delantero') {
-        if (pText.includes('izq')) {
-          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'delantero' && s.name.includes('Izquierda'));
-        } else if (pText.includes('der')) {
-          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'delantero' && s.name.includes('Derecha'));
-        } else if (pText.includes('delan') || pText.includes('punta')) {
-          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'delantero' && s.name.includes('Delantero'));
-        }
-      } else if (role === 'medio') {
-        if (pText.includes('pivote') || pText.includes('mcd')) {
-          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'medio' && s.name.includes('Medio Centro'));
-        } else if (pText.includes('izq')) {
-          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'medio' && s.name.includes('Izquierda'));
-        } else if (pText.includes('der')) {
-          bestSlotIdx = remainingSlots.findIndex(s => s.roleType === 'medio' && s.name.includes('Derecha'));
-        }
-      }
-
-      // If no directional match, match any slot of same role
-      if (bestSlotIdx === -1) {
-        bestSlotIdx = remainingSlots.findIndex(s => s.roleType === role);
-      }
-
-      if (bestSlotIdx !== -1) {
-        const slot = remainingSlots.splice(bestSlotIdx, 1)[0];
-        const custom = customPositions[p.playerId];
-        playerPlacements.push({
-          player: p,
-          slot,
-          x: custom ? custom.x : slot.x,
-          y: custom ? custom.y : slot.y,
-          isManual: !!custom,
-          activePosition: slot.name
-        });
-      } else {
-        afterPass3.push(p);
-      }
-    });
-
-    // Pass 4: Distribute any remaining players into any remaining slots
-    afterPass3.forEach(p => {
-      const pPos = currentPositionMap[p.playerId] || p.posicionActiva || getDefaultCampoPosition(p.posicion);
-      const slot = remainingSlots.shift();
-      const custom = customPositions[p.playerId];
-      if (slot) {
-        playerPlacements.push({
-          player: p,
-          slot,
-          x: custom ? custom.x : slot.x,
-          y: custom ? custom.y : slot.y,
-          isManual: !!custom,
-          activePosition: slot.name
-        });
-      } else {
-        // Fallback if more than 11 players on field
-        playerPlacements.push({
-          player: p,
-          slot: slots[0],
-          x: custom ? custom.x : 50,
+          slot: slots[idx % slots.length],
+          x: custom ? custom.x : 50 + ((idx + 1) * 4),
           y: custom ? custom.y : 50,
           isManual: !!custom,
-          activePosition: pPos
+          activePosition: p.posicionActiva || getDefaultCampoPosition(p.posicion)
         });
-      }
-    });
-
-    // Empty slots remaining in the tactical formation (when < 11 players are on field)
-    const emptySlots = remainingSlots;
+      });
+    }
 
     return { playerPlacements, emptySlots };
   }, [onFieldPlayers, tacticalSystem, currentPositionMap, customPositions]);
@@ -839,7 +935,7 @@ export default function MatchTacticalPitch({
                       ? 'z-50 scale-125 cursor-grabbing drop-shadow-2xl'
                       : 'cursor-grab hover:scale-110 active:scale-105'
                   }`}
-                  title={`${player.nombre} #${player.dorsal} (${activePosition}). Arrastra para mover o toca para sustituir.`}
+                  title={`${player.nombre} #${player.dorsal} • Campo: ${slot.name} (${slot.label}) • Plantilla: ${player.posicion || '-'}. Arrastra para mover o toca para sustituir.`}
                 >
                   {/* Dorsal Circle Avatar */}
                   <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br ${slot.color} border-2 ${
@@ -878,7 +974,7 @@ export default function MatchTacticalPitch({
                       {player.nombre.split(' ')[0]} {player.apellidos ? player.apellidos.charAt(0) + '.' : ''}
                     </span>
                     <div className="flex items-center justify-center gap-1 text-[8px] font-bold text-emerald-300">
-                      <span>{slot.label}</span>
+                      <span title={`Puesto táctico: ${slot.name} • En plantilla: ${player.posicion || '-'}`}>{slot.label}</span>
                       {isManual && <span className="text-[8px] text-amber-300 font-bold" title="Posición ajustada manualmente">●</span>}
                       <span>•</span>
                       <span>{currentMinutes}'</span>
