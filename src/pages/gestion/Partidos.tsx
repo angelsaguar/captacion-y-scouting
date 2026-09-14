@@ -1106,17 +1106,26 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
     e.preventDefault();
     if (!showActaModal) return;
 
+    const gf = Number(showActaModal.goles_favor ?? 0);
+    const gc = Number(showActaModal.goles_contra ?? 0);
+
     const updated = matches.map(m => {
       if (m.id === showActaModal.id) {
         return {
           ...m,
           estado: 'Finalizado' as const,
-          goles_favor: showActaModal.goles_favor || 0,
-          goles_contra: showActaModal.goles_contra || 0,
+          goles_favor: gf,
+          goles_contra: gc,
           acta: showActaModal.acta || '',
           estadisticas: {
+            ...(m.estadisticas || {}),
             jugadoras_stats: matchPlayerStats,
-            cambios: substitutions
+            cambios: substitutions,
+            totales_equipo: {
+              ...(m.estadisticas?.totales_equipo || {}),
+              goles_favor: gf,
+              goles_contra: gc
+            }
           }
         };
       }
@@ -1148,18 +1157,26 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       return;
     }
 
+    const gf = editingMatch.estado === 'Finalizado' ? Number(editingMatch.goles_favor ?? 0) : undefined;
+    const gc = editingMatch.estado === 'Finalizado' ? Number(editingMatch.goles_contra ?? 0) : undefined;
+
     const updatedStats = {
       ...(editingMatch.estadisticas || {}),
       lugar: editingMatch.lugar || '',
       hora_citacion: editingMatch.hora_citacion || '',
       equipacion: editingMatch.equipacion || '',
-      observaciones: editingMatch.observaciones || ''
+      observaciones: editingMatch.observaciones || '',
+      totales_equipo: {
+        ...(editingMatch.estadisticas?.totales_equipo || {}),
+        goles_favor: gf ?? 0,
+        goles_contra: gc ?? 0
+      }
     };
 
     const updatedMatch: Match = {
       ...editingMatch,
-      goles_favor: editingMatch.estado === 'Finalizado' ? (editingMatch.goles_favor ?? 0) : undefined,
-      goles_contra: editingMatch.estado === 'Finalizado' ? (editingMatch.goles_contra ?? 0) : undefined,
+      goles_favor: gf,
+      goles_contra: gc,
       acta: editingMatch.estado === 'Finalizado' ? (editingMatch.acta ?? '') : undefined,
       estadisticas: updatedStats
     };
@@ -1437,11 +1454,11 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                     {match.estado === 'Finalizado' ? (
                       <div className="flex items-center gap-3">
                         <span className="text-2xl md:text-3xl font-black text-white bg-slate-950/80 border border-slate-750 px-3 py-1 rounded-xl shadow-inner">
-                          {match.tipo === 'Local' ? match.goles_favor : match.goles_contra}
+                          {match.tipo === 'Local' ? (match.goles_favor ?? 0) : (match.goles_contra ?? 0)}
                         </span>
                         <span className="text-slate-400 font-black text-lg">-</span>
                         <span className="text-2xl md:text-3xl font-black text-white bg-slate-950/80 border border-slate-750 px-3 py-1 rounded-xl shadow-inner">
-                          {match.tipo === 'Local' ? match.goles_contra : match.goles_favor}
+                          {match.tipo === 'Local' ? (match.goles_contra ?? 0) : (match.goles_favor ?? 0)}
                         </span>
                       </div>
                     ) : (
@@ -1614,17 +1631,32 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                     <div>
                       <div className="flex items-center justify-between">
                         <label className="text-[10px] font-semibold text-slate-400">Goles La Poveda</label>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const sum = matchPlayerStats.reduce((acc, curr) => acc + (curr.goles_metidos || 0), 0);
-                            setShowActaModal({ ...showActaModal, goles_favor: sum });
-                            toast.success(`Marcador auto-llenado con la suma de goles: ${sum}`);
-                          }}
-                          className="text-[9px] text-blue-400 hover:underline font-bold"
-                        >
-                          Auto-sumar
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const sum = matchPlayerStats.reduce((acc, curr) => acc + (curr.goles_metidos || 0), 0);
+                              setShowActaModal({ ...showActaModal, goles_favor: sum });
+                              toast.success(`Marcador auto-llenado con la suma de goles: ${sum}`);
+                            }}
+                            className="text-[9px] text-blue-400 hover:underline font-bold cursor-pointer"
+                          >
+                            Auto-sumar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const resetStats = matchPlayerStats.map(s => ({ ...s, goles_metidos: 0, goles_encajados: 0 }));
+                              setMatchPlayerStats(resetStats);
+                              setShowActaModal({ ...showActaModal, goles_favor: 0, goles_contra: 0 });
+                              toast.success('Goles eliminados y marcador puesto a 0 - 0');
+                            }}
+                            className="text-[9px] text-rose-400 hover:underline font-bold cursor-pointer"
+                            title="Poner marcador a 0 - 0 y borrar goles registrados"
+                          >
+                            Poner a 0-0
+                          </button>
+                        </div>
                       </div>
                       <input 
                         type="number" 
@@ -1637,7 +1669,19 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                     </div>
 
                     <div>
-                      <label className="text-[10px] font-semibold text-slate-400">Goles Rival</label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-semibold text-slate-400">Goles Rival</label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowActaModal({ ...showActaModal, goles_contra: 0 });
+                            toast.success('Goles del rival puestos a 0');
+                          }}
+                          className="text-[9px] text-rose-400 hover:underline font-bold cursor-pointer"
+                        >
+                          Poner a 0
+                        </button>
+                      </div>
                       <input 
                         type="number" 
                         min="0"
@@ -1927,9 +1971,12 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                               value={stat.goles_metidos}
                               onChange={(e) => {
                                 const val = parseInt(e.target.value) || 0;
-                                setMatchPlayerStats(prev => prev.map((s, i) => 
-                                  i === idx ? { ...s, goles_metidos: val } : s
-                                ));
+                                setMatchPlayerStats(prev => {
+                                  const updated = prev.map((s, i) => i === idx ? { ...s, goles_metidos: val } : s);
+                                  const sum = updated.reduce((acc, curr) => acc + (curr.goles_metidos || 0), 0);
+                                  setShowActaModal(cur => cur ? { ...cur, goles_favor: sum } : null);
+                                  return updated;
+                                });
                               }}
                               className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1 text-center font-bold text-emerald-400 text-xs"
                             />
@@ -1957,9 +2004,12 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                               value={stat.goles_encajados}
                               onChange={(e) => {
                                 const val = parseInt(e.target.value) || 0;
-                                setMatchPlayerStats(prev => prev.map((s, i) => 
-                                  i === idx ? { ...s, goles_encajados: val } : s
-                                ));
+                                setMatchPlayerStats(prev => {
+                                  const updated = prev.map((s, i) => i === idx ? { ...s, goles_encajados: val } : s);
+                                  const sumC = updated.reduce((acc, curr) => acc + (curr.goles_encajados || 0), 0);
+                                  setShowActaModal(cur => cur ? { ...cur, goles_contra: sumC } : null);
+                                  return updated;
+                                });
                               }}
                               className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1 text-center font-bold text-indigo-400 text-xs"
                               disabled={stat.posicion !== 'PORTERO'}

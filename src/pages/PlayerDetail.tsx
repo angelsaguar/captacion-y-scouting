@@ -263,7 +263,7 @@ export default function PlayerDetail() {
                     nombre: updatedObj.nombre,
                     apellidos: updatedObj.apellidos,
                     posicion: updatedObj.posicion || p.posicion,
-                    posicion_secundaria: updatedObj.posicion_secundaria || p.posicion_secundaria,
+                    posicion_secundaria: updatedObj.posicion_secundaria !== undefined ? updatedObj.posicion_secundaria : p.posicion_secundaria,
                     dorsal: updatedObj.dorsal || p.dorsal,
                     foto_url: payload.foto_url || '',
                     telefono: updatedObj.telefono || p.telefono,

@@ -2917,43 +2917,95 @@ export default function Plantilla() {
       estado_fisico: editRosterFormData.estado_fisico || 'Disponible'
     };
 
-    const updatedList = players.map(p => p.id === updatedPlayer.id ? updatedPlayer : p);
+    // 1. Sync to local scouting storage FIRST so that any reload/listener sees the updated position immediately
+    const localScoutingSaved = localStorage.getItem('scouting_local_players');
+    let scList: any[] = localScoutingSaved ? JSON.parse(localScoutingSaved) : [];
+    const scNormKey = normalizePlayerNameKey(updatedPlayer.nombre, updatedPlayer.apellidos);
+    const scIdx = scList.findIndex((p: any) => 
+      (p.id && (p.id === updatedPlayer.id || p.id === editingRosterPlayer.id)) || 
+      normalizePlayerNameKey(p.nombre, p.apellidos) === scNormKey ||
+      isPlayerMatch(p, updatedPlayer) ||
+      isPlayerMatch(p, editingRosterPlayer)
+    );
+    if (scIdx >= 0) {
+      scList[scIdx] = {
+        ...scList[scIdx],
+        nombre: updatedPlayer.nombre,
+        apellidos: updatedPlayer.apellidos,
+        apodo: updatedPlayer.apodo || scList[scIdx].apodo,
+        dorsal: updatedPlayer.dorsal,
+        posicion: updatedPlayer.posicion,
+        posicion_secundaria: updatedPlayer.posicion_secundaria || null,
+        foto_url: updatedPlayer.foto_url || '',
+        telefono: updatedPlayer.telefono,
+        email: updatedPlayer.email,
+        anio_nacimiento: updatedPlayer.anio_nacimiento,
+        lateralidad: updatedPlayer.lateralidad,
+        estado_fisico: updatedPlayer.estado_fisico
+      };
+    } else {
+      scList.push({
+        ...updatedPlayer,
+        posicion: updatedPlayer.posicion,
+        posicion_secundaria: updatedPlayer.posicion_secundaria || null,
+        foto_url: updatedPlayer.foto_url || '',
+        estado: 'Fichado',
+        equipo_asignado: selectedTeam
+      });
+    }
+    localStorage.setItem('scouting_local_players', JSON.stringify(scList));
+
+    // 2. Sync to all other local team rosters
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('team_roster_') && k !== `team_roster_${selectedTeam}`) {
+        try {
+          const rawRoster = localStorage.getItem(k);
+          if (rawRoster) {
+            const rosterArr = JSON.parse(rawRoster);
+            let rosterChanged = false;
+            const updatedRoster = rosterArr.map((p: any) => {
+              if (isPlayerMatch(p, updatedPlayer) || isPlayerMatch(p, editingRosterPlayer) || (p.id && p.id === updatedPlayer.id)) {
+                rosterChanged = true;
+                return {
+                  ...p,
+                  nombre: updatedPlayer.nombre,
+                  apellidos: updatedPlayer.apellidos,
+                  apodo: updatedPlayer.apodo,
+                  posicion: updatedPlayer.posicion,
+                  posicion_secundaria: updatedPlayer.posicion_secundaria || undefined,
+                  dorsal: updatedPlayer.dorsal,
+                  foto_url: updatedPlayer.foto_url || '',
+                  telefono: updatedPlayer.telefono,
+                  email: updatedPlayer.email,
+                  anio_nacimiento: updatedPlayer.anio_nacimiento,
+                  lateralidad: updatedPlayer.lateralidad,
+                  estado_fisico: updatedPlayer.estado_fisico
+                };
+              }
+              return p;
+            });
+            if (rosterChanged) {
+              localStorage.setItem(k, JSON.stringify(updatedRoster));
+            }
+          }
+        } catch {}
+      }
+    }
+
+    // 3. Update current roster state and save
+    const updatedList = players.map(p => 
+      (p.id === updatedPlayer.id || isPlayerMatch(p, updatedPlayer) || isPlayerMatch(p, editingRosterPlayer)) 
+        ? updatedPlayer 
+        : p
+    );
     saveRoster(updatedList);
 
-    if (selectedPlayerProfile && selectedPlayerProfile.id === updatedPlayer.id) {
+    if (selectedPlayerProfile && (selectedPlayerProfile.id === updatedPlayer.id || isPlayerMatch(selectedPlayerProfile, updatedPlayer) || isPlayerMatch(selectedPlayerProfile, editingRosterPlayer))) {
       setSelectedPlayerProfile(updatedPlayer);
     }
 
-    // Sync to local scouting list as well
-    const localScoutingSaved = localStorage.getItem('scouting_local_players');
-    if (localScoutingSaved) {
-      try {
-        let scList: any[] = JSON.parse(localScoutingSaved);
-        const scNormKey = normalizePlayerNameKey(updatedPlayer.nombre, updatedPlayer.apellidos);
-        const scIdx = scList.findIndex((p: any) => 
-          p.id === updatedPlayer.id || 
-          normalizePlayerNameKey(p.nombre, p.apellidos) === scNormKey
-        );
-        if (scIdx >= 0) {
-          scList[scIdx] = {
-            ...scList[scIdx],
-            nombre: updatedPlayer.nombre,
-            apellidos: updatedPlayer.apellidos,
-            apodo: updatedPlayer.apodo || scList[scIdx].apodo,
-            dorsal: updatedPlayer.dorsal,
-            posicion: updatedPlayer.posicion,
-            posicion_secundaria: updatedPlayer.posicion_secundaria || scList[scIdx].posicion_secundaria,
-            foto_url: updatedPlayer.foto_url || '',
-            telefono: updatedPlayer.telefono,
-            email: updatedPlayer.email,
-            anio_nacimiento: updatedPlayer.anio_nacimiento
-          };
-          localStorage.setItem('scouting_local_players', JSON.stringify(scList));
-        }
-      } catch {}
-    }
-
-    // Sync updated player data to Supabase
+    // 4. Sync updated player data to Supabase
     try {
       const payload: any = {
         id: updatedPlayer.id,
@@ -3060,12 +3112,12 @@ export default function Plantilla() {
             return {
               ...p,
               foto_url: scPlayer.foto_url !== undefined && scPlayer.foto_url !== '' ? cleanPhotoUrl(scPlayer.foto_url) : cleanPhotoUrl(p.foto_url),
-              dorsal: scPlayer.dorsal || p.dorsal,
-              posicion: scPlayer.posicion || p.posicion,
-              posicion_secundaria: scPlayer.posicion_secundaria || p.posicion_secundaria,
-              telefono: scPlayer.telefono || p.telefono,
-              email: scPlayer.email || p.email,
-              anio_nacimiento: scPlayer.anio_nacimiento || p.anio_nacimiento,
+              dorsal: p.dorsal || scPlayer.dorsal,
+              posicion: p.posicion || scPlayer.posicion,
+              posicion_secundaria: p.posicion_secundaria !== undefined ? p.posicion_secundaria : scPlayer.posicion_secundaria,
+              telefono: p.telefono || scPlayer.telefono,
+              email: p.email || scPlayer.email,
+              anio_nacimiento: p.anio_nacimiento || scPlayer.anio_nacimiento,
             };
           }
           return {
@@ -3100,7 +3152,6 @@ export default function Plantilla() {
 
     localStorage.setItem(key, JSON.stringify(cleanDeduplicatedRoster));
     setPlayers(cleanDeduplicatedRoster);
-    window.dispatchEvent(new CustomEvent('player-updated', { detail: { team: selectedTeam } }));
 
     const evaluationsKey = `team_evaluations_${selectedTeam}`;
     const savedEvaluations = localStorage.getItem(evaluationsKey);
@@ -3389,11 +3440,11 @@ export default function Plantilla() {
             return {
               ...p,
               foto_url: latestFoto,
-              dorsal: match.dorsal || p.dorsal,
-              posicion: match.posicion || p.posicion,
-              telefono: match.telefono || p.telefono,
-              email: match.email || p.email,
-              anio_nacimiento: match.anio_nacimiento || p.anio_nacimiento
+              dorsal: p.dorsal || match.dorsal,
+              posicion: p.posicion || match.posicion,
+              telefono: p.telefono || match.telefono,
+              email: p.email || match.email,
+              anio_nacimiento: p.anio_nacimiento || match.anio_nacimiento
             };
           }
         }
@@ -3416,21 +3467,16 @@ export default function Plantilla() {
         if (existingIdx >= 0) {
           const existing = roster[existingIdx];
           const latestFoto = sp.foto_url ? cleanPhotoUrl(sp.foto_url) : cleanPhotoUrl(existing.foto_url);
-          if (existing.foto_url !== latestFoto || 
-              (sp.dorsal && existing.dorsal !== sp.dorsal) || 
-              (sp.posicion && existing.posicion !== sp.posicion) ||
-              (sp.posicion_secundaria && existing.posicion_secundaria !== sp.posicion_secundaria) ||
-              (sp.telefono && existing.telefono !== sp.telefono) ||
-              (sp.email && existing.email !== sp.email)) {
+          if (existing.foto_url !== latestFoto || !existing.posicion || !existing.dorsal) {
             roster[existingIdx] = {
               ...existing,
               foto_url: latestFoto,
-              dorsal: sp.dorsal || existing.dorsal,
-              posicion: sp.posicion || existing.posicion,
-              posicion_secundaria: sp.posicion_secundaria || existing.posicion_secundaria,
-              telefono: sp.telefono || existing.telefono,
-              email: sp.email || existing.email,
-              anio_nacimiento: sp.anio_nacimiento || existing.anio_nacimiento,
+              dorsal: existing.dorsal || sp.dorsal,
+              posicion: existing.posicion || sp.posicion,
+              posicion_secundaria: existing.posicion_secundaria !== undefined ? existing.posicion_secundaria : sp.posicion_secundaria,
+              telefono: existing.telefono || sp.telefono,
+              email: existing.email || sp.email,
+              anio_nacimiento: existing.anio_nacimiento || sp.anio_nacimiento,
             };
             changed = true;
           }

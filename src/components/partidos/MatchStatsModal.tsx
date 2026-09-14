@@ -35,7 +35,8 @@ import {
   FastForward,
   Timer,
   ArrowRightLeft,
-  CheckCircle2
+  CheckCircle2,
+  Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
@@ -668,9 +669,31 @@ export default function MatchStatsModal({
     const sumTA = initialPlayerStats.reduce((a, b) => a + (b.tarjetas_amarillas || 0), 0);
     const sumTR = initialPlayerStats.reduce((a, b) => a + (b.tarjetas_rojas || 0), 0);
 
+    // Goles a favor y en contra:
+    // 1. Si el partido tiene goles_favor explícito (incluso 0), se respeta la decisión del usuario.
+    // 2. Si las jugadoras tienen goles registrados en el partido, el total es al menos esa suma.
+    // 3. Si el partido está Programado o sin goles, se inicializa limpiamente en 0 - 0.
+    let initialGolesF = 0;
+    if (match.goles_favor !== undefined && match.goles_favor !== null) {
+      initialGolesF = Math.max(match.goles_favor, sumGolesF);
+    } else if (match.estado === 'Finalizado' && existingTotals?.goles_favor !== undefined && existingTotals?.goles_favor !== null) {
+      initialGolesF = Math.max(existingTotals.goles_favor, sumGolesF);
+    } else {
+      initialGolesF = sumGolesF;
+    }
+
+    let initialGolesC = 0;
+    if (match.goles_contra !== undefined && match.goles_contra !== null) {
+      initialGolesC = Math.max(match.goles_contra, sumGolesC);
+    } else if (match.estado === 'Finalizado' && existingTotals?.goles_contra !== undefined && existingTotals?.goles_contra !== null) {
+      initialGolesC = Math.max(existingTotals.goles_contra, sumGolesC);
+    } else {
+      initialGolesC = sumGolesC;
+    }
+
     setTeamTotals({
-      goles_favor: existingTotals?.goles_favor ?? Math.max(match.goles_favor ?? 0, sumGolesF),
-      goles_contra: existingTotals?.goles_contra ?? Math.max(match.goles_contra ?? 0, sumGolesC),
+      goles_favor: initialGolesF,
+      goles_contra: initialGolesC,
       asistencias: sumAsist,
       recuperaciones_balon: sumRec > 0 ? sumRec : (existingTotals?.recuperaciones_balon ?? 0),
       perdidas_balon: sumPer > 0 ? sumPer : (existingTotals?.perdidas_balon ?? 0),
@@ -891,7 +914,7 @@ export default function MatchStatsModal({
     });
 
     setPlayerStats(nextStats);
-    recalcTeamTotals(nextStats);
+    recalcTeamTotals(nextStats, category, delta);
   };
 
   // Handler to toggle player starting role (Titular vs Suplente)
@@ -987,7 +1010,7 @@ export default function MatchStatsModal({
   };
 
   // Recalculate totals from players
-  const recalcTeamTotals = (currentStats: MatchPlayerStat[]) => {
+  const recalcTeamTotals = (currentStats: MatchPlayerStat[], changedCategory?: StatCategory, delta?: number) => {
     const sumGolesF = currentStats.reduce((a, b) => a + (b.goles_metidos || 0), 0);
     const sumGolesC = currentStats.reduce((a, b) => a + (b.goles_encajados || 0), 0);
     const sumAsist = currentStats.reduce((a, b) => a + (b.asistencias || 0), 0);
@@ -1000,20 +1023,84 @@ export default function MatchStatsModal({
     const sumTA = currentStats.reduce((a, b) => a + (b.tarjetas_amarillas || 0), 0);
     const sumTR = currentStats.reduce((a, b) => a + (b.tarjetas_rojas || 0), 0);
 
+    setTeamTotals(prev => {
+      let nextGolesF = prev.goles_favor;
+      let nextGolesC = prev.goles_contra;
+
+      if (changedCategory === 'goles_metidos') {
+        if (delta !== undefined && delta < 0) {
+          // El usuario eliminó o restó un gol a una jugadora
+          nextGolesF = Math.max(0, Math.max(sumGolesF, prev.goles_favor + delta));
+          if (sumGolesF === 0) nextGolesF = 0;
+        } else if (delta !== undefined && delta > 0) {
+          nextGolesF = Math.max(sumGolesF, prev.goles_favor + delta);
+        } else {
+          nextGolesF = sumGolesF;
+        }
+      } else if (sumGolesF > 0) {
+        nextGolesF = Math.max(prev.goles_favor, sumGolesF);
+      }
+
+      if (changedCategory === 'goles_encajados') {
+        if (delta !== undefined && delta < 0) {
+          // El usuario eliminó o restó un gol encajado a la portera
+          nextGolesC = Math.max(0, Math.max(sumGolesC, prev.goles_contra + delta));
+          if (sumGolesC === 0) nextGolesC = 0;
+        } else if (delta !== undefined && delta > 0) {
+          nextGolesC = Math.max(sumGolesC, prev.goles_contra + delta);
+        } else {
+          nextGolesC = sumGolesC;
+        }
+      } else if (sumGolesC > 0) {
+        nextGolesC = Math.max(prev.goles_contra, sumGolesC);
+      }
+
+      return {
+        ...prev,
+        goles_favor: nextGolesF,
+        goles_contra: nextGolesC,
+        asistencias: sumAsist,
+        recuperaciones_balon: sumRec,
+        perdidas_balon: sumPer,
+        corners_favor: sumCF > 0 ? Math.max(prev.corners_favor, sumCF) : prev.corners_favor,
+        corners_contra: sumCC > 0 ? Math.max(prev.corners_contra, sumCC) : prev.corners_contra,
+        faltas_favor: sumFF > 0 ? Math.max(prev.faltas_favor, sumFF) : prev.faltas_favor,
+        faltas_contra: sumFC > 0 ? Math.max(prev.faltas_contra, sumFC) : prev.faltas_contra,
+        tarjetas_amarillas: sumTA,
+        tarjetas_rojas: sumTR
+      };
+    });
+  };
+
+  // Reset all goals in the match (both team totals and all individual player stats)
+  const handleResetAllGoals = () => {
     setTeamTotals(prev => ({
       ...prev,
-      goles_favor: sumGolesF > 0 ? sumGolesF : prev.goles_favor,
-      goles_contra: sumGolesC > 0 ? sumGolesC : prev.goles_contra,
-      asistencias: sumAsist,
-      recuperaciones_balon: sumRec,
-      perdidas_balon: sumPer,
-      corners_favor: sumCF > 0 ? sumCF : prev.corners_favor,
-      corners_contra: sumCC > 0 ? sumCC : prev.corners_contra,
-      faltas_favor: sumFF > 0 ? sumFF : prev.faltas_favor,
-      faltas_contra: sumFC > 0 ? sumFC : prev.faltas_contra,
-      tarjetas_amarillas: sumTA,
-      tarjetas_rojas: sumTR
+      goles_favor: 0,
+      goles_contra: 0
     }));
+
+    setPlayerStats(prev => prev.map(p => {
+      const posMap: Record<string, PlayerPositionStatRecord> = {};
+      if (p.stats_por_posicion) {
+        Object.entries(p.stats_por_posicion).forEach(([posKey, posRec]) => {
+          posMap[posKey] = {
+            ...(posRec as any),
+            goles_metidos: 0,
+            goles_encajados: 0
+          };
+        });
+      }
+      return {
+        ...p,
+        goles_metidos: 0,
+        goles_encajados: 0,
+        stats_por_posicion: posMap
+      };
+    }));
+
+    addEventLog('🧹 Marcador y goles de jugadoras restablecidos a 0 - 0', 'goles_favor');
+    toast.success('¡Goles eliminados! Marcador restablecido a 0 - 0');
   };
 
   // Save handler
@@ -1022,6 +1109,7 @@ export default function MatchStatsModal({
       ...match,
       goles_favor: teamTotals.goles_favor,
       goles_contra: teamTotals.goles_contra,
+      estado: chronoPhase === 'finalizado' ? 'Finalizado' : match.estado,
       estadisticas: {
         ...(match.estadisticas || {}),
         jugadoras_stats: playerStats,
@@ -1036,7 +1124,7 @@ export default function MatchStatsModal({
     };
 
     onSaveMatch(updatedMatch);
-    toast.success('¡Estadísticas y cronómetro guardados y sincronizados!');
+    toast.success('¡Estadísticas y marcador guardados y sincronizados correctamente!');
     onClose();
   };
 
@@ -1104,13 +1192,70 @@ export default function MatchStatsModal({
                   {match.fecha} • {match.hora}
                 </span>
               </div>
-              <h3 className="text-xs sm:text-sm md:text-base font-black text-white uppercase tracking-tight flex items-center gap-1.5 truncate">
-                <span className="truncate max-w-[130px] sm:max-w-[200px]">{match.tipo === 'Local' ? teamName : match.rival}</span>
-                <span className="text-cyan-400 font-mono px-2 py-0.5 bg-slate-900 rounded-md border border-slate-800 text-xs sm:text-sm font-black">
-                  {teamTotals.goles_favor} - {teamTotals.goles_contra}
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap mt-0.5">
+                <span className="text-xs sm:text-sm md:text-base font-black text-white uppercase tracking-tight truncate max-w-[120px] sm:max-w-[180px]">
+                  {match.tipo === 'Local' ? teamName : match.rival}
                 </span>
-                <span className="truncate max-w-[130px] sm:max-w-[200px]">{match.tipo === 'Local' ? match.rival : teamName}</span>
-              </h3>
+
+                {/* Marcador interactivo en cabecera con ajuste directo */}
+                <div className="flex items-center gap-0.5 bg-slate-950/90 border border-slate-800 px-1 py-0.5 rounded-lg shadow-inner">
+                  <button
+                    type="button"
+                    onClick={() => adjustTeamTotal(match.tipo === 'Local' ? 'goles_favor' : 'goles_contra', -1)}
+                    className="w-5 h-5 rounded hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center font-black text-xs cursor-pointer transition-colors"
+                    title={`Restar gol a ${match.tipo === 'Local' ? teamName : match.rival}`}
+                  >
+                    -
+                  </button>
+                  <span className={`font-mono font-black text-xs sm:text-sm px-1 min-w-[16px] text-center ${match.tipo === 'Local' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {match.tipo === 'Local' ? teamTotals.goles_favor : teamTotals.goles_contra}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => adjustTeamTotal(match.tipo === 'Local' ? 'goles_favor' : 'goles_contra', 1)}
+                    className="w-5 h-5 rounded hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center font-black text-xs cursor-pointer transition-colors"
+                    title={`Sumar gol a ${match.tipo === 'Local' ? teamName : match.rival}`}
+                  >
+                    +
+                  </button>
+                  <span className="text-slate-600 font-black text-xs px-0.5">-</span>
+                  <button
+                    type="button"
+                    onClick={() => adjustTeamTotal(match.tipo === 'Local' ? 'goles_contra' : 'goles_favor', -1)}
+                    className="w-5 h-5 rounded hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center font-black text-xs cursor-pointer transition-colors"
+                    title={`Restar gol a ${match.tipo === 'Local' ? match.rival : teamName}`}
+                  >
+                    -
+                  </button>
+                  <span className={`font-mono font-black text-xs sm:text-sm px-1 min-w-[16px] text-center ${match.tipo === 'Local' ? 'text-rose-400' : 'text-emerald-400'}`}>
+                    {match.tipo === 'Local' ? teamTotals.goles_contra : teamTotals.goles_favor}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => adjustTeamTotal(match.tipo === 'Local' ? 'goles_contra' : 'goles_favor', 1)}
+                    className="w-5 h-5 rounded hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center font-black text-xs cursor-pointer transition-colors"
+                    title={`Sumar gol a ${match.tipo === 'Local' ? match.rival : teamName}`}
+                  >
+                    +
+                  </button>
+                </div>
+
+                <span className="text-xs sm:text-sm md:text-base font-black text-white uppercase tracking-tight truncate max-w-[120px] sm:max-w-[180px]">
+                  {match.tipo === 'Local' ? match.rival : teamName}
+                </span>
+
+                {(teamTotals.goles_favor > 0 || teamTotals.goles_contra > 0) && (
+                  <button
+                    type="button"
+                    onClick={handleResetAllGoals}
+                    className="text-[10px] font-bold text-rose-400 hover:text-white bg-rose-950/60 hover:bg-rose-900 border border-rose-800/80 px-2 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1 shadow-xs ml-0.5"
+                    title="Borrar goles y restablecer marcador a 0 - 0"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>0 - 0</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1546,13 +1691,72 @@ export default function MatchStatsModal({
           {/* Row 2: Match Snapshot Badges */}
           <div className="flex items-center justify-between gap-2 text-[10px] sm:text-[11px] text-slate-300 flex-wrap pt-0.5">
             <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-              <span className="bg-slate-900/90 px-2.5 py-0.5 rounded-lg border border-slate-800 flex items-center gap-1.5">
-                <Target className="w-3 h-3 text-emerald-400" />
-                <span>Goles:</span>
-                <strong className="text-emerald-400 font-mono font-black">{teamTotals.goles_favor}</strong>
-                <span className="text-slate-600">-</span>
-                <strong className="text-rose-400 font-mono font-black">{teamTotals.goles_contra}</strong>
-              </span>
+              <div className="bg-slate-900/90 px-2 sm:px-2.5 py-0.5 rounded-lg border border-slate-800 flex items-center gap-1.5 shadow-xs">
+                <Target className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="font-bold text-[10px] sm:text-[11px] text-slate-300">Goles:</span>
+                
+                {/* Goles a favor (La Poveda) */}
+                <div className="flex items-center gap-0.5 bg-slate-950 px-1 py-0.5 rounded border border-slate-800">
+                  <span className="text-[9px] text-slate-400 font-bold mr-0.5" title="Goles a favor">Fav:</span>
+                  <button
+                    type="button"
+                    onClick={() => adjustTeamTotal('goles_favor', -1)}
+                    className="h-4.5 w-4.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 flex items-center justify-center text-[11px] font-black cursor-pointer transition-colors"
+                    title="Restar gol a favor (-1)"
+                  >
+                    -
+                  </button>
+                  <strong className="text-emerald-400 font-mono font-black text-xs px-1 min-w-[14px] text-center">
+                    {teamTotals.goles_favor}
+                  </strong>
+                  <button
+                    type="button"
+                    onClick={() => adjustTeamTotal('goles_favor', 1)}
+                    className="h-4.5 w-4.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white flex items-center justify-center text-[11px] font-black cursor-pointer transition-colors"
+                    title="Sumar gol a favor (+1)"
+                  >
+                    +
+                  </button>
+                </div>
+
+                <span className="text-slate-600 font-black">-</span>
+
+                {/* Goles en contra (Rival) */}
+                <div className="flex items-center gap-0.5 bg-slate-950 px-1 py-0.5 rounded border border-slate-800">
+                  <span className="text-[9px] text-slate-400 font-bold mr-0.5" title="Goles en contra">Cont:</span>
+                  <button
+                    type="button"
+                    onClick={() => adjustTeamTotal('goles_contra', -1)}
+                    className="h-4.5 w-4.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 flex items-center justify-center text-[11px] font-black cursor-pointer transition-colors"
+                    title="Restar gol en contra (-1)"
+                  >
+                    -
+                  </button>
+                  <strong className="text-rose-400 font-mono font-black text-xs px-1 min-w-[14px] text-center">
+                    {teamTotals.goles_contra}
+                  </strong>
+                  <button
+                    type="button"
+                    onClick={() => adjustTeamTotal('goles_contra', 1)}
+                    className="h-4.5 w-4.5 rounded bg-rose-700 hover:bg-rose-600 text-white flex items-center justify-center text-[11px] font-black cursor-pointer transition-colors"
+                    title="Sumar gol en contra (+1)"
+                  >
+                    +
+                  </button>
+                </div>
+
+                {(teamTotals.goles_favor > 0 || teamTotals.goles_contra > 0) && (
+                  <button
+                    type="button"
+                    onClick={handleResetAllGoals}
+                    className="text-[9px] font-bold text-rose-300 hover:text-white bg-rose-950/70 hover:bg-rose-900 border border-rose-800/80 px-1.5 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1 shadow-xs ml-0.5"
+                    title="Borrar goles y restablecer marcador a 0 - 0"
+                  >
+                    <Trash2 className="w-2.5 h-2.5" />
+                    <span>0-0</span>
+                  </button>
+                )}
+              </div>
 
               <span className="bg-slate-900/90 px-2.5 py-0.5 rounded-lg border border-slate-800 flex items-center gap-1.5">
                 <Zap className="w-3 h-3 text-cyan-400" />
@@ -2889,10 +3093,23 @@ export default function MatchStatsModal({
               
               {/* Marcador Final y Ofensiva */}
               <div className="bg-slate-950/60 border border-slate-850 p-4 rounded-2xl space-y-3">
-                <h5 className="font-extrabold text-xs text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                  <Trophy className="w-4 h-4 text-amber-400" />
-                  <span>Marcador y Ofensiva</span>
-                </h5>
+                <div className="flex items-center justify-between">
+                  <h5 className="font-extrabold text-xs text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                    <Trophy className="w-4 h-4 text-amber-400" />
+                    <span>Marcador y Ofensiva</span>
+                  </h5>
+                  {(teamTotals.goles_favor > 0 || teamTotals.goles_contra > 0) && (
+                    <button
+                      type="button"
+                      onClick={handleResetAllGoals}
+                      className="text-[10px] font-bold text-rose-400 hover:text-white bg-rose-950/60 hover:bg-rose-900 border border-rose-800/80 px-2 py-0.5 rounded-lg cursor-pointer transition-all flex items-center gap-1 shadow-xs"
+                      title="Borrar goles y restablecer marcador a 0 - 0"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>Restablecer 0 - 0</span>
+                    </button>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-3 gap-2.5">
                   <div className="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800 text-center">
