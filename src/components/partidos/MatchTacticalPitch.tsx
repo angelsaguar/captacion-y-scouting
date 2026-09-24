@@ -744,10 +744,6 @@ export default function MatchTacticalPitch({
 
     onExecuteSubstitution(newSub);
 
-    if (onPositionChange) {
-      onPositionChange(entraPlayer.playerId, posEntraFinal as PosicionCampo);
-    }
-
     setIsSubModalOpen(false);
     setSelectedSaleId('');
     setSelectedEntraId('');

@@ -36,7 +36,11 @@ import {
   Timer,
   ArrowRightLeft,
   CheckCircle2,
-  Trash2
+  Trash2,
+  Star,
+  LayoutGrid,
+  List,
+  ChevronUp
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
@@ -150,6 +154,55 @@ export function getDefaultCampoPosition(posRaw?: string): PosicionCampo {
   if (p.includes('central') || p.includes('cierre') || p.includes('defensa') || p === 'def' || p === 'dfc') return 'Central Diestro';
 
   return 'Medio Centro';
+}
+
+/**
+ * Abreviatura táctica ultracompacta para visualización directa en pantalla
+ */
+export function getPositionAbbr(pos?: string): string {
+  if (!pos) return 'CAM';
+  const p = pos.toLowerCase().trim();
+  if (p.includes('port') || p === 'por' || p === 'gk') return 'POR';
+  if ((p.includes('lat') || p.includes('carril')) && (p.includes('der') || p.includes('die') || p === 'ld')) return 'LTD';
+  if ((p.includes('lat') || p.includes('carril')) && (p.includes('izq') || p.includes('zur') || p === 'li')) return 'LTI';
+  if (p.includes('central') && (p.includes('der') || p.includes('die') || p === 'cd')) return 'CEN D';
+  if (p.includes('central') && (p.includes('izq') || p.includes('zur') || p === 'cz' || p === 'ci')) return 'CEN Z';
+  if (p.includes('central') || p.includes('defensa') || p === 'def' || p === 'dfc') return 'CEN';
+  if (p.includes('lateral')) return 'LAT';
+  if (p.includes('pivote') || p === 'piv' || p === 'mcd') return 'PIV';
+  if (p.includes('interior') && (p.includes('der') || p.includes('die') || p === 'id')) return 'INT D';
+  if (p.includes('interior') && (p.includes('izq') || p.includes('zur') || p === 'ii')) return 'INT I';
+  if (p.includes('media punta') || p.includes('mediapunta') || p === 'mco') return 'MCO';
+  if (p.includes('medio') || p.includes('centrocamp') || p === 'mc') return 'MC';
+  if (p.includes('extremo') && (p.includes('der') || p.includes('die') || p === 'ed')) return 'EXT D';
+  if (p.includes('extremo') && (p.includes('izq') || p.includes('zur') || p === 'ei')) return 'EXT I';
+  if (p.includes('extremo')) return 'EXT';
+  if (p.includes('delant') || p.includes('punta') || p.includes('ariete') || p === 'dc') return 'DEL';
+  return pos.slice(0, 4).toUpperCase();
+}
+
+/**
+ * Orden táctico estándar de fútbol (Portero -> Defensas -> Centrocampistas -> Delanteros)
+ */
+export function getTacticalSortOrder(pos?: string): number {
+  if (!pos) return 50;
+  const p = pos.toLowerCase().trim();
+  if (p.includes('port') || p === 'por' || p === 'gk') return 1;
+  if ((p.includes('lat') || p.includes('carril')) && (p.includes('der') || p.includes('die') || p === 'ld')) return 2;
+  if (p.includes('central') && (p.includes('der') || p.includes('die') || p === 'cd')) return 3;
+  if (p.includes('central') && (p.includes('izq') || p.includes('zur') || p === 'cz' || p === 'ci')) return 4;
+  if (p.includes('central')) return 5;
+  if ((p.includes('lat') || p.includes('carril')) && (p.includes('izq') || p.includes('zur') || p === 'li')) return 6;
+  if (p.includes('lateral')) return 7;
+  if (p.includes('pivote') || p === 'piv' || p === 'mcd') return 8;
+  if (p.includes('medio') || p.includes('centrocamp') || p === 'mc') return 9;
+  if (p.includes('interior') && (p.includes('der') || p.includes('die') || p === 'id')) return 10;
+  if (p.includes('interior') && (p.includes('izq') || p.includes('zur') || p === 'ii')) return 11;
+  if (p.includes('media punta') || p.includes('mediapunta') || p === 'mco') return 12;
+  if (p.includes('extremo') && (p.includes('der') || p.includes('die') || p === 'ed')) return 13;
+  if (p.includes('extremo') && (p.includes('izq') || p.includes('zur') || p === 'ei')) return 14;
+  if (p.includes('delant') || p.includes('punta') || p.includes('ariete') || p === 'dc') return 15;
+  return 20;
 }
 
 export type ChronoPhase = 'pre' | '1t' | 'descanso' | '2t' | 'finalizado';
@@ -365,8 +418,14 @@ export default function MatchStatsModal({
   // Search filter
   const [playerSearch, setPlayerSearch] = useState<string>('');
 
-  // Filter mode: 'todas' | 'titulares' | 'convocadas' | 'con_eventos'
-  const [rosterFilter, setRosterFilter] = useState<'todas' | 'titulares' | 'convocadas' | 'con_eventos'>('todas');
+  // Filter mode: 'campo' | 'titulares' | 'banquillo' | 'convocadas' | 'con_eventos' | 'todas'
+  const [rosterFilter, setRosterFilter] = useState<'campo' | 'titulares' | 'banquillo' | 'convocadas' | 'con_eventos' | 'todas'>('campo');
+
+  // View mode in left roster panel: 'compact_1col' (ajuste vertical 11 titulares sin scroll) | 'grid_2col' (cuadrícula 2 columnas)
+  const [rosterViewMode, setRosterViewMode] = useState<'compact_1col' | 'grid_2col'>('compact_1col');
+
+  // Toggle for expanded collective counters (default false to save vertical space and ensure 11 starters fit without scroll)
+  const [showExpandedCollective, setShowExpandedCollective] = useState(false);
 
   // Player Stats array
   const [playerStats, setPlayerStats] = useState<MatchPlayerStat[]>([]);
@@ -639,8 +698,12 @@ export default function MatchStatsModal({
 
     setPlayerStats(initialPlayerStats);
 
-    // Initial filter selection: if match has a defined convocatoria with players, default to 'convocadas', else 'todas'
-    if (convocadasIds.size > 0 && initialPlayerStats.some(p => p.isConvocada)) {
+    // Initial filter selection: if match already has starting titulares, default directly to 'campo' (on-field 11)
+    const startingTitulares = initialPlayerStats.filter(p => p.titular);
+    if (startingTitulares.length > 0) {
+      setRosterFilter('campo');
+      setSelectedPlayerId(startingTitulares[0].playerId);
+    } else if (convocadasIds.size > 0 && initialPlayerStats.some(p => p.isConvocada)) {
       setRosterFilter('convocadas');
       const firstConv = initialPlayerStats.find(p => p.isConvocada);
       if (firstConv) {
@@ -729,12 +792,12 @@ export default function MatchStatsModal({
     const targetPlayer = playerStats.find(p => p.playerId === playerId);
     if (!targetPlayer) return;
 
-    const nextStats = playerStats.map(p => {
+    setPlayerStats(prev => prev.map(p => {
       if (p.playerId !== playerId) return p;
       const currentPosStats = { ...(p.stats_por_posicion || {}) };
       if (!currentPosStats[newPos]) {
         currentPosStats[newPos] = {
-          minutos: 0,
+          minutos: p.minutos ?? 0,
           goles_metidos: 0,
           goles_encajados: 0,
           asistencias: 0,
@@ -751,9 +814,7 @@ export default function MatchStatsModal({
         posicionActiva: newPos,
         stats_por_posicion: currentPosStats
       };
-    });
-
-    setPlayerStats(nextStats);
+    }));
 
     addEventLog(`📍 ${targetPlayer.nombre} #${targetPlayer.dorsal} jugando como ${newPos}`, 'posicion');
   };
@@ -763,7 +824,7 @@ export default function MatchStatsModal({
     setSubstitutions(prev => [...prev, newSub]);
 
     const estimatedTotalMins = 80;
-    const subMin = newSub.minuto;
+    const subMin = Math.max(1, newSub.minuto);
 
     setPlayerStats(prev => prev.map(p => {
       // 1. Jugadora que SALE
@@ -779,6 +840,7 @@ export default function MatchStatsModal({
 
         return {
           ...p,
+          suplente: true,
           minutos: minsPlayed,
           stats_por_posicion: currentPosStats
         };
@@ -791,13 +853,12 @@ export default function MatchStatsModal({
         const posRecord = { ...(currentPosStats[newPos] || {}) };
 
         // Minutos restantes estimados
-        const minsRemaining = Math.max(0, estimatedTotalMins - subMin);
+        const minsRemaining = Math.max(1, estimatedTotalMins - subMin);
         posRecord.minutos = minsRemaining;
         currentPosStats[newPos] = posRecord;
 
         return {
           ...p,
-          suplente: true,
           posicionActiva: newPos,
           minutos: minsRemaining,
           stats_por_posicion: currentPosStats
@@ -807,6 +868,9 @@ export default function MatchStatsModal({
       return p;
     }));
 
+    // Auto-seleccionar la jugadora entrante para que esté inmediatamente accesible en Registro Rápido
+    setSelectedPlayerId(newSub.entraId);
+
     // Registro cronológico oficial en el timeline del partido
     addEventLog(
       `🔄 CAMBIO (Min ${newSub.minutoStr}): Sale #${newSub.saleDorsal} ${newSub.saleNombre} (${newSub.salePosicion}) ➔ Entra #${newSub.entraDorsal} ${newSub.entraNombre} (${newSub.posicionEntra})`,
@@ -814,7 +878,7 @@ export default function MatchStatsModal({
       newSub.minutoStr
     );
 
-    toast.success(`Cambio en Min ${newSub.minutoStr}: Entra ${newSub.entraNombre} por ${newSub.saleNombre} en ${newSub.posicionEntra}`);
+    toast.success(`Cambio en Min ${newSub.minutoStr}: Entra ${newSub.entraNombre} por ${newSub.saleNombre} (${newSub.posicionEntra})`);
   };
 
   // Deshacer / Eliminar una sustitución registrada
@@ -823,6 +887,39 @@ export default function MatchStatsModal({
     if (!subToRemove) return;
 
     setSubstitutions(prev => prev.filter(s => s.id !== subId));
+
+    // Restaurar minutos y roles
+    setPlayerStats(prev => prev.map(p => {
+      if (p.playerId === subToRemove.saleId) {
+        const activePos = p.posicionActiva || subToRemove.salePosicion;
+        const currentPosStats = { ...(p.stats_por_posicion || {}) };
+        const posRecord = { ...(currentPosStats[activePos] || {}) };
+        const restoredMins = p.titular ? 80 : 0;
+        posRecord.minutos = restoredMins;
+        currentPosStats[activePos] = posRecord;
+        return {
+          ...p,
+          suplente: !p.titular,
+          minutos: restoredMins,
+          stats_por_posicion: currentPosStats
+        };
+      }
+      if (p.playerId === subToRemove.entraId) {
+        const activePos = p.posicionActiva || subToRemove.posicionEntra;
+        const currentPosStats = { ...(p.stats_por_posicion || {}) };
+        const posRecord = { ...(currentPosStats[activePos] || {}) };
+        posRecord.minutos = 0;
+        currentPosStats[activePos] = posRecord;
+        return {
+          ...p,
+          suplente: true,
+          minutos: 0,
+          stats_por_posicion: currentPosStats
+        };
+      }
+      return p;
+    }));
+
     addEventLog(`🗑️ Cambio deshecho: #${subToRemove.entraDorsal} ${subToRemove.entraNombre} por #${subToRemove.saleDorsal} ${subToRemove.saleNombre}`, 'cambio');
     toast.info('Sustitución eliminada');
   };
@@ -977,6 +1074,41 @@ export default function MatchStatsModal({
     setPlayerStats(nextStats);
   };
 
+  // Quick helper to automatically assign 11 starters from convocadas or team roster
+  const handleAutoAssignTitulares = () => {
+    const convocadas = playerStats.filter(p => p.isConvocada);
+    const pool = convocadas.length >= 11 ? convocadas : playerStats;
+    const first11Ids = new Set(pool.slice(0, 11).map(p => p.playerId));
+
+    const nextStats = playerStats.map(p => {
+      const isTit = first11Ids.has(p.playerId);
+      const activePos = p.posicionActiva || getDefaultCampoPosition(p.posicion);
+      const posMap = { ...(p.stats_por_posicion || {}) };
+      const currentPosData = { ...(posMap[activePos] || {}) };
+      let assignedMins = p.minutos ?? 0;
+      if (isTit && (!p.minutos || p.minutos === 0)) {
+        assignedMins = 80;
+        currentPosData.minutos = 80;
+        posMap[activePos] = currentPosData;
+      }
+      return {
+        ...p,
+        titular: isTit,
+        suplente: isTit ? false : p.suplente,
+        minutos: assignedMins,
+        stats_por_posicion: posMap
+      };
+    });
+
+    setPlayerStats(nextStats);
+    setRosterFilter('titulares');
+    if (pool.length > 0) {
+      setSelectedPlayerId(pool[0].playerId);
+    }
+    addEventLog('★ 11 Titulares asignadas automáticamente al Once Inicial', 'rol');
+    toast.success('★ ¡11 Titulares asignadas al Once Inicial!');
+  };
+
   // Team totals direct adjustment
   const adjustTeamTotal = (key: keyof MatchTotals, delta: number) => {
     const currentVal = teamTotals[key] || 0;
@@ -1128,11 +1260,51 @@ export default function MatchStatsModal({
     onClose();
   };
 
+  // Set of players currently on the pitch taking into account starting titulares and chronological substitutions
+  const { currentOnFieldIds, playerSubMap } = useMemo(() => {
+    const onField = new Set<string>();
+    const subMap = new Map<string, { type: 'entra' | 'sale'; minuteStr: string; sub: MatchSubstitution }>();
+
+    // 1. Initial titulares (starters)
+    playerStats.forEach(p => {
+      if (p.titular) {
+        onField.add(p.playerId);
+      }
+    });
+
+    // 2. If fewer than 11 titulares are set, auto-complete up to 11 like Campograma does
+    if (onField.size < 11) {
+      const candidates = playerStats
+        .filter(p => !onField.has(p.playerId))
+        .sort((a, b) => {
+          const scoreA = (a.isConvocada ? 4 : 0) + (!a.suplente ? 2 : 0) + ((a.minutos ?? 0) > 0 ? 1 : 0);
+          const scoreB = (b.isConvocada ? 4 : 0) + (!b.suplente ? 2 : 0) + ((b.minutos ?? 0) > 0 ? 1 : 0);
+          return scoreB - scoreA;
+        });
+
+      for (const cand of candidates) {
+        if (onField.size >= 11) break;
+        onField.add(cand.playerId);
+      }
+    }
+
+    // 3. Apply substitutions chronologically:
+    substitutions.forEach(sub => {
+      onField.delete(sub.saleId);
+      onField.add(sub.entraId);
+      subMap.set(sub.saleId, { type: 'sale', minuteStr: sub.minutoStr, sub });
+      subMap.set(sub.entraId, { type: 'entra', minuteStr: sub.minutoStr, sub });
+    });
+
+    return { currentOnFieldIds: onField, playerSubMap: subMap };
+  }, [playerStats, substitutions]);
+
   // Filtered list of player stats
   const filteredPlayerStats = useMemo(() => {
-    return playerStats.filter(p => {
+    const list = playerStats.filter(p => {
       // 1. Roster filter
-      if (rosterFilter === 'titulares' && !p.titular) return false;
+      if ((rosterFilter === 'campo' || rosterFilter === 'titulares') && !currentOnFieldIds.has(p.playerId)) return false;
+      if (rosterFilter === 'banquillo' && currentOnFieldIds.has(p.playerId)) return false;
       if (rosterFilter === 'convocadas' && !p.isConvocada) return false;
       if (rosterFilter === 'con_eventos') {
         const hasEvents = (p.goles_metidos || 0) > 0 ||
@@ -1156,11 +1328,24 @@ export default function MatchStatsModal({
         (p.posicion && p.posicion.toLowerCase().includes(q))
       );
     });
-  }, [playerStats, rosterFilter, playerSearch]);
+
+    if (rosterFilter === 'titulares' || rosterFilter === 'campo') {
+      return [...list].sort((a, b) => {
+        const orderA = getTacticalSortOrder(a.posicionActiva || a.posicion);
+        const orderB = getTacticalSortOrder(b.posicionActiva || b.posicion);
+        if (orderA !== orderB) return orderA - orderB;
+        return (parseInt(a.dorsal) || 99) - (parseInt(b.dorsal) || 99);
+      });
+    }
+
+    return list;
+  }, [playerStats, rosterFilter, playerSearch, currentOnFieldIds]);
 
   // Active selected player
   const selectedPlayer = playerStats.find(p => p.playerId === selectedPlayerId) || filteredPlayerStats[0] || playerStats[0];
 
+  const onFieldCount = currentOnFieldIds.size;
+  const benchCount = useMemo(() => playerStats.filter(p => !currentOnFieldIds.has(p.playerId) && (p.isConvocada || p.suplente || (p.minutos ?? 0) > 0)).length, [playerStats, currentOnFieldIds]);
   const titularesCount = useMemo(() => playerStats.filter(p => p.titular).length, [playerStats]);
   const convocadasCount = useMemo(() => playerStats.filter(p => p.isConvocada).length, [playerStats]);
   const activeCount = useMemo(() => playerStats.filter(p => 
@@ -1174,11 +1359,11 @@ export default function MatchStatsModal({
   ).length, [playerStats]);
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-1 sm:p-2 md:p-3 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl md:rounded-3xl w-full max-w-[98vw] 2xl:max-w-[1440px] h-[96vh] md:h-[94vh] max-h-[960px] flex flex-col shadow-2xl overflow-hidden text-left">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-0.5 sm:p-1 md:p-1.5 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-slate-900 border border-slate-800 rounded-xl md:rounded-2xl w-full max-w-[99vw] 2xl:max-w-[1440px] h-[99vh] md:h-[98vh] max-h-[1020px] flex flex-col shadow-2xl overflow-hidden text-left">
         
         {/* HEADER BAR - Responsive on iPad */}
-        <div className="bg-slate-950/95 border-b border-slate-800 px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0">
+        <div className="bg-slate-950/95 border-b border-slate-800 px-2.5 sm:px-3 py-1 sm:py-1.5 flex flex-wrap items-center justify-between gap-1.5 shrink-0">
           <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
             <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
               <Zap className="w-4 h-4 fill-current" />
@@ -1351,20 +1536,20 @@ export default function MatchStatsModal({
         </div>
 
         {/* CRONÓMETRO DE PARTIDO PROFESIONAL (ESTADIO / BROADCAST TV) */}
-        <div className="bg-gradient-to-r from-slate-950 via-[#070F1E] to-slate-950 border-b border-cyan-500/30 px-3 sm:px-4 py-2 sm:py-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-inner">
+        <div className="bg-gradient-to-r from-slate-950 via-[#070F1E] to-slate-950 border-b border-cyan-500/30 px-2.5 sm:px-3 py-1 sm:py-1.5 flex flex-wrap items-center justify-between gap-2 shrink-0 shadow-inner">
           
           {/* DISPLAY DIGITAL Y MINUTO OFICIAL */}
-          <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
-            <div className="bg-black/90 border border-cyan-500/40 rounded-xl px-3 py-1.5 flex items-center gap-3 shadow-lg">
+          <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
+            <div className="bg-black/90 border border-cyan-500/40 rounded-xl px-2.5 py-1 flex items-center gap-2.5 shadow-lg">
               <div className="flex flex-col">
                 <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
                   <Clock className={`w-3 h-3 ${isChronoRunning ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`} />
-                  <span>Cronómetro</span>
+                  <span>Crono</span>
                 </span>
                 
                 {/* DÍGITOS DIGITALES */}
-                <div className="flex items-baseline gap-1.5 font-mono">
-                  <span className={`text-2xl sm:text-3xl font-black tracking-wider leading-none ${
+                <div className="flex items-baseline gap-1 font-mono">
+                  <span className={`text-xl sm:text-2xl font-black tracking-wider leading-none ${
                     isChronoRunning ? 'text-cyan-300 drop-shadow-[0_0_8px_rgba(6,182,212,0.6)]' : 'text-slate-200'
                   }`}>
                     {chronoDisplay.mainTime}
@@ -1372,7 +1557,7 @@ export default function MatchStatsModal({
                   
                   {/* INSIGNIA DE DESCUENTO ILUMINADA */}
                   {chronoDisplay.isExtraTime && chronoDisplay.extraTime && (
-                    <span className="text-amber-400 font-black text-xs sm:text-sm font-mono animate-pulse bg-amber-950/80 border border-amber-500/60 px-1.5 py-0.5 rounded-md shadow-xs">
+                    <span className="text-amber-400 font-black text-xs font-mono animate-pulse bg-amber-950/80 border border-amber-500/60 px-1 py-0.2 rounded shadow-xs">
                       {chronoDisplay.extraTime}
                     </span>
                   )}
@@ -1380,10 +1565,10 @@ export default function MatchStatsModal({
               </div>
 
               {/* MINUTO OFICIAL REGISTRADO (Ej: 45+2', 90+3') */}
-              <div className="flex flex-col border-l border-slate-800 pl-2.5 justify-center">
+              <div className="flex flex-col border-l border-slate-800 pl-2 justify-center">
                 <div className="flex items-center gap-1">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase">Minuto:</span>
-                  <span className="text-xs sm:text-sm font-black font-mono text-cyan-300 bg-slate-900 border border-cyan-500/40 px-1.5 py-0.2 rounded shadow-xs">
+                  <span className="text-[9px] text-slate-400 font-bold uppercase">Min:</span>
+                  <span className="text-xs font-black font-mono text-cyan-300 bg-slate-900 border border-cyan-500/40 px-1.5 py-0.2 rounded shadow-xs">
                     {chronoDisplay.matchMinuteStr}
                   </span>
                 </div>
@@ -1397,7 +1582,7 @@ export default function MatchStatsModal({
                       ? 'bg-amber-400' 
                       : 'bg-slate-600'
                   }`} />
-                  <span className={`text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider ${
+                  <span className={`text-[9px] font-extrabold uppercase tracking-wider ${
                     isChronoRunning 
                       ? 'text-emerald-400 font-black' 
                       : chronoPhase === 'finalizado' 
@@ -1414,21 +1599,21 @@ export default function MatchStatsModal({
           </div>
 
           {/* BOTONERA DE CONTROL DE PARTIDO */}
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+          <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
             
             {/* 1. INICIO DE PARTIDO / 1ª PARTE (0' a 45' + descuento) */}
             <Button
               type="button"
               onClick={handleStartFirstHalf}
               size="sm"
-              className={`h-8 sm:h-9 px-2.5 sm:px-3 text-xs font-black cursor-pointer rounded-xl transition-all shadow-sm flex items-center gap-1.5 ${
+              className={`h-7 sm:h-7.5 px-2 sm:px-2.5 text-[11px] font-black cursor-pointer rounded-xl transition-all shadow-sm flex items-center gap-1 ${
                 chronoPhase === '1t' && isChronoRunning
                   ? 'bg-emerald-500 text-black font-black ring-2 ring-emerald-400/50 shadow-emerald-950/50'
                   : 'bg-emerald-600 hover:bg-emerald-500 text-white'
               }`}
               title="Iniciar partido y 1ª parte desde el minuto 00:00"
             >
-              <Play className="w-3.5 h-3.5 fill-current shrink-0" />
+              <Play className="w-3 h-3 fill-current shrink-0" />
               <span>Inicio 1T</span>
             </Button>
 
@@ -1437,15 +1622,15 @@ export default function MatchStatsModal({
               type="button"
               onClick={handleEndFirstHalf}
               size="sm"
-              className={`h-8 sm:h-9 px-2.5 sm:px-3 text-xs font-black cursor-pointer rounded-xl transition-all shadow-sm flex items-center gap-1.5 ${
+              className={`h-7 sm:h-7.5 px-2 sm:px-2.5 text-[11px] font-black cursor-pointer rounded-xl transition-all shadow-sm flex items-center gap-1 ${
                 chronoPhase === 'descanso'
                   ? 'bg-amber-500 text-black font-black ring-2 ring-amber-400/50 shadow-amber-950/50'
                   : 'bg-amber-600 hover:bg-amber-500 text-white'
               }`}
               title="Parar al final de la 1ª parte (Descanso)"
             >
-              <Pause className="w-3.5 h-3.5 shrink-0" />
-              <span>Fin 1T (Descanso)</span>
+              <Pause className="w-3 h-3 shrink-0" />
+              <span>Fin 1T</span>
             </Button>
 
             {/* 3. INICIO 2ª PARTE (Empieza en minuto 45) */}
@@ -1453,14 +1638,14 @@ export default function MatchStatsModal({
               type="button"
               onClick={handleStartSecondHalf}
               size="sm"
-              className={`h-8 sm:h-9 px-2.5 sm:px-3 text-xs font-black cursor-pointer rounded-xl transition-all shadow-sm flex items-center gap-1.5 ${
+              className={`h-7 sm:h-7.5 px-2 sm:px-2.5 text-[11px] font-black cursor-pointer rounded-xl transition-all shadow-sm flex items-center gap-1 ${
                 chronoPhase === '2t' && isChronoRunning
                   ? 'bg-blue-500 text-white font-black ring-2 ring-blue-400/50 shadow-blue-950/50'
                   : 'bg-blue-600 hover:bg-blue-500 text-white'
               }`}
               title="Iniciar segunda parte desde el minuto 45"
             >
-              <Play className="w-3.5 h-3.5 fill-current shrink-0" />
+              <Play className="w-3 h-3 fill-current shrink-0" />
               <span>Inicio 2T (45')</span>
             </Button>
 
@@ -1469,15 +1654,15 @@ export default function MatchStatsModal({
               type="button"
               onClick={handleEndMatch}
               size="sm"
-              className={`h-8 sm:h-9 px-2.5 sm:px-3 text-xs font-black cursor-pointer rounded-xl transition-all shadow-sm flex items-center gap-1.5 ${
+              className={`h-7 sm:h-7.5 px-2 sm:px-2.5 text-[11px] font-black cursor-pointer rounded-xl transition-all shadow-sm flex items-center gap-1 ${
                 chronoPhase === 'finalizado'
                   ? 'bg-rose-500 text-white font-black ring-2 ring-rose-400/50 shadow-rose-950/50'
                   : 'bg-rose-600 hover:bg-rose-500 text-white'
               }`}
               title="Finalizar el partido (Fin 2ª parte)"
             >
-              <Square className="w-3.5 h-3.5 fill-current shrink-0" />
-              <span>Final Partido</span>
+              <Square className="w-3 h-3 fill-current shrink-0" />
+              <span>Fin Partido</span>
             </Button>
 
             {/* PAUSA TEMPORAL / REANUDAR */}
@@ -1485,14 +1670,14 @@ export default function MatchStatsModal({
               <button
                 type="button"
                 onClick={handleTogglePause}
-                className={`h-8 sm:h-9 px-2 sm:px-2.5 rounded-xl border text-xs font-black cursor-pointer transition-all flex items-center gap-1 shadow-sm ${
+                className={`h-7 sm:h-7.5 px-2 rounded-xl border text-[11px] font-black cursor-pointer transition-all flex items-center gap-1 shadow-sm ${
                   isChronoRunning
                     ? 'bg-slate-900 hover:bg-slate-800 text-amber-300 border-amber-500/40'
                     : 'bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border-emerald-500/50 ring-1 ring-emerald-500/40'
                 }`}
                 title={isChronoRunning ? 'Pausar el tiempo por interrupción o lesión' : 'Reanudar el tiempo de juego'}
               >
-                {isChronoRunning ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                {isChronoRunning ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3 fill-current" />}
                 <span className="hidden sm:inline">{isChronoRunning ? 'Pausar' : 'Reanudar'}</span>
               </button>
             )}
@@ -1503,7 +1688,7 @@ export default function MatchStatsModal({
               onClick={handleRequestReset}
               size="sm"
               variant="outline"
-              className={`h-8 sm:h-9 px-2.5 sm:px-3 text-xs font-black cursor-pointer rounded-xl transition-all shadow-sm flex items-center gap-1.5 ${
+              className={`h-7 sm:h-7.5 px-2 text-[11px] font-black cursor-pointer rounded-xl transition-all shadow-sm flex items-center gap-1 ${
                 (isSecondHalf && (chronoSeconds !== 45 * 60 || isChronoRunning)) ||
                 (!isSecondHalf && (chronoSeconds > 0 || isChronoRunning || chronoPhase !== 'pre'))
                   ? 'border-rose-500/50 hover:border-rose-400 bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 ring-1 ring-rose-500/30'
@@ -1515,8 +1700,8 @@ export default function MatchStatsModal({
                   : "Reiniciar 1ª parte al minuto 00:00 si se inició por error"
               }
             >
-              <RotateCcw className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-              <span>{isSecondHalf ? "Reiniciar 2T (45')" : "Reiniciar 1T (0')"}</span>
+              <RotateCcw className="w-3 h-3 text-rose-400 shrink-0" />
+              <span>{isSecondHalf ? "Reset 2T" : "Reset 1T"}</span>
             </Button>
 
             {/* AJUSTE FINO MANUAL (+1m / -1m / Reset) */}
@@ -1524,7 +1709,7 @@ export default function MatchStatsModal({
               <button
                 type="button"
                 onClick={() => handleAdjustMinutes(-1)}
-                className="h-7 px-1.5 text-[10px] font-bold text-slate-400 hover:text-white rounded hover:bg-slate-800 cursor-pointer transition-colors"
+                className="h-6 px-1 text-[10px] font-bold text-slate-400 hover:text-white rounded hover:bg-slate-800 cursor-pointer transition-colors"
                 title="Restar 1 minuto"
               >
                 -1'
@@ -1532,18 +1717,10 @@ export default function MatchStatsModal({
               <button
                 type="button"
                 onClick={() => handleAdjustMinutes(1)}
-                className="h-7 px-1.5 text-[10px] font-bold text-slate-400 hover:text-white rounded hover:bg-slate-800 cursor-pointer transition-colors"
+                className="h-6 px-1 text-[10px] font-bold text-slate-400 hover:text-white rounded hover:bg-slate-800 cursor-pointer transition-colors"
                 title="Sumar 1 minuto"
               >
                 +1'
-              </button>
-              <button
-                type="button"
-                onClick={handleRequestReset}
-                className="h-7 px-1.5 text-[10px] font-bold text-slate-400 hover:text-rose-400 rounded hover:bg-slate-800 cursor-pointer transition-colors"
-                title={isSecondHalf ? "Reiniciar 2ª parte a 45:00" : "Reiniciar 1ª parte a 00:00"}
-              >
-                <RotateCcw className="w-3 h-3" />
               </button>
             </div>
 
@@ -1551,292 +1728,397 @@ export default function MatchStatsModal({
 
         </div>
 
-        {/* TEAM COLLECTIVE ACTIONS & LIVE STATUS BAR - Compact, space-saving for iPad (hidden on campo tab to maximize pitch display) */}
+        {/* TEAM COLLECTIVE ACTIONS & LIVE STATUS BAR - Ultra-compact space-saver for iPad to fit 11 starters without scroll */}
         {activeTab !== 'campo' && (
-        <div className="bg-slate-950/90 border-b border-slate-800 px-3 sm:px-4 py-1.5 sm:py-2 flex flex-col gap-1.5 shrink-0">
+        <div className="bg-slate-950/90 border-b border-slate-800 px-2.5 sm:px-3 py-1 shrink-0">
           
-          {/* Row 1: 4 Quick Collective Action Counters */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 sm:gap-2 w-full">
-            
-            {/* 1. Córner a Favor */}
-            <div className="bg-sky-950/30 border border-sky-500/40 rounded-xl px-2.5 py-1 flex items-center justify-between gap-2 shadow-xs">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <Flag className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                <span className="text-[10px] sm:text-[11px] font-black text-sky-200 uppercase tracking-wide truncate">
-                  Córner Fav
-                </span>
-                <span className="text-sm sm:text-base font-black text-sky-300 font-mono">
-                  {teamTotals.corners_favor}
-                </span>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => adjustTeamTotal('corners_favor', -1)}
-                  className="h-7 w-7 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-300 border border-slate-750 flex items-center justify-center font-black text-xs cursor-pointer transition-all"
-                  title="Restar córner favor"
-                >
-                  <Minus className="w-3 h-3" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => adjustTeamTotal('corners_favor', 1)}
-                  className="h-7 px-2 rounded-lg bg-sky-500 hover:bg-sky-400 active:scale-95 text-black font-black text-xs flex items-center justify-center gap-1 cursor-pointer transition-all shadow-sm"
-                  title="Sumar córner favor"
-                >
-                  <Plus className="w-3 h-3 stroke-[3]" />
-                  <span>+1</span>
-                </button>
-              </div>
-            </div>
-
-            {/* 2. Córner en Contra */}
-            <div className="bg-rose-950/30 border border-rose-500/40 rounded-xl px-2.5 py-1 flex items-center justify-between gap-2 shadow-xs">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <Flag className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                <span className="text-[10px] sm:text-[11px] font-black text-rose-200 uppercase tracking-wide truncate">
-                  Córner Cont
-                </span>
-                <span className="text-sm sm:text-base font-black text-rose-400 font-mono">
-                  {teamTotals.corners_contra}
-                </span>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => adjustTeamTotal('corners_contra', -1)}
-                  className="h-7 w-7 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-300 border border-slate-750 flex items-center justify-center font-black text-xs cursor-pointer transition-all"
-                  title="Restar córner contra"
-                >
-                  <Minus className="w-3 h-3" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => adjustTeamTotal('corners_contra', 1)}
-                  className="h-7 px-2 rounded-lg bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-black text-xs flex items-center justify-center gap-1 cursor-pointer transition-all shadow-sm"
-                  title="Sumar córner contra"
-                >
-                  <Plus className="w-3 h-3 stroke-[3]" />
-                  <span>+1</span>
-                </button>
-              </div>
-            </div>
-
-            {/* 3. Falta a Favor */}
-            <div className="bg-purple-950/30 border border-purple-500/40 rounded-xl px-2.5 py-1 flex items-center justify-between gap-2 shadow-xs">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <Shield className="w-3.5 h-3.5 text-purple-300 shrink-0" />
-                <span className="text-[10px] sm:text-[11px] font-black text-purple-200 uppercase tracking-wide truncate">
-                  Falta Fav
-                </span>
-                <span className="text-sm sm:text-base font-black text-purple-300 font-mono">
-                  {teamTotals.faltas_favor}
-                </span>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => adjustTeamTotal('faltas_favor', -1)}
-                  className="h-7 w-7 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-300 border border-slate-750 flex items-center justify-center font-black text-xs cursor-pointer transition-all"
-                  title="Restar falta favor"
-                >
-                  <Minus className="w-3 h-3" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => adjustTeamTotal('faltas_favor', 1)}
-                  className="h-7 px-2 rounded-lg bg-purple-500 hover:bg-purple-400 active:scale-95 text-white font-black text-xs flex items-center justify-center gap-1 cursor-pointer transition-all shadow-sm"
-                  title="Sumar falta favor"
-                >
-                  <Plus className="w-3 h-3 stroke-[3]" />
-                  <span>+1</span>
-                </button>
-              </div>
-            </div>
-
-            {/* 4. Falta en Contra */}
-            <div className="bg-amber-950/30 border border-amber-500/40 rounded-xl px-2.5 py-1 flex items-center justify-between gap-2 shadow-xs">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span className="text-[10px] sm:text-[11px] font-black text-amber-200 uppercase tracking-wide truncate">
-                  Falta Cont
-                </span>
-                <span className="text-sm sm:text-base font-black text-amber-300 font-mono">
-                  {teamTotals.faltas_contra}
-                </span>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => adjustTeamTotal('faltas_contra', -1)}
-                  className="h-7 w-7 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-300 border border-slate-750 flex items-center justify-center font-black text-xs cursor-pointer transition-all"
-                  title="Restar falta contra"
-                >
-                  <Minus className="w-3 h-3" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => adjustTeamTotal('faltas_contra', 1)}
-                  className="h-7 px-2 rounded-lg bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-black text-xs flex items-center justify-center gap-1 cursor-pointer transition-all shadow-sm"
-                  title="Sumar falta contra"
-                >
-                  <Plus className="w-3 h-3 stroke-[3]" />
-                  <span>+1</span>
-                </button>
-              </div>
-            </div>
-
-          </div>
-
-          {/* Row 2: Match Snapshot Badges */}
-          <div className="flex items-center justify-between gap-2 text-[10px] sm:text-[11px] text-slate-300 flex-wrap pt-0.5">
-            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-              <div className="bg-slate-900/90 px-2 sm:px-2.5 py-0.5 rounded-lg border border-slate-800 flex items-center gap-1.5 shadow-xs">
-                <Target className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="font-bold text-[10px] sm:text-[11px] text-slate-300">Goles:</span>
+          {!showExpandedCollective ? (
+            /* SLIM 1-LINE DOCK: Córners, Faltas, Balones y Tarjetas en una sola línea ultra-compacta */
+            <div className="flex items-center justify-between gap-1.5 sm:gap-2 flex-wrap text-[10px] sm:text-[11px]">
+              <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap">
                 
-                {/* Goles a favor (La Poveda) */}
-                <div className="flex items-center gap-0.5 bg-slate-950 px-1 py-0.5 rounded border border-slate-800">
-                  <span className="text-[9px] text-slate-400 font-bold mr-0.5" title="Goles a favor">Fav:</span>
-                  <button
-                    type="button"
-                    onClick={() => adjustTeamTotal('goles_favor', -1)}
-                    className="h-4.5 w-4.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 flex items-center justify-center text-[11px] font-black cursor-pointer transition-colors"
-                    title="Restar gol a favor (-1)"
-                  >
-                    -
-                  </button>
-                  <strong className="text-emerald-400 font-mono font-black text-xs px-1 min-w-[14px] text-center">
-                    {teamTotals.goles_favor}
-                  </strong>
-                  <button
-                    type="button"
-                    onClick={() => adjustTeamTotal('goles_favor', 1)}
-                    className="h-4.5 w-4.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white flex items-center justify-center text-[11px] font-black cursor-pointer transition-colors"
-                    title="Sumar gol a favor (+1)"
-                  >
-                    +
-                  </button>
+                {/* Córners Fav / Cont */}
+                <div className="flex items-center gap-1 bg-sky-950/30 border border-sky-500/40 rounded-lg px-2 py-0.5">
+                  <Flag className="w-3 h-3 text-sky-400 shrink-0" />
+                  <span className="font-extrabold text-sky-200">Córners:</span>
+                  <div className="flex items-center gap-0.5 bg-slate-900 px-1 py-0.2 rounded border border-slate-800">
+                    <span className="text-[9px] text-slate-400 font-bold">Fav:</span>
+                    <button
+                      type="button"
+                      onClick={() => adjustTeamTotal('corners_favor', -1)}
+                      className="w-4 h-4 rounded hover:bg-slate-800 text-slate-300 font-bold flex items-center justify-center text-[10px] cursor-pointer"
+                    >
+                      -
+                    </button>
+                    <strong className="text-sky-300 font-mono font-black px-0.5 min-w-[12px] text-center">
+                      {teamTotals.corners_favor}
+                    </strong>
+                    <button
+                      type="button"
+                      onClick={() => adjustTeamTotal('corners_favor', 1)}
+                      className="w-4 h-4 rounded bg-sky-600 hover:bg-sky-500 text-white font-black flex items-center justify-center text-[10px] cursor-pointer"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <span className="text-slate-600">|</span>
+
+                  <div className="flex items-center gap-0.5 bg-slate-900 px-1 py-0.2 rounded border border-slate-800">
+                    <span className="text-[9px] text-slate-400 font-bold">Cont:</span>
+                    <button
+                      type="button"
+                      onClick={() => adjustTeamTotal('corners_contra', -1)}
+                      className="w-4 h-4 rounded hover:bg-slate-800 text-slate-300 font-bold flex items-center justify-center text-[10px] cursor-pointer"
+                    >
+                      -
+                    </button>
+                    <strong className="text-rose-400 font-mono font-black px-0.5 min-w-[12px] text-center">
+                      {teamTotals.corners_contra}
+                    </strong>
+                    <button
+                      type="button"
+                      onClick={() => adjustTeamTotal('corners_contra', 1)}
+                      className="w-4 h-4 rounded bg-rose-600 hover:bg-rose-500 text-white font-black flex items-center justify-center text-[10px] cursor-pointer"
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
 
-                <span className="text-slate-600 font-black">-</span>
+                {/* Faltas Fav / Cont */}
+                <div className="flex items-center gap-1 bg-purple-950/30 border border-purple-500/40 rounded-lg px-2 py-0.5">
+                  <Shield className="w-3 h-3 text-purple-300 shrink-0" />
+                  <span className="font-extrabold text-purple-200">Faltas:</span>
+                  <div className="flex items-center gap-0.5 bg-slate-900 px-1 py-0.2 rounded border border-slate-800">
+                    <span className="text-[9px] text-slate-400 font-bold">Fav:</span>
+                    <button
+                      type="button"
+                      onClick={() => adjustTeamTotal('faltas_favor', -1)}
+                      className="w-4 h-4 rounded hover:bg-slate-800 text-slate-300 font-bold flex items-center justify-center text-[10px] cursor-pointer"
+                    >
+                      -
+                    </button>
+                    <strong className="text-purple-300 font-mono font-black px-0.5 min-w-[12px] text-center">
+                      {teamTotals.faltas_favor}
+                    </strong>
+                    <button
+                      type="button"
+                      onClick={() => adjustTeamTotal('faltas_favor', 1)}
+                      className="w-4 h-4 rounded bg-purple-600 hover:bg-purple-500 text-white font-black flex items-center justify-center text-[10px] cursor-pointer"
+                    >
+                      +
+                    </button>
+                  </div>
 
-                {/* Goles en contra (Rival) */}
-                <div className="flex items-center gap-0.5 bg-slate-950 px-1 py-0.5 rounded border border-slate-800">
-                  <span className="text-[9px] text-slate-400 font-bold mr-0.5" title="Goles en contra">Cont:</span>
-                  <button
-                    type="button"
-                    onClick={() => adjustTeamTotal('goles_contra', -1)}
-                    className="h-4.5 w-4.5 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 flex items-center justify-center text-[11px] font-black cursor-pointer transition-colors"
-                    title="Restar gol en contra (-1)"
-                  >
-                    -
-                  </button>
-                  <strong className="text-rose-400 font-mono font-black text-xs px-1 min-w-[14px] text-center">
-                    {teamTotals.goles_contra}
-                  </strong>
-                  <button
-                    type="button"
-                    onClick={() => adjustTeamTotal('goles_contra', 1)}
-                    className="h-4.5 w-4.5 rounded bg-rose-700 hover:bg-rose-600 text-white flex items-center justify-center text-[11px] font-black cursor-pointer transition-colors"
-                    title="Sumar gol en contra (+1)"
-                  >
-                    +
-                  </button>
+                  <span className="text-slate-600">|</span>
+
+                  <div className="flex items-center gap-0.5 bg-slate-900 px-1 py-0.2 rounded border border-slate-800">
+                    <span className="text-[9px] text-slate-400 font-bold">Cont:</span>
+                    <button
+                      type="button"
+                      onClick={() => adjustTeamTotal('faltas_contra', -1)}
+                      className="w-4 h-4 rounded hover:bg-slate-800 text-slate-300 font-bold flex items-center justify-center text-[10px] cursor-pointer"
+                    >
+                      -
+                    </button>
+                    <strong className="text-amber-300 font-mono font-black px-0.5 min-w-[12px] text-center">
+                      {teamTotals.faltas_contra}
+                    </strong>
+                    <button
+                      type="button"
+                      onClick={() => adjustTeamTotal('faltas_contra', 1)}
+                      className="w-4 h-4 rounded bg-amber-500 hover:bg-amber-400 text-black font-black flex items-center justify-center text-[10px] cursor-pointer"
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
 
-                {(teamTotals.goles_favor > 0 || teamTotals.goles_contra > 0) && (
-                  <button
-                    type="button"
-                    onClick={handleResetAllGoals}
-                    className="text-[9px] font-bold text-rose-300 hover:text-white bg-rose-950/70 hover:bg-rose-900 border border-rose-800/80 px-1.5 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1 shadow-xs ml-0.5"
-                    title="Borrar goles y restablecer marcador a 0 - 0"
-                  >
-                    <Trash2 className="w-2.5 h-2.5" />
-                    <span>0-0</span>
-                  </button>
-                )}
+                {/* Balones e incidentes rápidos */}
+                <div className="hidden lg:flex items-center gap-2 text-[10px] text-slate-300">
+                  <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800 flex items-center gap-1">
+                    <Zap className="w-2.5 h-2.5 text-cyan-400" />
+                    <span>Recup: <strong className="text-cyan-300 font-mono">{teamTotals.recuperaciones_balon}</strong></span>
+                    <span className="text-slate-600">|</span>
+                    <span>Pérd: <strong className="text-amber-400 font-mono">{teamTotals.perdidas_balon}</strong></span>
+                  </span>
+
+                  <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800 flex items-center gap-1">
+                    <span>🟨 <strong className="text-yellow-400 font-mono">{teamTotals.tarjetas_amarillas}</strong></span>
+                    <span className="text-slate-600">|</span>
+                    <span>🟥 <strong className="text-rose-500 font-mono">{teamTotals.tarjetas_rojas}</strong></span>
+                  </span>
+                </div>
+
               </div>
 
-              <span className="bg-slate-900/90 px-2.5 py-0.5 rounded-lg border border-slate-800 flex items-center gap-1.5">
-                <Zap className="w-3 h-3 text-cyan-400" />
-                <span>Balones:</span>
-                <strong className="text-cyan-300 font-mono font-bold">⚡{teamTotals.recuperaciones_balon}</strong>
-                <span className="text-slate-600">|</span>
-                <strong className="text-amber-400 font-mono font-bold">⚠️{teamTotals.perdidas_balon}</strong>
-              </span>
-
-              <span className="bg-slate-900/90 px-2.5 py-0.5 rounded-lg border border-slate-800 flex items-center gap-1.5">
-                <AlertTriangle className="w-3 h-3 text-yellow-400" />
-                <span>Tarjetas:</span>
-                <strong className="text-yellow-400 font-mono font-bold">🟨{teamTotals.tarjetas_amarillas}</strong>
-                <span className="text-slate-600">|</span>
-                <strong className="text-rose-500 font-mono font-bold">🟥{teamTotals.tarjetas_rojas}</strong>
-              </span>
+              {/* Toggle to expand/collapse large counters */}
+              <button
+                type="button"
+                onClick={() => setShowExpandedCollective(true)}
+                className="text-[9px] font-black uppercase tracking-wider text-cyan-400 hover:text-white bg-slate-900 hover:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-800 flex items-center gap-1 cursor-pointer transition-colors"
+                title="Expandir vista completa de acciones colectivas"
+              >
+                <span>+ Colectivo</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
             </div>
+          ) : (
+            /* VISTA EXPANDIDA CON TODAS LAS TARJETAS GRANDES Y OPCIÓN DE CONTRAER */
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400 flex items-center gap-1">
+                  <Layers className="w-3 h-3" />
+                  <span>Acciones Colectivas del Equipo</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowExpandedCollective(false)}
+                  className="text-[9px] font-black uppercase text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 px-2 py-0.5 rounded border border-slate-800 flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <span>Compactar</span>
+                  <ChevronUp className="w-3 h-3" />
+                </button>
+              </div>
 
-            {/* Quick Live indicator */}
-            <div className="flex items-center gap-1.5 text-cyan-400 font-bold text-[10px]">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping inline-block" />
-              <span>Directo iPad</span>
+              {/* 4 Quick Collective Action Counters */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 sm:gap-2 w-full">
+                {/* 1. Córner a Favor */}
+                <div className="bg-sky-950/30 border border-sky-500/40 rounded-xl px-2.5 py-1 flex items-center justify-between gap-2 shadow-xs">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Flag className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                    <span className="text-[10px] sm:text-[11px] font-black text-sky-200 uppercase tracking-wide truncate">
+                      Córner Fav
+                    </span>
+                    <span className="text-sm sm:text-base font-black text-sky-300 font-mono">
+                      {teamTotals.corners_favor}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => adjustTeamTotal('corners_favor', -1)}
+                      className="h-6 w-6 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-300 border border-slate-750 flex items-center justify-center font-black text-xs cursor-pointer transition-all"
+                      title="Restar córner favor"
+                    >
+                      <Minus className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => adjustTeamTotal('corners_favor', 1)}
+                      className="h-6 px-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 active:scale-95 text-black font-black text-xs flex items-center justify-center gap-1 cursor-pointer transition-all shadow-sm"
+                      title="Sumar córner favor"
+                    >
+                      <Plus className="w-3 h-3 stroke-[3]" />
+                      <span>+1</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Córner en Contra */}
+                <div className="bg-rose-950/30 border border-rose-500/40 rounded-xl px-2.5 py-1 flex items-center justify-between gap-2 shadow-xs">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Flag className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                    <span className="text-[10px] sm:text-[11px] font-black text-rose-200 uppercase tracking-wide truncate">
+                      Córner Cont
+                    </span>
+                    <span className="text-sm sm:text-base font-black text-rose-400 font-mono">
+                      {teamTotals.corners_contra}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => adjustTeamTotal('corners_contra', -1)}
+                      className="h-6 w-6 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-300 border border-slate-750 flex items-center justify-center font-black text-xs cursor-pointer transition-all"
+                      title="Restar córner contra"
+                    >
+                      <Minus className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => adjustTeamTotal('corners_contra', 1)}
+                      className="h-6 px-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-black text-xs flex items-center justify-center gap-1 cursor-pointer transition-all shadow-sm"
+                      title="Sumar córner contra"
+                    >
+                      <Plus className="w-3 h-3 stroke-[3]" />
+                      <span>+1</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. Falta a Favor */}
+                <div className="bg-purple-950/30 border border-purple-500/40 rounded-xl px-2.5 py-1 flex items-center justify-between gap-2 shadow-xs">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Shield className="w-3.5 h-3.5 text-purple-300 shrink-0" />
+                    <span className="text-[10px] sm:text-[11px] font-black text-purple-200 uppercase tracking-wide truncate">
+                      Falta Fav
+                    </span>
+                    <span className="text-sm sm:text-base font-black text-purple-300 font-mono">
+                      {teamTotals.faltas_favor}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => adjustTeamTotal('faltas_favor', -1)}
+                      className="h-6 w-6 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-300 border border-slate-750 flex items-center justify-center font-black text-xs cursor-pointer transition-all"
+                      title="Restar falta favor"
+                    >
+                      <Minus className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => adjustTeamTotal('faltas_favor', 1)}
+                      className="h-6 px-1.5 rounded-lg bg-purple-500 hover:bg-purple-400 active:scale-95 text-white font-black text-xs flex items-center justify-center gap-1 cursor-pointer transition-all shadow-sm"
+                      title="Sumar falta favor"
+                    >
+                      <Plus className="w-3 h-3 stroke-[3]" />
+                      <span>+1</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 4. Falta en Contra */}
+                <div className="bg-amber-950/30 border border-amber-500/40 rounded-xl px-2.5 py-1 flex items-center justify-between gap-2 shadow-xs">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span className="text-[10px] sm:text-[11px] font-black text-amber-200 uppercase tracking-wide truncate">
+                      Falta Cont
+                    </span>
+                    <span className="text-sm sm:text-base font-black text-amber-300 font-mono">
+                      {teamTotals.faltas_contra}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => adjustTeamTotal('faltas_contra', -1)}
+                      className="h-6 w-6 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-300 border border-slate-750 flex items-center justify-center font-black text-xs cursor-pointer transition-all"
+                      title="Restar falta contra"
+                    >
+                      <Minus className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => adjustTeamTotal('faltas_contra', 1)}
+                      className="h-6 px-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-black text-xs flex items-center justify-center gap-1 cursor-pointer transition-all shadow-sm"
+                      title="Sumar falta contra"
+                    >
+                      <Plus className="w-3 h-3 stroke-[3]" />
+                      <span>+1</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
 
         </div>
         )}
 
         {/* MODAL MAIN CONTENT */}
-        <div className="flex-1 min-h-0 overflow-hidden p-2 sm:p-3 flex flex-col">
+        <div className="flex-1 min-h-0 overflow-hidden p-1.5 sm:p-2 flex flex-col">
           
           {/* TAB 1: REGISTRO RÁPIDO EN DIRECTO (ADAPTADO AL IPAD) */}
           {activeTab === 'rapido' && (
             <div className="flex flex-col md:flex-row gap-2.5 sm:gap-3 h-full min-h-0 overflow-hidden">
               
-              {/* LEFT PANEL: COMPLETE ROSTER SELECTOR (UNIFIED, NO 18-PLAYER CUTOFF) */}
-              <div className="w-full md:w-64 lg:w-72 xl:w-80 shrink-0 flex flex-col h-[230px] md:h-full min-h-0 bg-slate-950/70 p-2 sm:p-2.5 rounded-2xl border border-slate-850 overflow-hidden">
+              {/* LEFT PANEL: COMPLETE ROSTER SELECTOR (UNIFIED, NO 18-PLAYER CUTOFF, NO-SCROLL FOR 11 TITULARES) */}
+              <div className="w-full md:w-84 lg:w-92 xl:w-[420px] shrink-0 flex flex-col h-full min-h-0 bg-slate-950/80 p-1.5 sm:p-2 rounded-2xl border border-slate-800/90 shadow-xl overflow-hidden">
                 
-                {/* Header with Title & Player Counter */}
-                <div className="flex items-center justify-between pb-1.5 border-b border-slate-850 shrink-0">
+                {/* Header with Title, Mode Switcher & Counter */}
+                <div className="flex items-center justify-between pb-1 border-b border-slate-800 shrink-0">
                   <div className="flex items-center gap-1.5">
                     <Users className="w-3.5 h-3.5 text-cyan-400" />
                     <span className="text-[11px] font-black uppercase text-white tracking-wider">
-                      Plantilla
+                      {(rosterFilter === 'campo' || rosterFilter === 'titulares')
+                        ? (substitutions.length > 0 ? 'Once en Campo' : 'Once Inicial')
+                        : rosterFilter === 'banquillo'
+                        ? 'Banquillo / Suplentes'
+                        : rosterFilter === 'convocadas'
+                        ? 'Convocadas'
+                        : rosterFilter === 'con_eventos'
+                        ? 'Jugadoras Activas'
+                        : 'Plantilla'}
+                    </span>
+                    {(rosterFilter === 'campo' || rosterFilter === 'titulares') && onFieldCount === 11 && (
+                      <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-1 py-0.2 rounded font-black flex items-center gap-0.5">
+                        <CheckCircle2 className="w-2.5 h-2.5" />
+                        <span>11</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Mode switcher: 1 Col (Auto-ajustada sin scroll) / 2 Cols (Cuadrícula 6+5) */}
+                  <div className="flex items-center gap-1">
+                    <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setRosterViewMode('compact_1col')}
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase transition-all flex items-center gap-1 cursor-pointer ${
+                          rosterViewMode === 'compact_1col'
+                            ? 'bg-cyan-500 text-black shadow-xs font-black'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                        title="Ver en 1 columna vertical ajustada sin scroll"
+                      >
+                        <List className="w-2.5 h-2.5" />
+                        <span>1 Col</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRosterViewMode('grid_2col')}
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase transition-all flex items-center gap-1 cursor-pointer ${
+                          rosterViewMode === 'grid_2col'
+                            ? 'bg-cyan-500 text-black shadow-xs font-black'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                        title="Ver en 2 columnas tácticas (6 + 5) sin scroll"
+                      >
+                        <LayoutGrid className="w-2.5 h-2.5" />
+                        <span>2 Cols</span>
+                      </button>
+                    </div>
+
+                    <span className="text-[9px] font-bold text-cyan-300 bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-800 font-mono">
+                      {filteredPlayerStats.length}
                     </span>
                   </div>
-                  <span className="text-[10px] font-bold text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded-full border border-cyan-800">
-                    {filteredPlayerStats.length} {filteredPlayerStats.length === 1 ? 'jugadora' : 'jugadoras'}
-                  </span>
                 </div>
 
-                {/* Filter Pills: Todas / Titulares / Convocadas / Con Eventos */}
-                <div className="pt-2 pb-1 shrink-0 grid grid-cols-4 gap-1">
+                {/* Filter Pills: Campo (11 en juego) / Banquillo / Convocadas / Activas / Todas */}
+                <div className="pt-1 pb-1 shrink-0 grid grid-cols-5 gap-1">
                   <button
                     type="button"
-                    onClick={() => setRosterFilter('todas')}
-                    className={`py-1 px-1 rounded-lg text-[9px] font-black uppercase tracking-tight transition-all cursor-pointer text-center truncate ${
-                      rosterFilter === 'todas'
-                        ? 'bg-cyan-500 text-black shadow-sm'
-                        : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    onClick={() => setRosterFilter('campo')}
+                    className={`py-1 px-0.5 rounded-lg text-[9px] font-black uppercase tracking-tight transition-all cursor-pointer text-center truncate flex items-center justify-center gap-0.5 ${
+                      rosterFilter === 'campo' || rosterFilter === 'titulares'
+                        ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-sm ring-1 ring-cyan-400/50'
+                        : 'bg-blue-950/40 text-blue-300 hover:text-white border border-blue-900/60'
                     }`}
+                    title="Ver las 11 jugadoras actualmente sobre el terreno de juego (refleja cambios del campo)"
                   >
-                    Todas ({playerStats.length})
+                    <Star className={`w-2.5 h-2.5 ${onFieldCount === 11 ? 'fill-amber-400 text-amber-400' : 'text-cyan-300'}`} />
+                    <span className="truncate">Campo ({onFieldCount}/11)</span>
                   </button>
                   <button
                     type="button"
-                    onClick={() => setRosterFilter('titulares')}
-                    className={`py-1 px-1 rounded-lg text-[9px] font-black uppercase tracking-tight transition-all cursor-pointer text-center truncate ${
-                      rosterFilter === 'titulares'
-                        ? 'bg-blue-600 text-white shadow-sm font-black'
-                        : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    onClick={() => setRosterFilter('banquillo')}
+                    className={`py-1 px-0.5 rounded-lg text-[9px] font-black uppercase tracking-tight transition-all cursor-pointer text-center truncate flex items-center justify-center gap-0.5 ${
+                      rosterFilter === 'banquillo'
+                        ? 'bg-amber-600 text-white shadow-sm ring-1 ring-amber-400/50'
+                        : 'bg-amber-950/30 text-amber-300 hover:text-white border border-amber-900/50'
                     }`}
-                    title="Filtrar por jugadoras titulares (once inicial)"
+                    title="Ver jugadoras en banquillo y sustituidas"
                   >
-                    Tit. ({titularesCount}/11)
+                    <span className="truncate">Banq. ({benchCount})</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setRosterFilter('convocadas')}
-                    className={`py-1 px-1 rounded-lg text-[9px] font-black uppercase tracking-tight transition-all cursor-pointer text-center truncate ${
+                    className={`py-1 px-0.5 rounded-lg text-[9px] font-black uppercase tracking-tight transition-all cursor-pointer text-center truncate ${
                       rosterFilter === 'convocadas'
                         ? 'bg-cyan-500 text-black shadow-sm'
                         : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
@@ -1847,187 +2129,273 @@ export default function MatchStatsModal({
                   <button
                     type="button"
                     onClick={() => setRosterFilter('con_eventos')}
-                    className={`py-1 px-1 rounded-lg text-[9px] font-black uppercase tracking-tight transition-all cursor-pointer text-center truncate ${
+                    className={`py-1 px-0.5 rounded-lg text-[9px] font-black uppercase tracking-tight transition-all cursor-pointer text-center truncate ${
                       rosterFilter === 'con_eventos'
                         ? 'bg-cyan-500 text-black shadow-sm'
                         : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
                     }`}
+                    title="Jugadoras con minutos o eventos registrados"
                   >
                     Activas ({activeCount})
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setRosterFilter('todas')}
+                    className={`py-1 px-0.5 rounded-lg text-[9px] font-black uppercase tracking-tight transition-all cursor-pointer text-center truncate ${
+                      rosterFilter === 'todas'
+                        ? 'bg-cyan-500 text-black shadow-sm'
+                        : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    Todas ({playerStats.length})
+                  </button>
                 </div>
 
-                {/* Search Input */}
-                <div className="pb-2 shrink-0">
-                  <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2" />
-                    <input
-                      type="text"
-                      value={playerSearch}
-                      onChange={(e) => setPlayerSearch(e.target.value)}
-                      placeholder="Buscar por dorsal o nombre..."
-                      className="w-full pl-8 pr-2 py-1 h-7.5 bg-slate-900/90 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                    />
-                    {playerSearch && (
+                {/* Sub-bar: Solo visible si no es campo, o si faltan jugadoras por asignar al campo */}
+                {(rosterFilter === 'campo' || rosterFilter === 'titulares') ? (
+                  onFieldCount < 11 && (
+                    <div className="pb-1 shrink-0 flex items-center justify-between gap-1 px-2 py-0.5 bg-amber-950/40 border border-amber-500/40 rounded-lg">
+                      <span className="text-amber-300 font-bold text-[10px]">Faltan {11 - onFieldCount} jugadoras en campo</span>
                       <button
                         type="button"
-                        onClick={() => setPlayerSearch('')}
-                        className="absolute right-2 top-1.5 text-slate-500 hover:text-white text-xs"
+                        onClick={handleAutoAssignTitulares}
+                        className="h-5 px-2 rounded bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-[9px] uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-all"
+                        title="Asignar automáticamente 11 jugadoras"
                       >
-                        ✕
+                        <Zap className="w-2.5 h-2.5 fill-current" />
+                        <span>Auto 11</span>
                       </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Banner de Aviso Once Inicial (11 Titulares) */}
-                {titularesCount === 11 ? (
-                  <div className="mb-2 p-2 rounded-xl bg-emerald-950/80 border border-emerald-500/50 flex items-center justify-between text-xs text-emerald-300 font-bold shrink-0 shadow-sm animate-in fade-in">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <span className="truncate">¡Once inicial completo! (11 titulares)</span>
                     </div>
-                    <span className="font-mono text-[10px] bg-emerald-500 text-slate-950 px-1.5 py-0.5 rounded font-black shrink-0 ml-1">
-                      11/11
-                    </span>
-                  </div>
-                ) : titularesCount > 11 ? (
-                  <div className="mb-2 p-2 rounded-xl bg-amber-950/80 border border-amber-500/50 flex items-center justify-between text-xs text-amber-300 font-bold shrink-0 shadow-sm animate-in fade-in">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                      <span className="truncate">Aviso: {titularesCount} titulares (máximo 11)</span>
-                    </div>
-                    <span className="font-mono text-[10px] bg-amber-500 text-slate-950 px-1.5 py-0.5 rounded font-black shrink-0 ml-1">
-                      {titularesCount}/11
-                    </span>
-                  </div>
+                  )
                 ) : (
-                  <div className="mb-2 px-2.5 py-1.5 rounded-lg bg-slate-950/60 border border-slate-800 flex items-center justify-between text-[11px] text-slate-400 shrink-0">
-                    <span className="truncate">Titulares: <strong className="text-blue-300">{titularesCount} de 11</strong> {11 - titularesCount > 0 ? `(faltan ${11 - titularesCount})` : ''}</span>
-                    <span className="font-mono text-[10px] text-blue-400 font-black">{titularesCount}/11 TIT</span>
+                  <div className="pb-1 shrink-0 flex items-center gap-1.5">
+                    <div className="relative flex-1 min-w-0">
+                      <Search className="w-3 h-3 text-slate-500 absolute left-2 top-1.5" />
+                      <input
+                        type="text"
+                        value={playerSearch}
+                        onChange={(e) => setPlayerSearch(e.target.value)}
+                        placeholder="Buscar dorsal/nombre..."
+                        className="w-full pl-6 pr-2 py-0.5 h-6.5 bg-slate-900/90 border border-slate-800 rounded-lg text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                      />
+                      {playerSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setPlayerSearch('')}
+                          className="absolute right-1.5 top-1 text-slate-500 hover:text-white text-[10px]"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
 
-                {/* SCROLLABLE PLAYER LIST - Renders EVERY player with no truncation */}
-                <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1 overscroll-contain">
-                  {filteredPlayerStats.map((p) => {
-                    const isSelected = p.playerId === selectedPlayer?.playerId;
-                    const totalEvents = (p.goles_metidos || 0) + (p.asistencias || 0) + (p.recuperaciones_balon || 0);
+                {/* PLAYER LIST - DESIGNED FOR COMPLETE ON-SCREEN VISIBILITY WITHOUT SCROLL */}
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                  {rosterViewMode === 'grid_2col' ? (
+                    /* VISTA 2 COLUMNAS (6 + 5) - ULTRA COMPACTA TÁCTICA */
+                    <div className={`grid grid-cols-2 gap-1 h-full min-h-0 ${(rosterFilter === 'campo' || rosterFilter === 'titulares') && filteredPlayerStats.length <= 11 ? 'overflow-hidden' : 'overflow-y-auto pr-0.5 overscroll-contain'}`}>
+                      {filteredPlayerStats.map((p) => {
+                        const isSelected = p.playerId === selectedPlayer?.playerId;
+                        const isOnField = currentOnFieldIds.has(p.playerId);
+                        const subInfo = playerSubMap.get(p.playerId);
 
-                    return (
-                      <button
-                        key={p.playerId}
-                        onClick={() => setSelectedPlayerId(p.playerId)}
-                        className={`w-full min-h-[44px] px-2.5 py-1.5 rounded-xl border text-left transition-all flex items-center justify-between cursor-pointer active:scale-[0.99] ${
-                          isSelected 
-                            ? 'bg-cyan-950/80 border-cyan-400 text-white shadow-md ring-2 ring-cyan-400/40' 
-                            : 'bg-slate-900/50 border-slate-800 text-slate-300 hover:bg-slate-850 hover:border-slate-700'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          {/* Dorsal */}
-                          <span className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs shrink-0 ${
-                            isSelected ? 'bg-cyan-400 text-black font-mono' : 'bg-slate-800 text-slate-200 font-mono'
-                          }`}>
-                            #{p.dorsal || '-'}
-                          </span>
-                          
-                          {/* Name and Position */}
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1">
-                              <span className="font-extrabold text-xs text-white truncate max-w-[110px] sm:max-w-[140px] leading-tight">
-                                {p.nombre} {p.apellidos}
-                              </span>
-                              {p.isConvocada && (
-                                <span className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1 py-0.2 rounded font-black uppercase shrink-0">
-                                  Conv
+                        return (
+                          <button
+                            key={p.playerId}
+                            onClick={() => setSelectedPlayerId(p.playerId)}
+                            className={`p-1 sm:p-1.5 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer active:scale-[0.99] flex-1 min-h-0 ${
+                              isSelected
+                                ? 'bg-cyan-950/90 border-cyan-400 text-white shadow-md ring-2 ring-cyan-400/40'
+                                : isOnField
+                                ? 'bg-slate-900/80 border-slate-800 text-slate-200 hover:bg-slate-850 hover:border-slate-700'
+                                : 'bg-slate-950/50 border-slate-850 text-slate-400 hover:bg-slate-900/60'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1 w-full min-w-0">
+                              <div className="flex items-center gap-1 min-w-0">
+                                <span className={`w-5 h-5 rounded-md flex items-center justify-center font-black text-[10px] shrink-0 font-mono ${
+                                  isSelected 
+                                    ? 'bg-cyan-400 text-black font-black' 
+                                    : isOnField
+                                    ? (p.titular ? 'bg-blue-600 text-white font-black' : 'bg-emerald-600 text-white font-black')
+                                    : 'bg-slate-800 text-slate-400'
+                                }`}>
+                                  #{p.dorsal || '-'}
                                 </span>
-                              )}
-                              {p.titular ? (
-                                <span className="text-[8px] bg-blue-500/20 text-blue-300 border border-blue-500/40 px-1 py-0.2 rounded font-black uppercase shrink-0">
-                                  TIT
+                                <span className="font-extrabold text-[11px] text-white truncate max-w-[85px] leading-tight">
+                                  {p.nombre}
                                 </span>
-                              ) : p.suplente ? (
-                                <span className="text-[8px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1 py-0.2 rounded font-black uppercase shrink-0">
-                                  SUP
+                              </div>
+                              {subInfo?.type === 'entra' ? (
+                                <span className="text-[8px] font-black font-mono text-emerald-300 bg-emerald-950/80 border border-emerald-500/50 px-1 py-0.2 rounded flex items-center gap-0.5 shrink-0" title={`Entró en min ${subInfo.minuteStr} por ${subInfo.sub.saleNombre}`}>
+                                  <span>▲</span>
+                                  <span>{subInfo.minuteStr}</span>
                                 </span>
+                              ) : subInfo?.type === 'sale' ? (
+                                <span className="text-[8px] font-black font-mono text-rose-300 bg-rose-950/80 border border-rose-500/50 px-1 py-0.2 rounded flex items-center gap-0.5 shrink-0" title={`Salió en min ${subInfo.minuteStr} por ${subInfo.sub.entraNombre}`}>
+                                  <span>▼</span>
+                                  <span>{subInfo.minuteStr}</span>
+                                </span>
+                              ) : p.titular ? (
+                                <Star className="w-2.5 h-2.5 text-amber-400 fill-amber-400 shrink-0" title="Titular Once Inicial" />
                               ) : null}
                             </div>
-                            <div className="flex items-center gap-1 mt-0.5">
-                              <span className="text-[9px] font-bold uppercase text-slate-400 truncate leading-none">
-                                {p.posicionActiva || p.posicion} • {p.minutos ?? 0}'
+
+                            <div className="flex items-center justify-between gap-1 mt-0.5 w-full text-[9px]">
+                              <span className="font-black uppercase px-1 py-0.2 rounded bg-slate-800/90 text-cyan-300 border border-slate-700/60 shrink-0">
+                                {getPositionAbbr(p.posicionActiva || p.posicion)}
                               </span>
-                              {p.stats_por_posicion && Object.keys(p.stats_por_posicion).length > 1 && (
-                                <span className="text-[8px] bg-cyan-950 text-cyan-400 border border-cyan-500/40 px-1 py-0.2 rounded font-black shrink-0">
-                                  {Object.keys(p.stats_por_posicion).length} pos
+                              <div className="flex items-center gap-1 font-bold">
+                                {(p.goles_metidos || 0) > 0 && <span className="text-emerald-300">⚽{p.goles_metidos}</span>}
+                                {(p.asistencias || 0) > 0 && <span className="text-indigo-300">🎯{p.asistencias}</span>}
+                                {(p.recuperaciones_balon || 0) > 0 && <span className="text-cyan-300">⚡{p.recuperaciones_balon}</span>}
+                                {(p.tarjetas_amarillas || 0) > 0 && <span className="text-amber-300">🟨{p.tarjetas_amarillas}</span>}
+                                {(p.tarjetas_rojas || 0) > 0 && <span className="text-red-400">🟥</span>}
+                                <span className="text-slate-400 font-mono">{p.minutos ?? 0}'</span>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    /* VISTA 1 COLUMNA COMPACTA - EXACTAMENTE AJUSTADA PARA QUE LAS 11 TITULARES QUEPAN COMPLETAS SIN SCROLL */
+                    <div className={`h-full min-h-0 flex flex-col justify-between gap-0.5 ${(rosterFilter === 'campo' || rosterFilter === 'titulares') && filteredPlayerStats.length <= 11 ? 'overflow-hidden' : 'overflow-y-auto pr-0.5 overscroll-contain'}`}>
+                      {filteredPlayerStats.map((p) => {
+                        const isSelected = p.playerId === selectedPlayer?.playerId;
+                        const isOnField = currentOnFieldIds.has(p.playerId);
+                        const subInfo = playerSubMap.get(p.playerId);
+
+                        return (
+                          <button
+                            key={p.playerId}
+                            onClick={() => setSelectedPlayerId(p.playerId)}
+                            className={`w-full flex-1 min-h-0 max-h-[42px] px-2 py-0.5 rounded-xl border text-left transition-all flex items-center justify-between cursor-pointer active:scale-[0.99] ${
+                              isSelected
+                                ? 'bg-cyan-950/90 border-cyan-400 text-white shadow-md ring-2 ring-cyan-400/40'
+                                : isOnField
+                                ? 'bg-slate-900/80 border-slate-800 hover:bg-slate-850 hover:border-slate-700 text-slate-200'
+                                : 'bg-slate-950/50 border-slate-850 hover:bg-slate-900/60 text-slate-400'
+                            }`}
+                          >
+                            {/* Dorsal + Nombre + Posicion + Minutos */}
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className={`w-5 h-5 rounded-md flex items-center justify-center font-black text-[10px] shrink-0 font-mono shadow-xs ${
+                                isSelected 
+                                  ? 'bg-cyan-400 text-black font-black' 
+                                  : isOnField 
+                                  ? (p.titular ? 'bg-blue-600 text-white font-black' : 'bg-emerald-600 text-white font-black') 
+                                  : 'bg-slate-800 text-slate-400'
+                              }`}>
+                                #{p.dorsal || '-'}
+                              </span>
+
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="font-extrabold text-xs text-white truncate max-w-[105px] sm:max-w-[130px] md:max-w-[150px] leading-none">
+                                  {p.nombre} {p.apellidos}
+                                </span>
+                                
+                                <span className="text-[9px] font-black uppercase tracking-tight px-1 py-0.2 rounded bg-slate-800/90 text-cyan-300 border border-slate-700/60 shrink-0 font-mono">
+                                  {getPositionAbbr(p.posicionActiva || p.posicion)}
+                                </span>
+
+                                <span className="text-[9px] font-bold text-slate-400 font-mono shrink-0">
+                                  {p.minutos ?? 0}'
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Eventos en vivo + Estrella Titular / Badge Sustitución */}
+                            <div className="flex items-center gap-1 text-[9px] font-black shrink-0">
+                              {(p.goles_metidos || 0) > 0 && (
+                                <span className="bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 px-1 py-0.2 rounded leading-none">
+                                  ⚽{p.goles_metidos}
                                 </span>
                               )}
+                              {(p.asistencias || 0) > 0 && (
+                                <span className="bg-indigo-500/25 text-indigo-300 border border-indigo-500/40 px-1 py-0.2 rounded leading-none">
+                                  🎯{p.asistencias}
+                                </span>
+                              )}
+                              {(p.recuperaciones_balon || 0) > 0 && (
+                                <span className="bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 px-1 py-0.2 rounded leading-none">
+                                  ⚡{p.recuperaciones_balon}
+                                </span>
+                              )}
+                              {(p.tarjetas_amarillas || 0) > 0 && (
+                                <span className="bg-amber-500/30 text-amber-300 border border-amber-500/50 px-1 py-0.2 rounded leading-none">
+                                  🟨{p.tarjetas_amarillas}
+                                </span>
+                              )}
+                              {(p.tarjetas_rojas || 0) > 0 && (
+                                <span className="bg-red-500/30 text-red-300 border border-red-500/50 px-1 py-0.2 rounded leading-none">
+                                  🟥
+                                </span>
+                              )}
+                              {subInfo?.type === 'entra' ? (
+                                <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-1 py-0.2 rounded text-[8px] font-black font-mono flex items-center gap-0.5 shrink-0" title={`Entró al campo en min ${subInfo.minuteStr} por ${subInfo.sub.saleNombre}`}>
+                                  <span>▲</span>
+                                  <span>{subInfo.minuteStr}</span>
+                                </span>
+                              ) : subInfo?.type === 'sale' ? (
+                                <span className="bg-rose-500/20 text-rose-300 border border-rose-500/40 px-1 py-0.2 rounded text-[8px] font-black font-mono flex items-center gap-0.5 shrink-0" title={`Salió del campo en min ${subInfo.minuteStr} por ${subInfo.sub.entraNombre}`}>
+                                  <span>▼</span>
+                                  <span>{subInfo.minuteStr}</span>
+                                </span>
+                              ) : p.titular ? (
+                                <Star className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" title="Titular Once Inicial" />
+                              ) : null}
                             </div>
-                          </div>
-                        </div>
-
-                        {/* Live Badges for quick view on iPad */}
-                        <div className="flex items-center gap-1 text-[9px] font-black shrink-0">
-                          {(p.goles_metidos || 0) > 0 && (
-                            <span className="bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 px-1 py-0.5 rounded leading-none">
-                              ⚽{p.goles_metidos}
-                            </span>
-                          )}
-                          {(p.asistencias || 0) > 0 && (
-                            <span className="bg-indigo-500/25 text-indigo-300 border border-indigo-500/40 px-1 py-0.5 rounded leading-none">
-                              🎯{p.asistencias}
-                            </span>
-                          )}
-                          {(p.recuperaciones_balon || 0) > 0 && (
-                            <span className="bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 px-1 py-0.5 rounded leading-none">
-                              ⚡{p.recuperaciones_balon}
-                            </span>
-                          )}
-                          {(p.tarjetas_amarillas || 0) > 0 && (
-                            <span className="bg-amber-500/30 text-amber-300 border border-amber-500/50 px-1 py-0.5 rounded leading-none">
-                              🟨{p.tarjetas_amarillas}
-                            </span>
-                          )}
-                          {(p.tarjetas_rojas || 0) > 0 && (
-                            <span className="bg-red-500/30 text-red-300 border border-red-500/50 px-1 py-0.5 rounded leading-none">
-                              🟥
-                            </span>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   {filteredPlayerStats.length === 0 && (
-                    <div className="py-8 text-center text-slate-500 text-xs flex flex-col items-center justify-center gap-1.5">
+                    <div className="py-8 text-center text-slate-500 text-xs flex flex-col items-center justify-center gap-1.5 flex-1">
                       <Users className="w-6 h-6 opacity-40" />
-                      <p className="font-bold">No hay jugadoras con ese filtro</p>
+                      <p className="font-bold">No hay jugadoras en este filtro</p>
+                      {(rosterFilter === 'campo' || rosterFilter === 'titulares') && onFieldCount === 0 && (
+                        <button
+                          type="button"
+                          onClick={handleAutoAssignTitulares}
+                          className="mt-1 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-md cursor-pointer transition-all"
+                        >
+                          <Zap className="w-3.5 h-3.5 fill-current" />
+                          <span>Asignar 11 Titulares Automáticos</span>
+                        </button>
+                      )}
                       {rosterFilter !== 'todas' && (
                         <button
                           type="button"
                           onClick={() => { setRosterFilter('todas'); setPlayerSearch(''); }}
-                          className="text-[11px] text-cyan-400 hover:underline font-bold"
+                          className="text-[11px] text-cyan-400 hover:underline font-bold mt-1"
                         >
-                          Ver todas las jugadoras
+                          Ver todas las jugadoras ({playerStats.length})
                         </button>
                       )}
                     </div>
                   )}
                 </div>
 
-                {/* Footer status */}
-                <div className="pt-2 border-t border-slate-850/80 text-[10px] text-slate-500 flex items-center justify-between shrink-0">
-                  <span>Plantilla: {playerStats.length} jugadoras</span>
-                  {rosterFilter !== 'todas' && (
-                    <button
-                      type="button"
-                      onClick={() => setRosterFilter('todas')}
-                      className="text-cyan-400 font-bold hover:underline"
-                    >
-                      Mostrar todas
-                    </button>
-                  )}
-                </div>
+                {/* Footer status bar */}
+                {(rosterFilter !== 'titulares' && rosterFilter !== 'campo') && (
+                  <div className="pt-1.5 border-t border-slate-800 text-[9px] text-slate-500 flex items-center justify-between shrink-0">
+                    <span className="font-mono">En campo: {onFieldCount}/11 • Banquillo: {benchCount} • Total: {playerStats.length}</span>
+                    {rosterFilter !== 'todas' && (
+                      <button
+                        type="button"
+                        onClick={() => setRosterFilter('todas')}
+                        className="text-cyan-400 font-bold hover:underline"
+                      >
+                        Mostrar todas
+                      </button>
+                    )}
+                  </div>
+                )}
 
               </div>
 
@@ -2035,7 +2403,7 @@ export default function MatchStatsModal({
               {selectedPlayer ? (() => {
                 const activePos = selectedPlayer.posicionActiva || getDefaultCampoPosition(selectedPlayer.posicion);
                 const currentPosStats = selectedPlayer.stats_por_posicion?.[activePos] || {};
-                const posMinutos = currentPosStats.minutos ?? 0;
+                const posMinutos = currentPosStats.minutos ?? selectedPlayer.minutos ?? 0;
                 const recordedPositions = Object.keys(selectedPlayer.stats_por_posicion || {});
                 const hasMultiplePositions = recordedPositions.length > 1;
 
@@ -2062,17 +2430,33 @@ export default function MatchStatsModal({
                                 ✓ Convocada
                               </span>
                             )}
-                            {selectedPlayer.titular ? (
+                            {currentOnFieldIds.has(selectedPlayer.playerId) ? (
+                              <span className="text-[9px] font-black text-emerald-300 uppercase bg-emerald-950/80 border border-emerald-500/60 px-1.5 py-0.2 rounded flex items-center gap-0.5 shadow-xs">
+                                <span>🟢</span>
+                                <span>En Campo</span>
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-black text-amber-300 uppercase bg-amber-950/80 border border-amber-600/60 px-1.5 py-0.2 rounded flex items-center gap-0.5 shadow-xs">
+                                <span>⏸️</span>
+                                <span>Banquillo</span>
+                              </span>
+                            )}
+                            {selectedPlayer.titular && (
                               <span className="text-[9px] font-black text-blue-300 uppercase bg-blue-950/80 border border-blue-600/60 px-1.5 py-0.2 rounded flex items-center gap-0.5 shadow-xs">
                                 <span>★</span>
-                                <span>Titular</span>
+                                <span>Once Inicial</span>
                               </span>
-                            ) : selectedPlayer.suplente ? (
-                              <span className="text-[9px] font-black text-amber-300 uppercase bg-amber-950/80 border border-amber-600/60 px-1.5 py-0.2 rounded flex items-center gap-0.5 shadow-xs">
+                            )}
+                            {playerSubMap.has(selectedPlayer.playerId) && (
+                              <span className="text-[9px] font-black text-cyan-300 uppercase bg-cyan-950/80 border border-cyan-500/60 px-1.5 py-0.2 rounded flex items-center gap-0.5 shadow-xs">
                                 <span>🔄</span>
-                                <span>Suplente</span>
+                                <span>
+                                  {playerSubMap.get(selectedPlayer.playerId)?.type === 'entra'
+                                    ? `Entró Min ${playerSubMap.get(selectedPlayer.playerId)?.minuteStr} por ${playerSubMap.get(selectedPlayer.playerId)?.sub.saleNombre}`
+                                    : `Salió Min ${playerSubMap.get(selectedPlayer.playerId)?.minuteStr} por ${playerSubMap.get(selectedPlayer.playerId)?.sub.entraNombre}`}
+                                </span>
                               </span>
-                            ) : null}
+                            )}
                           </div>
                           <h4 className="font-extrabold text-base sm:text-lg text-white leading-tight mt-0.5">
                             {selectedPlayer.nombre} {selectedPlayer.apellidos}

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Trophy, Mail, Lock, Loader2, AlertTriangle } from 'lucide-react';
+import { Trophy, Mail, Lock, Loader2, Database, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import UDLaPovedaLogo from '@/components/layout/UDLaPovedaLogo';
 
@@ -14,22 +14,9 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [isConfigured, setIsConfigured] = useState(true);
-
-  useEffect(() => {
-    const url = import.meta.env.VITE_SUPABASE_URL;
-    const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    if (!url || !key || url.includes('placeholder')) {
-      setIsConfigured(false);
-    }
-  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isConfigured) {
-      toast.error('Supabase no está configurado. Revisa los Ajustes.');
-      return;
-    }
 
     const cleanEmail = email.trim().toLowerCase();
     const isSanti = cleanEmail.includes('santi');
@@ -84,12 +71,17 @@ export default function Login() {
 
       <Card className="w-full max-w-md bg-slate-900 border-slate-800 shadow-2xl relative z-10">
         <CardHeader className="space-y-1 text-center">
-          {!isConfigured && (
-            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-500 text-xs font-bold animate-pulse">
-              <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-              <p className="text-left">Supabase no está configurado. Ve a Ajustes {'>'} Secretos y añade VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.</p>
-            </div>
-          )}
+          <div className="mb-2 flex items-center justify-center">
+            {isSupabaseConfigured ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold">
+                <Database className="w-3 h-3" /> Nube Conectada
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-[10px] font-bold">
+                <ShieldCheck className="w-3 h-3 text-cyan-400" /> Base de Datos Local Segura
+              </span>
+            )}
+          </div>
           <div className="flex justify-center mb-4">
             <div className="bg-white p-2 rounded-2xl shadow-lg ring-4 ring-white/10">
               <UDLaPovedaLogo className="w-16 h-16" />
