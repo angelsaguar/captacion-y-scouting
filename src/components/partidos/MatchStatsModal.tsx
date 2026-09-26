@@ -339,6 +339,8 @@ export interface MatchPlayerStat {
   playerId: string;
   nombre: string;
   apellidos: string;
+  apodo?: string;
+  foto_url?: string;
   dorsal: string;
   posicion: string;
   posicionActiva?: string;
@@ -935,10 +937,21 @@ export default function MatchStatsModal({
         };
       }
 
+      // Source player resolution for photo & apodo
+      const sourcePlayer = allPlayers.find(ap => 
+        String(ap.id) === pIdStr || 
+        isPlayerMatch(ap, p) || 
+        normalizePlayerNameKey(ap.nombre, ap.apellidos) === pNormKey
+      );
+      const playerPhoto = cleanPhotoUrl(p.foto_url || sourcePlayer?.foto_url || (existing as any)?.foto_url || '');
+      const playerApodo = (p.apodo || sourcePlayer?.apodo || (existing as any)?.apodo || '').trim();
+
       return {
         playerId: pIdStr,
         nombre: p.nombre || '',
         apellidos: p.apellidos || '',
+        apodo: playerApodo,
+        foto_url: playerPhoto,
         dorsal: p.dorsal || '',
         posicion: registeredPos,
         posicionActiva: activeTacticalPos,
@@ -2471,68 +2484,57 @@ export default function MatchStatsModal({
                 {/* PLAYER LIST - DESIGNED FOR COMPLETE ON-SCREEN VISIBILITY WITHOUT SCROLL */}
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                   {rosterViewMode === 'grid_2col' ? (
-                    /* VISTA 2 COLUMNAS (6 + 5) - ULTRA COMPACTA TÁCTICA */
-                    <div className={`grid grid-cols-2 gap-1 h-full min-h-0 ${(rosterFilter === 'campo' || rosterFilter === 'titulares') && filteredPlayerStats.length <= 11 ? 'overflow-hidden' : 'overflow-y-auto pr-0.5 overscroll-contain'}`}>
+                    /* VISTA 2 COLUMNAS - SOLO FOTO Y APODO DE LA JUGADORA */
+                    <div className={`grid grid-cols-2 gap-1.5 h-full min-h-0 ${(rosterFilter === 'campo' || rosterFilter === 'titulares') && filteredPlayerStats.length <= 11 ? 'overflow-hidden' : 'overflow-y-auto pr-0.5 overscroll-contain'}`}>
                       {filteredPlayerStats.map((p) => {
                         const isSelected = p.playerId === selectedPlayer?.playerId;
                         const isOnField = currentOnFieldIds.has(p.playerId);
-                        const subInfo = playerSubMap.get(p.playerId);
+                        const displayApodo = (p.apodo && p.apodo.trim().length > 0)
+                          ? p.apodo.trim()
+                          : p.nombre?.trim() || 'Jugadora';
 
                         return (
                           <button
                             key={p.playerId}
                             onClick={() => setSelectedPlayerId(p.playerId)}
-                            className={`p-1 sm:p-1.5 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer active:scale-[0.99] flex-1 min-h-0 ${
+                            className={`px-2 py-1.5 rounded-xl border text-left transition-all flex items-center gap-2.5 cursor-pointer active:scale-[0.99] flex-1 min-h-[46px] ${
                               isSelected
                                 ? 'bg-cyan-950/90 border-cyan-400 text-white shadow-md ring-2 ring-cyan-400/40'
                                 : isOnField
                                 ? 'bg-slate-900/80 border-slate-800 text-slate-200 hover:bg-slate-850 hover:border-slate-700'
                                 : 'bg-slate-950/50 border-slate-850 text-slate-400 hover:bg-slate-900/60'
                             }`}
+                            title={`Seleccionar ${displayApodo} (${p.nombre} ${p.apellidos})`}
                           >
-                            <div className="flex items-center justify-between gap-1 w-full min-w-0">
-                              <div className="flex items-center gap-1 min-w-0">
-                                <span className={`w-5 h-5 rounded-md flex items-center justify-center font-black text-[10px] shrink-0 font-mono ${
-                                  isSelected 
-                                    ? 'bg-cyan-400 text-black font-black' 
-                                    : isOnField
-                                    ? (p.titular ? 'bg-blue-600 text-white font-black' : 'bg-emerald-600 text-white font-black')
-                                    : 'bg-slate-800 text-slate-400'
-                                }`}>
-                                  #{p.dorsal || '-'}
-                                </span>
-                                <span className="font-extrabold text-[11px] text-white truncate max-w-[85px] leading-tight">
-                                  {p.nombre}
-                                </span>
-                              </div>
-                              {subInfo?.type === 'entra' ? (
-                                <span className="text-[8px] font-black font-mono text-emerald-300 bg-emerald-950/80 border border-emerald-500/50 px-1 py-0.2 rounded flex items-center gap-0.5 shrink-0" title={`Entró en min ${subInfo.minuteStr} por ${subInfo.sub.saleNombre}`}>
-                                  <span>▲</span>
-                                  <span>{subInfo.minuteStr}</span>
-                                </span>
-                              ) : subInfo?.type === 'sale' ? (
-                                <span className="text-[8px] font-black font-mono text-rose-300 bg-rose-950/80 border border-rose-500/50 px-1 py-0.2 rounded flex items-center gap-0.5 shrink-0" title={`Salió en min ${subInfo.minuteStr} por ${subInfo.sub.entraNombre}`}>
-                                  <span>▼</span>
-                                  <span>{subInfo.minuteStr}</span>
-                                </span>
-                              ) : p.titular ? (
-                                <Star className="w-2.5 h-2.5 text-amber-400 fill-amber-400 shrink-0" title="Titular Once Inicial" />
-                              ) : null}
+                            {/* Foto de la jugadora */}
+                            <div className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border shrink-0 flex items-center justify-center shadow-xs ${
+                              isSelected 
+                                ? 'border-cyan-400 ring-1 ring-cyan-400/50' 
+                                : isOnField 
+                                ? 'border-slate-600 bg-slate-800' 
+                                : 'border-slate-800 bg-slate-900'
+                            }`}>
+                              {p.foto_url ? (
+                                <img
+                                  src={p.foto_url}
+                                  alt={displayApodo}
+                                  className="w-full h-full object-cover object-top"
+                                  crossOrigin="anonymous"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-slate-800 text-slate-300 font-bold text-xs uppercase">
+                                  {displayApodo.substring(0, 2)}
+                                </div>
+                              )}
                             </div>
 
-                            <div className="flex items-center justify-between gap-1 mt-0.5 w-full text-[9px]">
-                              <span className="font-black uppercase px-1 py-0.2 rounded bg-slate-800/90 text-cyan-300 border border-slate-700/60 shrink-0">
-                                {getPositionAbbr(p.posicionActiva || p.posicion)}
-                              </span>
-                              <div className="flex items-center gap-1 font-bold">
-                                {(p.goles_metidos || 0) > 0 && <span className="text-emerald-300">⚽{p.goles_metidos}</span>}
-                                {(p.asistencias || 0) > 0 && <span className="text-indigo-300">🎯{p.asistencias}</span>}
-                                {(p.recuperaciones_balon || 0) > 0 && <span className="text-cyan-300">⚡{p.recuperaciones_balon}</span>}
-                                {(p.tarjetas_amarillas || 0) > 0 && <span className="text-amber-300">🟨{p.tarjetas_amarillas}</span>}
-                                {(p.tarjetas_rojas || 0) > 0 && <span className="text-red-400">🟥</span>}
-                                <span className="text-slate-400 font-mono">{p.minutos ?? 0}'</span>
-                              </div>
-                            </div>
+                            {/* Solo el Apodo de la jugadora */}
+                            <span className={`font-black text-xs sm:text-sm uppercase tracking-tight truncate flex-1 leading-tight ${
+                              isSelected ? 'text-cyan-200' : 'text-white'
+                            }`}>
+                              {displayApodo}
+                            </span>
                           </button>
                         );
                       })}

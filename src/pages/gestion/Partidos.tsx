@@ -513,8 +513,19 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
           }
         }
 
+        let bestApodo = (p.apodo || '').trim();
+        if (!bestApodo) {
+          const matchedLocal = localList.find(lp => isPlayerMatch(lp, p));
+          if (matchedLocal?.apodo) bestApodo = matchedLocal.apodo.trim();
+        }
+        if (!bestApodo && scList.length > 0) {
+          const matchedSc = scList.find(sp => isPlayerMatch(sp, p));
+          if (matchedSc?.apodo) bestApodo = matchedSc.apodo.trim();
+        }
+
         return {
           ...p,
+          apodo: bestApodo || p.apodo || '',
           foto_url: bestFoto || p.foto_url || ''
         };
       });
