@@ -2497,19 +2497,19 @@ export default function MatchStatsModal({
                           <button
                             key={p.playerId}
                             onClick={() => setSelectedPlayerId(p.playerId)}
-                            className={`px-2 py-1.5 rounded-xl border text-left transition-all flex items-center gap-2.5 cursor-pointer active:scale-[0.99] flex-1 min-h-[46px] ${
+                            className={`px-2.5 py-2 sm:px-3 sm:py-2 rounded-2xl border text-left transition-all flex items-center gap-3 sm:gap-3.5 cursor-pointer active:scale-[0.99] flex-1 min-h-[58px] sm:min-h-[64px] ${
                               isSelected
-                                ? 'bg-cyan-950/90 border-cyan-400 text-white shadow-md ring-2 ring-cyan-400/40'
+                                ? 'bg-cyan-950/90 border-cyan-400 text-white shadow-lg ring-2 ring-cyan-400/50'
                                 : isOnField
                                 ? 'bg-slate-900/80 border-slate-800 text-slate-200 hover:bg-slate-850 hover:border-slate-700'
                                 : 'bg-slate-950/50 border-slate-850 text-slate-400 hover:bg-slate-900/60'
                             }`}
                             title={`Seleccionar ${displayApodo} (${p.nombre} ${p.apellidos})`}
                           >
-                            {/* Foto de la jugadora */}
-                            <div className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border shrink-0 flex items-center justify-center shadow-xs ${
+                            {/* Foto grande de la jugadora */}
+                            <div className={`relative w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden border-2 shrink-0 flex items-center justify-center shadow-md ${
                               isSelected 
-                                ? 'border-cyan-400 ring-1 ring-cyan-400/50' 
+                                ? 'border-cyan-400 ring-2 ring-cyan-400/60' 
                                 : isOnField 
                                 ? 'border-slate-600 bg-slate-800' 
                                 : 'border-slate-800 bg-slate-900'
@@ -2523,14 +2523,14 @@ export default function MatchStatsModal({
                                   referrerPolicy="no-referrer"
                                 />
                               ) : (
-                                <div className="w-full h-full flex items-center justify-center bg-slate-800 text-slate-300 font-bold text-xs uppercase">
+                                <div className="w-full h-full flex items-center justify-center bg-slate-800 text-slate-300 font-extrabold text-sm sm:text-base uppercase">
                                   {displayApodo.substring(0, 2)}
                                 </div>
                               )}
                             </div>
 
                             {/* Solo el Apodo de la jugadora */}
-                            <span className={`font-black text-xs sm:text-sm uppercase tracking-tight truncate flex-1 leading-tight ${
+                            <span className={`font-black text-xs sm:text-sm md:text-base uppercase tracking-tight truncate flex-1 leading-tight ${
                               isSelected ? 'text-cyan-200' : 'text-white'
                             }`}>
                               {displayApodo}
