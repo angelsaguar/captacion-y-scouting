@@ -45,6 +45,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { toast } from 'sonner';
+import { isPlayerMatch, normalizePlayerNameKey, cleanPhotoUrl } from '@/lib/utils';
 import MatchTacticalPitch, { MatchSubstitution } from './MatchTacticalPitch';
 
 export const POSICIONES_CAMPO = [
@@ -598,46 +599,182 @@ export default function MatchStatsModal({
 
     // 2. Existing match stats if previously saved
     const existingStats: MatchPlayerStat[] = match.estadisticas?.jugadoras_stats || [];
-    const statsMap: Record<string, MatchPlayerStat> = {};
-    existingStats.forEach(st => {
-      statsMap[String(st.playerId)] = st;
-    });
 
-    // 3. Merge all players from roster + any existing player from stats
-    const rosterMap = new Map<string, any>();
+    // 3. ONLY PLAYERS IN PLANTILLA:
+    // Load deleted players list for the team
+    const deletedKey = `team_deleted_players_${teamName}`;
+    const deletedSaved = localStorage.getItem(deletedKey);
+    const deletedPlayers: { id?: string; fullName: string }[] = deletedSaved ? JSON.parse(deletedSaved) : [];
+    const isDeletedPlayer = (id: string, nombre: string, apellidos: string = '') => {
+      const normKey = normalizePlayerNameKey(nombre, apellidos);
+      const simpleFullName = `${(nombre || '').trim()} ${(apellidos || '').trim()}`.toLowerCase();
+      return deletedPlayers.some(
+        dp => (dp.id && dp.id === id) || dp.fullName === normKey || dp.fullName === simpleFullName
+      );
+    };
+
+    // Filter, clean and deduplicate allPlayers by normalizePlayerNameKey
+    const cleanRoster: any[] = [];
+    const seenPlayerKeys = new Set<string>();
+
     allPlayers.forEach(p => {
-      rosterMap.set(String(p.id), p);
-    });
+      const cleanNombre = (p.nombre || '').trim();
+      const cleanApellidos = (p.apellidos || '').trim() === 'Marta Pulido' ? 'Pulido' : (p.apellidos || '').trim();
+      if (!cleanNombre) return;
+      if (cleanNombre.toUpperCase() === 'JUGADORA' && (!cleanApellidos || cleanApellidos.toUpperCase() === 'JUGADORA')) return;
+      const isDemo = cleanNombre === 'Carlos' || cleanNombre === 'Marcos' || cleanNombre === 'Sofía' || (cleanNombre === 'Marina' && cleanApellidos === 'Sierra Garcia');
+      if (isDemo) return;
+      if (isDeletedPlayer(String(p.id), cleanNombre, cleanApellidos)) return;
 
-    // Also include any player who had stats saved even if removed from general roster
-    existingStats.forEach(st => {
-      if (!rosterMap.has(String(st.playerId))) {
-        rosterMap.set(String(st.playerId), {
-          id: st.playerId,
-          nombre: st.nombre || 'Jugadora',
-          apellidos: st.apellidos || '',
-          dorsal: st.dorsal || '',
-          posicion: st.posicion || 'Campo'
+      const normKey = normalizePlayerNameKey(cleanNombre, cleanApellidos);
+      if (!seenPlayerKeys.has(normKey)) {
+        seenPlayerKeys.add(normKey);
+        cleanRoster.push({
+          ...p,
+          nombre: cleanNombre,
+          apellidos: cleanApellidos,
+          foto_url: cleanPhotoUrl(p.foto_url)
         });
       }
     });
 
-    const unifiedList = Array.from(rosterMap.values());
+    // Fallback safeguard: if cleanRoster is empty, attempt to read directly from team_roster_
+    if (cleanRoster.length === 0) {
+      try {
+        const localSaved = localStorage.getItem(`team_roster_${teamName}`);
+        if (localSaved) {
+          const parsed = JSON.parse(localSaved);
+          if (Array.isArray(parsed)) {
+            parsed.forEach(p => {
+              const cleanNombre = (p.nombre || '').trim();
+              const cleanApellidos = (p.apellidos || '').trim() === 'Marta Pulido' ? 'Pulido' : (p.apellidos || '').trim();
+              if (!cleanNombre) return;
+              if (cleanNombre.toUpperCase() === 'JUGADORA' && (!cleanApellidos || cleanApellidos.toUpperCase() === 'JUGADORA')) return;
+              const isDemo = cleanNombre === 'Carlos' || cleanNombre === 'Marcos' || cleanNombre === 'Sofía' || (cleanNombre === 'Marina' && cleanApellidos === 'Sierra Garcia');
+              if (isDemo) return;
+              if (isDeletedPlayer(String(p.id), cleanNombre, cleanApellidos)) return;
+
+              const normKey = normalizePlayerNameKey(cleanNombre, cleanApellidos);
+              if (!seenPlayerKeys.has(normKey)) {
+                seenPlayerKeys.add(normKey);
+                cleanRoster.push({
+                  ...p,
+                  nombre: cleanNombre,
+                  apellidos: cleanApellidos,
+                  foto_url: cleanPhotoUrl(p.foto_url)
+                });
+              }
+            });
+          }
+        }
+      } catch {}
+    }
 
     // Sort players primarily by dorsal (numeric)
-    unifiedList.sort((a, b) => {
+    cleanRoster.sort((a, b) => {
       const dorsalA = parseInt(a.dorsal) || 999;
       const dorsalB = parseInt(b.dorsal) || 999;
       return dorsalA - dorsalB;
     });
 
-    const initialPlayerStats: MatchPlayerStat[] = unifiedList.map(p => {
+    const initialPlayerStats: MatchPlayerStat[] = cleanRoster.map(p => {
       const pIdStr = String(p.id);
-      const existing = statsMap[pIdStr];
-      const isConv = convocadasIds.size === 0 || convocadasIds.has(pIdStr);
+      const pNormKey = normalizePlayerNameKey(p.nombre, p.apellidos);
+
+      // Find all existing records for this player in existingStats (matching by ID or name)
+      const matchingStatsList = existingStats.filter(st => {
+        if (String(st.playerId) === pIdStr) return true;
+        if (isPlayerMatch(st, p)) return true;
+        if (normalizePlayerNameKey(st.nombre, st.apellidos) === pNormKey) return true;
+        return false;
+      });
+
+      // If multiple stats existed in old match saves, consolidate them into one
+      let existing: MatchPlayerStat | undefined = matchingStatsList[0];
+      if (matchingStatsList.length > 1) {
+        let totalMins = 0;
+        let totalGoles = 0;
+        let totalGolesEnc = 0;
+        let totalAsist = 0;
+        let totalRecup = 0;
+        let totalPerd = 0;
+        let totalAmarillas = 0;
+        let totalRojas = 0;
+        let totalFaltasFav = 0;
+        let totalFaltasCont = 0;
+        let totalCornersFav = 0;
+        let totalCornersCont = 0;
+        let isTitular = false;
+        let isSuplente = false;
+        const mergedPosStats: Record<string, PlayerPositionStatRecord> = {};
+
+        matchingStatsList.forEach(item => {
+          if (item.titular) isTitular = true;
+          if (item.suplente) isSuplente = true;
+          totalMins = Math.max(totalMins, item.minutos || 0);
+          totalGoles += item.goles_metidos || 0;
+          totalGolesEnc += item.goles_encajados || 0;
+          totalAsist += item.asistencias || 0;
+          totalRecup += item.recuperaciones_balon || 0;
+          totalPerd += item.perdidas_balon || 0;
+          totalAmarillas += item.tarjetas_amarillas || 0;
+          totalRojas += item.tarjetas_rojas || 0;
+          totalFaltasFav += item.faltas_favor || 0;
+          totalFaltasCont += item.faltas_contra || 0;
+          totalCornersFav += item.corners_favor || 0;
+          totalCornersCont += item.corners_contra || 0;
+
+          if (item.stats_por_posicion) {
+            Object.entries(item.stats_por_posicion).forEach(([pos, pstat]) => {
+              if (!mergedPosStats[pos]) {
+                mergedPosStats[pos] = { ...pstat };
+              } else {
+                mergedPosStats[pos].minutos = Math.max(mergedPosStats[pos].minutos || 0, pstat.minutos || 0);
+                mergedPosStats[pos].goles_metidos = (mergedPosStats[pos].goles_metidos || 0) + (pstat.goles_metidos || 0);
+                mergedPosStats[pos].goles_encajados = (mergedPosStats[pos].goles_encajados || 0) + (pstat.goles_encajados || 0);
+                mergedPosStats[pos].asistencias = (mergedPosStats[pos].asistencias || 0) + (pstat.asistencias || 0);
+                mergedPosStats[pos].recuperaciones_balon = (mergedPosStats[pos].recuperaciones_balon || 0) + (pstat.recuperaciones_balon || 0);
+                mergedPosStats[pos].perdidas_balon = (mergedPosStats[pos].perdidas_balon || 0) + (pstat.perdidas_balon || 0);
+                mergedPosStats[pos].tarjetas_amarillas = (mergedPosStats[pos].tarjetas_amarillas || 0) + (pstat.tarjetas_amarillas || 0);
+                mergedPosStats[pos].tarjetas_rojas = (mergedPosStats[pos].tarjetas_rojas || 0) + (pstat.tarjetas_rojas || 0);
+                mergedPosStats[pos].faltas_favor = (mergedPosStats[pos].faltas_favor || 0) + (pstat.faltas_favor || 0);
+                mergedPosStats[pos].faltas_contra = (mergedPosStats[pos].faltas_contra || 0) + (pstat.faltas_contra || 0);
+              }
+            });
+          }
+        });
+
+        existing = {
+          ...matchingStatsList[0],
+          titular: isTitular,
+          suplente: isSuplente,
+          minutos: totalMins,
+          goles_metidos: totalGoles,
+          goles_encajados: totalGolesEnc,
+          asistencias: totalAsist,
+          recuperaciones_balon: totalRecup,
+          perdidas_balon: totalPerd,
+          tarjetas_amarillas: totalAmarillas,
+          tarjetas_rojas: totalRojas,
+          faltas_favor: totalFaltasFav,
+          faltas_contra: totalFaltasCont,
+          corners_favor: totalCornersFav,
+          corners_contra: totalCornersCont,
+          stats_por_posicion: Object.keys(mergedPosStats).length > 0 ? mergedPosStats : matchingStatsList[0].stats_por_posicion
+        };
+      }
+
+      // Check if player is convocada
+      const isConv = convocadasIds.size === 0 
+        || convocadasIds.has(pIdStr) 
+        || matchingStatsList.some(ms => ms.isConvocada) 
+        || convocadasRaw.some(cId => {
+          const cIdStr = String(cId);
+          return cIdStr === pIdStr || matchingStatsList.some(ms => String(ms.playerId) === cIdStr);
+        });
 
       // Respect registered position from Plantilla:
-      const registeredPos = p.posicion && p.posicion !== 'Campo' ? p.posicion : (existing?.posicion || 'Campo');
+      const registeredPos = p.posicion && p.posicion !== 'Campo' && p.posicion !== 'Jugadora' ? p.posicion : (existing?.posicion || 'Campo');
       const defaultTacticalPos = getDefaultCampoPosition(registeredPos);
       
       // Keep existing.posicionActiva ONLY if it matches the role category of the player's registered position in Plantilla

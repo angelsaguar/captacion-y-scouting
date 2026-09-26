@@ -486,7 +486,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
         if (savedSc) scList = JSON.parse(savedSc);
       } catch {}
 
-      return currentPlayers.map(p => {
+      const updated = currentPlayers.map(p => {
         let bestFoto = cleanPhotoUrl(p.foto_url);
         
         // 1. Check localList (Plantilla)
@@ -517,6 +517,15 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
           ...p,
           foto_url: bestFoto || p.foto_url || ''
         };
+      });
+
+      // Deduplicate
+      const seen = new Set<string>();
+      return updated.filter(p => {
+        const k = normalizePlayerNameKey(p.nombre, p.apellidos);
+        if (!k || seen.has(k)) return false;
+        seen.add(k);
+        return true;
       });
     } catch {
       return currentPlayers;
@@ -559,6 +568,13 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
     setIsMsgCustomEdited(false);
     setActiveConvocatoriaTab('fifa');
+  };
+
+  // Open stats tracker modal with latest deduplicated players
+  const handleOpenStatsTrackerModal = (match: Match) => {
+    const updatedPlayers = syncLatestPlayerPhotos(players, selectedTeam);
+    setPlayers(updatedPlayers);
+    setShowStatsTrackerModal(match);
   };
 
   // Helper to generate poster image data URL using html-to-image with html2canvas fallback
@@ -746,92 +762,106 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
     const fetchTeamRosterAndMatches = async () => {
       const rosterKey = `team_roster_${selectedTeam}`;
       const savedRoster = localStorage.getItem(rosterKey);
-      let localList: any[] = savedRoster ? JSON.parse(savedRoster) : [];
+      let localList: any[] = [];
+      if (savedRoster) {
+        try {
+          localList = JSON.parse(savedRoster);
+        } catch {}
+      }
 
-      let scList: any[] = [];
+      const deletedKey = `team_deleted_players_${selectedTeam}`;
+      const deletedSaved = localStorage.getItem(deletedKey);
+      const deletedPlayers: { id?: string; fullName: string }[] = deletedSaved ? JSON.parse(deletedSaved) : [];
+
+      const isDeletedPlayer = (id: string, nombre: string, apellidos: string = '') => {
+        const normKey = normalizePlayerNameKey(nombre, apellidos);
+        const simpleFullName = `${(nombre || '').trim()} ${(apellidos || '').trim()}`.toLowerCase();
+        return deletedPlayers.some(
+          dp => (dp.id && dp.id === id) || dp.fullName === normKey || dp.fullName === simpleFullName
+        );
+      };
+
+      const officialTeamPlayers = selectedTeam === 'SENIOR FEMENINO' ? JUGADORAS_ADJUNTAS.map(j => ({
+        id: j.id,
+        nombre: j.nombre,
+        apellidos: j.apellidos,
+        dorsal: j.dorsal,
+        posicion: j.posicion,
+        foto_url: cleanPhotoUrl(j.foto_url)
+      })) : [];
+
+      let currentRoster: any[] = Array.isArray(localList) ? [...localList] : [];
+
+      // Filter out deleted players, demo entries and invalid empty names
+      currentRoster = currentRoster.filter(p => {
+        const cleanN = (p.nombre || '').trim();
+        const cleanA = (p.apellidos || '').trim();
+        if (!cleanN) return false;
+        if (cleanN.toUpperCase() === 'JUGADORA' && (!cleanA || cleanA.toUpperCase() === 'JUGADORA')) return false;
+        const isDemo = cleanN === 'Carlos' || cleanN === 'Marcos' || cleanN === 'Sofía' || (cleanN === 'Marina' && cleanA === 'Sierra Garcia');
+        if (isDemo) return false;
+        return !isDeletedPlayer(p.id, cleanN, cleanA);
+      });
+
+      // Merge official players for Senior Femenino if missing
+      officialTeamPlayers.forEach(oj => {
+        if (!isDeletedPlayer(oj.id, oj.nombre, oj.apellidos)) {
+          const exists = currentRoster.some(p => isPlayerMatch(p, oj) || normalizePlayerNameKey(p.nombre, p.apellidos) === normalizePlayerNameKey(oj.nombre, oj.apellidos));
+          if (!exists) {
+            currentRoster.push(oj);
+          }
+        }
+      });
+
+      // Sync photos and details from local scouting players
       try {
         const savedSc = localStorage.getItem('scouting_local_players');
-        if (savedSc) scList = JSON.parse(savedSc);
+        if (savedSc) {
+          const scList: any[] = JSON.parse(savedSc);
+          if (Array.isArray(scList)) {
+            currentRoster = currentRoster.map(p => {
+              const scPlayer = scList.find(sp => isPlayerMatch(sp, p) || normalizePlayerNameKey(sp.nombre, sp.apellidos) === normalizePlayerNameKey(p.nombre, p.apellidos));
+              if (scPlayer) {
+                return {
+                  ...p,
+                  foto_url: scPlayer.foto_url ? cleanPhotoUrl(scPlayer.foto_url) : cleanPhotoUrl(p.foto_url),
+                  dorsal: p.dorsal || scPlayer.dorsal || '',
+                  posicion: p.posicion && p.posicion !== 'Jugadora' ? p.posicion : (scPlayer.posicion || p.posicion)
+                };
+              }
+              return p;
+            });
+          }
+        }
       } catch {}
 
-      try {
-        const { data: dbPlayers } = await supabase
-          .from('players')
-          .select('*')
-          .or(`equipo.eq.${selectedTeam},equipo.is.null,equipo.eq.''`);
+      // Deduplicate strictly by normalizePlayerNameKey
+      const cleanDeduplicatedRoster: any[] = [];
+      const seenKeys = new Set<string>();
 
-        const map = new Map<string, any>();
+      currentRoster.forEach(p => {
+        const cleanNombre = (p.nombre || '').trim();
+        const cleanApellidos = (p.apellidos || '').trim() === 'Marta Pulido' ? 'Pulido' : (p.apellidos || '').trim();
+        if (!cleanNombre) return;
+        if (cleanNombre.toUpperCase() === 'JUGADORA' && (!cleanApellidos || cleanApellidos.toUpperCase() === 'JUGADORA')) return;
 
-        // 1. Add from localList (from Plantilla)
-        localList.forEach(p => {
-          if (p && p.id) {
-            map.set(p.id, {
-              ...p,
-              foto_url: cleanPhotoUrl(p.foto_url) || p.foto_url || ''
-            });
-          }
-        });
-
-        // 2. Merge from dbPlayers
-        if (dbPlayers && dbPlayers.length > 0) {
-          dbPlayers.forEach(p => {
-            const dbFoto = cleanPhotoUrl(p.foto_url) || p.foto_url || '';
-            if (!map.has(p.id)) {
-              map.set(p.id, {
-                id: p.id,
-                nombre: p.nombre || '',
-                apellidos: p.apellidos || '',
-                dorsal: p.dorsal || '',
-                posicion: p.posicion || 'Jugadora',
-                foto_url: dbFoto
-              });
-            } else {
-              const existing = map.get(p.id);
-              if (!existing.foto_url && dbFoto) {
-                existing.foto_url = dbFoto;
-              }
-              if (!existing.dorsal && p.dorsal) existing.dorsal = p.dorsal;
-              if ((!existing.posicion || existing.posicion === 'Jugadora') && p.posicion) {
-                existing.posicion = p.posicion;
-              }
-            }
+        const keyStr = normalizePlayerNameKey(cleanNombre, cleanApellidos);
+        if (!seenKeys.has(keyStr) && !isDeletedPlayer(p.id, cleanNombre, cleanApellidos)) {
+          seenKeys.add(keyStr);
+          cleanDeduplicatedRoster.push({
+            ...p,
+            nombre: cleanNombre,
+            apellidos: cleanApellidos,
+            foto_url: cleanPhotoUrl(p.foto_url)
           });
         }
+      });
 
-        // 3. Fallback matching with scList
-        if (scList && scList.length > 0) {
-          map.forEach((player) => {
-            if (!player.foto_url) {
-              const matchedSc = scList.find(sp => isPlayerMatch(sp, player));
-              if (matchedSc && matchedSc.foto_url) {
-                player.foto_url = cleanPhotoUrl(matchedSc.foto_url);
-              }
-            }
-          });
-        }
+      // Sort by dorsal (numeric)
+      cleanDeduplicatedRoster.sort((a, b) => (parseInt(a.dorsal) || 999) - (parseInt(b.dorsal) || 999));
 
-        // 4. Fallback matching with JUGADORAS_ADJUNTAS
-        JUGADORAS_ADJUNTAS.forEach(oj => {
-          const ojFoto = cleanPhotoUrl(oj.foto_url);
-          if (ojFoto) {
-            map.forEach((player) => {
-              if (!player.foto_url && isPlayerMatch(oj, player)) {
-                player.foto_url = ojFoto;
-              }
-            });
-          }
-        });
-
-        const merged = Array.from(map.values());
-        setPlayers(merged);
-        localStorage.setItem(rosterKey, JSON.stringify(merged));
-      } catch (err) {
-        const cleanList = localList.map(p => ({
-          ...p,
-          foto_url: cleanPhotoUrl(p.foto_url) || p.foto_url || ''
-        }));
-        setPlayers(cleanList);
-      }
+      setPlayers(cleanDeduplicatedRoster);
+      localStorage.setItem(rosterKey, JSON.stringify(cleanDeduplicatedRoster));
 
       try {
         const { data, error } = await supabase
@@ -1523,7 +1553,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                     </Button>
 
                     <Button
-                      onClick={() => setShowStatsTrackerModal(match)}
+                      onClick={() => handleOpenStatsTrackerModal(match)}
                       className="text-[10px] font-black text-cyan-200 bg-gradient-to-r from-cyan-950/90 to-blue-950/90 hover:from-cyan-900/90 hover:to-blue-900/90 border border-cyan-500/50 flex items-center gap-1.5 px-3 h-8 rounded-xl uppercase transition-all cursor-pointer shadow-md hover:shadow-cyan-500/20"
                     >
                       <Zap className="w-3.5 h-3.5 text-cyan-400 fill-current" />
