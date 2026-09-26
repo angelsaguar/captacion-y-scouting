@@ -586,6 +586,100 @@ export default function MatchStatsModal({
     }
   };
 
+  // Estado para modal de confirmación de reinicio COMPLETO a cero (volver a empezar el partido)
+  const [showFullResetConfirm, setShowFullResetConfirm] = useState(false);
+
+  // Ejecutar reseteo completo del partido a cero (cronómetro, marcador, jugadoras, minutos, eventos y sustituciones)
+  const executeResetMatchToZero = () => {
+    // 1. Cronómetro
+    setIsChronoRunning(false);
+    setChronoSeconds(0);
+    setChronoPhase('pre');
+
+    // 2. Marcador y totales de equipo
+    setTeamTotals({
+      goles_favor: 0,
+      goles_contra: 0,
+      asistencias: 0,
+      recuperaciones_balon: 0,
+      perdidas_balon: 0,
+      corners_favor: 0,
+      corners_contra: 0,
+      faltas_favor: 0,
+      faltas_contra: 0,
+      tarjetas_amarillas: 0,
+      tarjetas_rojas: 0
+    });
+
+    // 3. Sustituciones reseteadas
+    setSubstitutions([]);
+
+    // 4. Estadísticas de todas las jugadoras reseteadas a cero (conservando titularidad y posición)
+    setPlayerStats(prev => prev.map(p => {
+      const resetPosMap: Record<string, PlayerPositionStatRecord> = {};
+      if (p.stats_por_posicion && Object.keys(p.stats_por_posicion).length > 0) {
+        Object.keys(p.stats_por_posicion).forEach(posKey => {
+          resetPosMap[posKey] = {
+            minutos: 0,
+            goles_metidos: 0,
+            goles_encajados: 0,
+            asistencias: 0,
+            recuperaciones_balon: 0,
+            perdidas_balon: 0,
+            tarjetas_amarillas: 0,
+            tarjetas_rojas: 0,
+            faltas_favor: 0,
+            faltas_contra: 0,
+          };
+        });
+      } else {
+        const activePos = p.posicionActiva || getDefaultCampoPosition(p.posicion);
+        resetPosMap[activePos] = {
+          minutos: 0,
+          goles_metidos: 0,
+          goles_encajados: 0,
+          asistencias: 0,
+          recuperaciones_balon: 0,
+          perdidas_balon: 0,
+          tarjetas_amarillas: 0,
+          tarjetas_rojas: 0,
+          faltas_favor: 0,
+          faltas_contra: 0,
+        };
+      }
+
+      return {
+        ...p,
+        minutos: 0,
+        goles_metidos: 0,
+        goles_encajados: 0,
+        asistencias: 0,
+        recuperaciones_balon: 0,
+        perdidas_balon: 0,
+        tarjetas_amarillas: 0,
+        tarjetas_rojas: 0,
+        corners_favor: 0,
+        corners_contra: 0,
+        faltas_favor: 0,
+        faltas_contra: 0,
+        stats_por_posicion: resetPosMap
+      };
+    }));
+
+    // 5. Limpiar timeline de eventos
+    setEventLogs([
+      {
+        id: 'reset-full-' + Date.now(),
+        time: "00:00",
+        text: "🔄 Partido y estadísticas restablecidos completamente a 0 - 0 (Listo para empezar)",
+        type: 'cronometro'
+      }
+    ]);
+
+    setShowFullResetConfirm(false);
+    toast.success('¡Partido restablecido a cero! Todo preparado para empezar el partido de nuevo.');
+  };
+
   // Valores calculados de tiempo para renderizado
   const chronoDisplay = useMemo(() => {
     return getChronoDisplay(chronoSeconds, chronoPhase, isChronoRunning);
@@ -1839,6 +1933,18 @@ export default function MatchStatsModal({
             >
               <RotateCcw className="w-3 h-3 text-rose-400 shrink-0" />
               <span>{isSecondHalf ? "Reset 2T" : "Reset 1T"}</span>
+            </Button>
+
+            {/* BOTÓN REINICIAR PARTIDO COMPLETO A CERO (VOLVER A EMPEZAR) */}
+            <Button
+              type="button"
+              onClick={() => setShowFullResetConfirm(true)}
+              size="sm"
+              className="h-7 sm:h-7.5 px-2.5 text-[11px] font-black cursor-pointer rounded-xl transition-all shadow-sm flex items-center gap-1.5 bg-rose-600 hover:bg-rose-500 text-white border border-rose-400/40 hover:shadow-rose-950/40"
+              title="Restablecer todo el partido a cero (cronómetro 00:00, marcador 0 - 0, eventos, estadísticas y cambios a 0) para volver a empezar"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-white shrink-0" />
+              <span>Reiniciar Partido a 0</span>
             </Button>
 
             {/* AJUSTE FINO MANUAL (+1m / -1m / Reset) */}
@@ -3945,10 +4051,22 @@ export default function MatchStatsModal({
 
         {/* FOOTER ACTIONS */}
         <div className="bg-slate-950 border-t border-slate-800 px-4 py-3 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
-          <div className="flex items-center gap-2 text-[11px] text-slate-400">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-            <span className="hidden sm:inline">Los datos se vuelcan directamente en el informe del partido y en <strong>Estadísticas</strong>.</span>
-            <span className="sm:hidden">Sincroniza con Estadísticas</span>
+          <div className="flex items-center gap-3">
+            <Button
+              type="button"
+              onClick={() => setShowFullResetConfirm(true)}
+              variant="outline"
+              className="text-xs font-bold border-rose-500/50 hover:border-rose-400 bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 rounded-xl h-9.5 px-3.5 cursor-pointer flex items-center gap-1.5 transition-all shadow-sm"
+              title="Restablecer todo el partido a cero (cronómetro 00:00, marcador 0 - 0, eventos, estadísticas y cambios a 0) para volver a empezar"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
+              <span>Reiniciar Partido a 0</span>
+            </Button>
+
+            <div className="hidden sm:flex items-center gap-2 text-[11px] text-slate-400">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+              <span>Los datos se vuelcan directamente en el informe del partido y en <strong>Estadísticas</strong>.</span>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -3988,6 +4106,18 @@ export default function MatchStatsModal({
         variant="warning"
         onConfirm={() => executeResetChrono(isSecondHalf ? '2t' : '1t')}
         onClose={() => setShowResetConfirm(false)}
+      />
+
+      {/* Modal de confirmación para reiniciar TODO el partido a cero */}
+      <ConfirmModal
+        isOpen={showFullResetConfirm}
+        title="¿Reiniciar partido y estadísticas a 0?"
+        message="Esta acción restablecerá el cronómetro a 00:00 (Pre-partido), el marcador a 0 - 0, y pondrá a cero todos los minutos, goles, asistencias, tarjetas, eventos y cambios de todas las jugadoras para poder volver a empezar el encuentro desde cero."
+        confirmText="Sí, reiniciar todo a 0"
+        cancelText="Cancelar"
+        variant="danger"
+        onConfirm={executeResetMatchToZero}
+        onClose={() => setShowFullResetConfirm(false)}
       />
     </div>
   );
