@@ -574,7 +574,8 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
   const handleOpenStatsTrackerModal = (match: Match) => {
     const updatedPlayers = syncLatestPlayerPhotos(players, selectedTeam);
     setPlayers(updatedPlayers);
-    setShowStatsTrackerModal(match);
+    const latestMatch = matches.find(m => m.id === match.id) || match;
+    setShowStatsTrackerModal(latestMatch);
   };
 
   // Helper to generate poster image data URL using html-to-image with html2canvas fallback
@@ -1024,12 +1025,20 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
     const validPlayerIds = new Set(players.map(p => p.id));
     const cleanConv = selectedConvocadas.filter(id => validPlayerIds.has(id));
+    const cleanConvSet = new Set(cleanConv.map(String));
 
     const updated = matches.map(m => {
       if (m.id === showConvocatoriaModal.id) {
+        // Prune any players from jugadoras_stats that are no longer in this convocatoria
+        let updatedJugadorasStats = m.estadisticas?.jugadoras_stats;
+        if (Array.isArray(updatedJugadorasStats) && updatedJugadorasStats.length > 0) {
+          updatedJugadorasStats = updatedJugadorasStats.filter(st => cleanConvSet.has(String(st.playerId)));
+        }
+
         const newStats = {
           ...(m.estadisticas || {}),
           convocatoria: cleanConv,
+          jugadoras_stats: updatedJugadorasStats,
           hora_citacion: citacionHora,
           lugar: citacionLugar,
           equipacion: citacionEquipacion,

@@ -688,11 +688,46 @@ export default function MatchStatsModal({
   // Initialize data on match open - ALWAYS includes ALL players from team roster
   useEffect(() => {
     // 1. Get convocadas IDs as strings for safe matching
-    const convocadasRaw: any[] = match.convocatoria || [];
-    const convocadasIds = new Set(convocadasRaw.map(id => String(id)));
+    const convocadasRaw: any[] = 
+      (match.convocatoria && Array.isArray(match.convocatoria) && match.convocatoria.length > 0)
+        ? match.convocatoria
+        : (match.estadisticas?.convocatoria && Array.isArray(match.estadisticas.convocatoria) && match.estadisticas.convocatoria.length > 0)
+        ? match.estadisticas.convocatoria
+        : [];
+
+    const convokedIdSet = new Set<string>();
+    const convokedNameSet = new Set<string>();
+
+    convocadasRaw.forEach(item => {
+      if (!item) return;
+      if (typeof item === 'string' || typeof item === 'number') {
+        const idStr = String(item).trim();
+        convokedIdSet.add(idStr);
+        const matchPlayer = allPlayers.find(ap => String(ap.id).trim() === idStr);
+        if (matchPlayer) {
+          const k = normalizePlayerNameKey(matchPlayer.nombre, matchPlayer.apellidos);
+          if (k) convokedNameSet.add(k);
+        }
+      } else if (typeof item === 'object') {
+        if (item.id) convokedIdSet.add(String(item.id).trim());
+        const k = normalizePlayerNameKey(item.nombre, item.apellidos);
+        if (k) convokedNameSet.add(k);
+      }
+    });
 
     // 2. Existing match stats if previously saved
     const existingStats: MatchPlayerStat[] = match.estadisticas?.jugadoras_stats || [];
+
+    // Helper to check if a player was called up in the match convocatoria
+    const isPlayerInConvocatoria = (p: any): boolean => {
+      if (convocadasRaw.length === 0) return true; // If no convocatoria exists for this match, default to showing all players
+      const pIdStr = String(p.id).trim();
+      const pNormKey = normalizePlayerNameKey(p.nombre, p.apellidos);
+
+      if (convokedIdSet.has(pIdStr)) return true;
+      if (pNormKey && convokedNameSet.has(pNormKey)) return true;
+      return false;
+    };
 
     // 3. ONLY PLAYERS IN PLANTILLA:
     // Load deleted players list for the team
@@ -764,14 +799,19 @@ export default function MatchStatsModal({
       } catch {}
     }
 
+    // SI EL PARTIDO TIENE CONVOCATORIA DEFINIDA, SOLO DEBEN SALIR LAS JUGADORAS CONVOCADAS
+    const activeRoster: any[] = convocadasRaw.length > 0 
+      ? cleanRoster.filter(p => isPlayerInConvocatoria(p))
+      : cleanRoster;
+
     // Sort players primarily by dorsal (numeric)
-    cleanRoster.sort((a, b) => {
+    activeRoster.sort((a, b) => {
       const dorsalA = parseInt(a.dorsal) || 999;
       const dorsalB = parseInt(b.dorsal) || 999;
       return dorsalA - dorsalB;
     });
 
-    const initialPlayerStats: MatchPlayerStat[] = cleanRoster.map(p => {
+    const initialPlayerStats: MatchPlayerStat[] = activeRoster.map(p => {
       const pIdStr = String(p.id);
       const pNormKey = normalizePlayerNameKey(p.nombre, p.apellidos);
 
@@ -859,13 +899,7 @@ export default function MatchStatsModal({
       }
 
       // Check if player is convocada
-      const isConv = convocadasIds.size === 0 
-        || convocadasIds.has(pIdStr) 
-        || matchingStatsList.some(ms => ms.isConvocada) 
-        || convocadasRaw.some(cId => {
-          const cIdStr = String(cId);
-          return cIdStr === pIdStr || matchingStatsList.some(ms => String(ms.playerId) === cIdStr);
-        });
+      const isConv = true;
 
       // Respect registered position from Plantilla:
       const registeredPos = p.posicion && p.posicion !== 'Campo' && p.posicion !== 'Jugadora' ? p.posicion : (existing?.posicion || 'Campo');
@@ -934,7 +968,7 @@ export default function MatchStatsModal({
     if (startingTitulares.length > 0) {
       setRosterFilter('campo');
       setSelectedPlayerId(startingTitulares[0].playerId);
-    } else if (convocadasIds.size > 0 && initialPlayerStats.some(p => p.isConvocada)) {
+    } else if (convokedIdSet.size > 0 && initialPlayerStats.some(p => p.isConvocada)) {
       setRosterFilter('convocadas');
       const firstConv = initialPlayerStats.find(p => p.isConvocada);
       if (firstConv) {
