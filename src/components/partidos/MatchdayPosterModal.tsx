@@ -74,7 +74,7 @@ interface MatchdayPosterModalProps {
 export type PosterTheme =
   | 'convocatoria_modern' // Modelo de Convocatoria Oficial Moderno (fondo azul noche, duelo de equipos, logística detallada, jugadoras y lema oficial)
   | 'vintage_60s'      // Authentic 1960s letterpress Spanish football match poster (woodblock type, aged paper & vintage player)
-  | 'poveda_captacion' // Flagship: Official U.D. La Poveda poster with blue sky, paint splatters, watermark, dynamic player & brush ribbons
+  | 'poveda_captacion' // Flagship: Official CLUB poster with blue sky, paint splatters, watermark, dynamic player & brush ribbons
   | 'stadium_night'    // Authentic Matchday stadium under bright floodlights
   | 'poveda_brush'     // Dynamic club poster with royal blue paint splatters and value badges
   | 'editorial_press'; // Clean, high-impact federated sports split poster
@@ -153,12 +153,12 @@ export default function MatchdayPosterModal({
   const [topHeadline, setTopHeadline] = useState<string>('¡GRAN ENCUENTRO DE FÚTBOL!');
   const [ribbonLine1, setRibbonLine1] = useState<string>('CAMPEONATO OFICIAL DE LIGA');
   const [ribbonLine2, setRibbonLine2] = useState<string>('FEDERACIÓN REGIONAL • JORNADA OFICIAL');
-  const [impactLine1, setImpactLine1] = useState<string>('U. D. LA POVEDA');
+  const [impactLine1, setImpactLine1] = useState<string>('CLUB');
   const [impactLine2, setImpactLine2] = useState<string>('CONTRA RIVAL');
   const [bodyMessage, setBodyMessage] = useState<string>('EMOCIONANTE DISPUTA DE LOS DOS PUNTOS EN JUEGO. ¡ACUDE A ANIMAR AL EQUIPO DE TU PUEBLO!');
   const [actionBannerText, setActionBannerText] = useState<string>('¡ENTRADA GENERAL LIBRE!');
   const [iconBarMode, setIconBarMode] = useState<'partido' | 'valores'>('partido');
-  const [sloganLine1, setSloganLine1] = useState<string>('CAMPO MUNICIPAL DE DEPORTES "LA POVEDA"');
+  const [sloganLine1, setSloganLine1] = useState<string>('CAMPO MUNICIPAL DE DEPORTES "CLUB"');
   const [sloganLine2, setSloganLine2] = useState<string>('SE RUEGA LA MAYOR PUNTUALIDAD AL RESPETABLE PÚBLICO');
   const [contactEmail, setContactEmail] = useState<string>('COLEGIO OFICIAL DE ÁRBITROS');
   const [contactPhone, setContactPhone] = useState<string>('PRECIOS POPULARES');
@@ -167,7 +167,7 @@ export default function MatchdayPosterModal({
   const [mainHeadline, setMainHeadline] = useState<string>('DÍA DE PARTIDO');
   const [subHeadline, setSubHeadline] = useState<string>('TU EQUIPO. NUESTRA PASIÓN.');
   const [grandstandCallout, setGrandstandCallout] = useState<string>('¡TE ESPERAMOS EN LA GRADA! FORMA PARTE DE ALGO GRANDE');
-  const [mottoScript, setMottoScript] = useState<string>('ENTRENA. LUCHA. SUPÉRATE. VIVE LA POVEDA.');
+  const [mottoScript, setMottoScript] = useState<string>('ENTRENA. LUCHA. SUPÉRATE. VIVE EL CLUB.');
   const [isExporting, setIsExporting] = useState(false);
 
   // Initialize selected player
@@ -210,7 +210,7 @@ export default function MatchdayPosterModal({
   const isLocal = activeMatch.tipo === 'Local';
   const matchCompeticion = activeMatch.competicion || 'Amistoso';
   const matchHora = activeMatch.hora || '13:15';
-  const matchLugar = activeMatch.lugar || activeMatch.estadisticas?.lugar || (isLocal ? 'Polideportivo Municipal La Poveda (Campo Principal)' : `Campo Municipal de ${rivalName}`);
+  const matchLugar = activeMatch.lugar || activeMatch.estadisticas?.lugar || (isLocal ? 'Campo Municipal (Principal) (Campo Principal)' : `Campo Municipal de ${rivalName}`);
   const horaCitacion = activeMatch.hora_citacion || activeMatch.estadisticas?.hora_citacion || '1h 15m antes';
   const equipacion = activeMatch.equipacion || activeMatch.estadisticas?.equipacion || '1ª Equipación Oficial + Chándal';
 
@@ -265,20 +265,20 @@ export default function MatchdayPosterModal({
     const fDate = formatMatchDate(match.fecha);
     const comp = match.competicion ? match.competicion.toUpperCase() : 'LIGA RFFM';
     const hora = match.hora || '11:30';
-    const lug = match.lugar || match.estadisticas?.lugar || (isLoc ? 'Polideportivo Municipal La Poveda' : `Campo Municipal de ${riv}`);
+    const lug = match.lugar || match.estadisticas?.lugar || (isLoc ? 'Campo Municipal (Principal)' : `Campo Municipal de ${riv}`);
 
     setRibbonLine1(`${comp} • ${isLoc ? 'JUGAMOS EN CASA' : 'A DOMICILIO'}`);
     setRibbonLine2(`${fDate.bannerDate} • ${hora} H`);
-    setImpactLine1(isLoc ? 'U.D. LA POVEDA' : riv.toUpperCase());
-    setImpactLine2(isLoc ? `VS ${riv.toUpperCase()}` : 'VS U.D. LA POVEDA');
+    setImpactLine1(isLoc ? 'CLUB' : riv.toUpperCase());
+    setImpactLine2(isLoc ? `VS ${riv.toUpperCase()}` : 'VS CLUB');
     setBodyMessage(
       isLoc
         ? 'DEFENDEMOS NUESTROS COLORES EN CASA. ¡A POR LOS TRES PUNTOS!'
         : `VISITAMOS AL ${riv.toUpperCase()} CON TODA LA ENTREGA. ¡A POR LA VICTORIA!`
     );
     setSloganLine1(lug.toUpperCase());
-    setSloganLine2('¡JUNTOS SOMOS LA POVEDA!');
-    setContactEmail(isLoc ? 'POLIDEPORTIVO MUNICIPAL LA POVEDA' : lug.toUpperCase());
+    setSloganLine2('¡JUNTOS SOMOS EL CLUB!');
+    setContactEmail(isLoc ? 'CAMPO MUNICIPAL PRINCIPAL' : lug.toUpperCase());
     setContactPhone('ENTRADA LIBRE');
   }, []);
 
@@ -485,11 +485,11 @@ export default function MatchdayPosterModal({
       setTopHeadline('¡GRAN ENCUENTRO DE FÚTBOL!');
       setRibbonLine1('CAMPEONATO OFICIAL DE LIGA');
       setRibbonLine2(`FEDERACIÓN REGIONAL • JORNADA ${formattedDate.dayNum} DE ${formattedDate.monthName}`);
-      setImpactLine1(isLocal ? 'U. D. LA POVEDA' : rivalName.toUpperCase());
-      setImpactLine2(isLocal ? `CONTRA ${rivalName.toUpperCase()}` : 'CONTRA U. D. LA POVEDA');
+      setImpactLine1(isLocal ? 'CLUB' : rivalName.toUpperCase());
+      setImpactLine2(isLocal ? `CONTRA ${rivalName.toUpperCase()}` : 'CONTRA CLUB');
       setBodyMessage('EMOCIONANTE DISPUTA DE LOS DOS PUNTOS EN JUEGO. ¡ACUDE A ANIMAR AL EQUIPO DE TU PUEBLO!');
       setActionBannerText('¡ENTRADA GENERAL LIBRE!');
-      setSloganLine1(isLocal ? 'CAMPO MUNICIPAL DE DEPORTES "LA POVEDA"' : matchLugar.toUpperCase());
+      setSloganLine1(isLocal ? 'CAMPO MUNICIPAL DE DEPORTES "CLUB"' : matchLugar.toUpperCase());
       setSloganLine2('SE RUEGA LA MAYOR PUNTUALIDAD AL RESPETABLE PÚBLICO');
       setContactEmail('COLEGIO OFICIAL DE ÁRBITROS');
       setContactPhone('PRECIOS POPULARES');
@@ -505,13 +505,13 @@ export default function MatchdayPosterModal({
       setTopHeadline('¡DÍA DE PARTIDO!');
       setRibbonLine1(`${(teamName || 'SENIOR FEMENINO').toUpperCase()} • ${(matchCompeticion || 'AMISTOSO').toUpperCase()}`);
       setRibbonLine2(`${formattedDate.bannerDate} • ${matchHora} H`);
-      setImpactLine1(isLocal ? 'UD LA POVEDA' : rivalName.toUpperCase());
-      setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS UD LA POVEDA');
+      setImpactLine1(isLocal ? 'CLUB' : rivalName.toUpperCase());
+      setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS CLUB');
       setBodyMessage('¡Ven al campo a animar a nuestro equipo! Tu aliento desde la grada es fundamental para conseguir la victoria.');
       setActionBannerText('¡ENTRADA GENERAL LIBRE!');
       setSloganLine1(matchLugar.toUpperCase());
       setSloganLine2('¡CONFIANZA, ENTREGA Y VICTORIA! ¡A POR TODAS!');
-      setContactEmail(isLocal ? 'POLIDEPORTIVO MUNICIPAL LA POVEDA' : matchLugar.toUpperCase());
+      setContactEmail(isLocal ? 'CAMPO MUNICIPAL PRINCIPAL' : matchLugar.toUpperCase());
       setContactPhone('ENTRADA GRATUITA');
       toast.success('Cartel: Anuncio de Partido (Estilo Convocatoria)');
       return;
@@ -526,39 +526,39 @@ export default function MatchdayPosterModal({
       setTopHeadline('DÍA DE PARTIDO');
       setRibbonLine1(`${matchCompeticion.toUpperCase()} • ${isLocal ? 'JUGAMOS EN CASA' : 'A DOMICILIO'}`);
       setRibbonLine2(`${formattedDate.bannerDate} • ${matchHora} H`);
-      setImpactLine1(isLocal ? 'U.D. LA POVEDA' : rivalName.toUpperCase());
-      setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS U.D. LA POVEDA');
+      setImpactLine1(isLocal ? 'CLUB' : rivalName.toUpperCase());
+      setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS CLUB');
       setBodyMessage(isLocal ? 'DEFENDEMOS NUESTROS COLORES EN CASA. ¡A POR LOS TRES PUNTOS!' : `VISITAMOS AL ${rivalName.toUpperCase()} CON TODA LA ENTREGA. ¡A POR LA VICTORIA!`);
       setActionBannerText('¡TE ESPERAMOS EN LA GRADA!');
       setSloganLine1(matchLugar.toUpperCase());
-      setSloganLine2('¡JUNTOS SOMOS LA POVEDA!');
-      setContactEmail(isLocal ? 'POLIDEPORTIVO MUNICIPAL LA POVEDA' : matchLugar.toUpperCase());
+      setSloganLine2('¡JUNTOS SOMOS EL CLUB!');
+      setContactEmail(isLocal ? 'CAMPO MUNICIPAL PRINCIPAL' : matchLugar.toUpperCase());
       setContactPhone('ENTRADA LIBRE');
       toast.success('Cartel: Día de Partido Oficial');
     } else if (preset === 'matchday') {
       setTopHeadline('MATCHDAY');
       setRibbonLine1(`${matchCompeticion.toUpperCase()} • JORNADA OFICIAL`);
       setRibbonLine2(`${formattedDate.bannerDate} • ${matchHora} H`);
-      setImpactLine1(isLocal ? 'U.D. LA POVEDA' : rivalName.toUpperCase());
-      setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS U.D. LA POVEDA');
+      setImpactLine1(isLocal ? 'CLUB' : rivalName.toUpperCase());
+      setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS CLUB');
       setBodyMessage('CON TODO NUESTRO EQUIPO Y NUESTRA AFICIÓN. ¡A POR EL TRIUNFO!');
       setActionBannerText('¡A POR LA VICTORIA!');
       setSloganLine1(matchLugar.toUpperCase());
       setSloganLine2('¡JUNTOS A POR LOS 3 PUNTOS!');
-      setContactEmail(isLocal ? 'POLIDEPORTIVO MUNICIPAL LA POVEDA' : matchLugar.toUpperCase());
-      setContactPhone('U.D. LA POVEDA');
+      setContactEmail(isLocal ? 'CAMPO MUNICIPAL PRINCIPAL' : matchLugar.toUpperCase());
+      setContactPhone('CLUB');
       toast.success('Cartel: Matchday Épico');
     } else if (preset === 'aficion') {
       setTopHeadline('¡HOY JUGAMOS!');
       setRibbonLine1(`TU ALIENTO EN LA GRADA NOS HACE FUERTES`);
       setRibbonLine2(`${formattedDate.bannerDate} • ${matchHora} H`);
-      setImpactLine1('U.D. LA POVEDA');
+      setImpactLine1('CLUB');
       setImpactLine2(`VS ${rivalName.toUpperCase()}`);
       setBodyMessage('TU APOYO ES NUESTRO JUGADOR NÚMERO 12. ¡TODOS CON EL EQUIPO!');
       setActionBannerText('¡LLENEMOS EL POLIDEPORTIVO!');
       setSloganLine1('ENTRADA LIBRE PARA TODA LA AFICIÓN');
       setSloganLine2('¡MÁS QUE UN CLUB, UNA FAMILIA!');
-      setContactEmail(isLocal ? 'POLIDEPORTIVO MUNICIPAL LA POVEDA' : matchLugar.toUpperCase());
+      setContactEmail(isLocal ? 'CAMPO MUNICIPAL PRINCIPAL' : matchLugar.toUpperCase());
       setContactPhone('ENTRADA GRATUITA');
       toast.success('Cartel: Llamada a la Afición');
     }
@@ -566,10 +566,10 @@ export default function MatchdayPosterModal({
 
   // Generate WhatsApp announcement text
   const generateWhatsappAnnouncement = () => {
-    return `📢⚽ *${topHeadline} | U.D. LA POVEDA* ⚽📢\n` +
-      `🔵⚪ *${isLocal ? 'U.D. LA POVEDA vs ' + rivalName.toUpperCase() : rivalName.toUpperCase() + ' vs U.D. LA POVEDA'}* ⚪🔵\n\n` +
+    return `📢⚽ *${topHeadline} | CLUB* ⚽📢\n` +
+      `🔵⚪ *${isLocal ? 'CLUB vs ' + rivalName.toUpperCase() : rivalName.toUpperCase() + ' vs CLUB'}* ⚪🔵\n\n` +
       `🏆 *Competición:* ${matchCompeticion.toUpperCase()} (${teamName})\n` +
-      `📍 *Condición:* ${isLocal ? 'Local (Polideportivo La Poveda)' : 'Visitante (Fuera)'}\n\n` +
+      `📍 *Condición:* ${isLocal ? 'Local (Campo Municipal)' : 'Visitante (Fuera)'}\n\n` +
       `📅 *Fecha:* ${formattedDate.fullDate}\n` +
       `⏰ *Hora del Partido:* ${matchHora} h (Citación: ${horaCitacion})\n` +
       `🏟️ *Campo de Juego:* ${matchLugar}\n` +
@@ -577,7 +577,7 @@ export default function MatchdayPosterModal({
       `🔥 *${actionBannerText}*\n` +
       `✨ _"${bodyMessage}"_\n\n` +
       `❤️ *${sloganLine2}*\n` +
-      `_#UDLaPoveda #AúpaPoveda #DíaDePartido #FútbolArganda_`;
+      `_#Club #AúpaClub #DíaDePartido #FútbolArganda_`;
   };
 
   // Helper to reliably render the poster element to a high-quality data URL
@@ -648,7 +648,7 @@ export default function MatchdayPosterModal({
     try {
       const dataUrl = await getPosterDataUrl(el);
       const cleanRival = (rivalName || 'Rival').replace(/[^a-zA-Z0-9_-]/g, '_');
-      const filename = `CARTEL_PARTIDO_UD_LA_POVEDA_VS_${cleanRival}.png`;
+      const filename = `CARTEL_PARTIDO_CLUB_VS_${cleanRival}.png`;
 
       const link = document.createElement('a');
       link.download = filename;
@@ -736,7 +736,7 @@ export default function MatchdayPosterModal({
       pdf.addImage(imgData, 'PNG', x, y, finalW, finalH, undefined, 'FAST');
 
       const cleanRival = (rivalName || 'Rival').replace(/[^a-zA-Z0-9_-]/g, '_');
-      const filename = `Cartel_Partido_UD_LA_POVEDA_VS_${cleanRival}.pdf`;
+      const filename = `Cartel_Partido_CLUB_VS_${cleanRival}.pdf`;
 
       try {
         pdf.save(filename);
@@ -937,7 +937,7 @@ export default function MatchdayPosterModal({
                 <h3 className="font-black text-white text-base sm:text-lg uppercase tracking-tight flex items-center gap-2">
                   <span>Cartel Oficial de Partido (Matchday)</span>
                   <span className="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/40 px-2 py-0.5 rounded-full font-extrabold">
-                    U.D. LA POVEDA
+                    CLUB
                   </span>
                 </h3>
               </div>
@@ -970,7 +970,7 @@ export default function MatchdayPosterModal({
                   <span>Estilo de Anuncio de Partido</span>
                 </label>
                 <span className="text-[10px] text-cyan-300 font-bold bg-cyan-400/10 border border-cyan-400/30 px-2 py-0.5 rounded-full">
-                  Diseño Oficial Poveda
+                  Diseño Oficial Club
                 </span>
               </div>
 
@@ -1093,7 +1093,7 @@ export default function MatchdayPosterModal({
               >
                 {allMatches.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.fecha} • {m.tipo === 'Local' ? `UD LA POVEDA vs ${m.rival}` : `${m.rival} vs UD LA POVEDA`} ({m.competicion})
+                    {m.fecha} • {m.tipo === 'Local' ? `CLUB vs ${m.rival}` : `${m.rival} vs CLUB`} ({m.competicion})
                   </option>
                 ))}
               </select>
@@ -1111,7 +1111,7 @@ export default function MatchdayPosterModal({
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Condición:</span>
                   <span className={`font-bold px-2 py-0.5 rounded text-[10px] uppercase ${isLocal ? 'bg-blue-600/30 text-blue-300 border border-blue-500/40' : 'bg-amber-600/30 text-amber-300 border border-amber-500/40'}`}>
-                    {isLocal ? '🏠 Local (La Poveda)' : '🚌 Visitante (Fuera)'}
+                    {isLocal ? '🏠 Local (Club)' : '🚌 Visitante (Fuera)'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -1187,8 +1187,8 @@ export default function MatchdayPosterModal({
                     setTopHeadline('¡DÍA DE PARTIDO!');
                     setRibbonLine1(`${(teamName || 'SENIOR FEMENINO').toUpperCase()} • ${(matchCompeticion || 'AMISTOSO').toUpperCase()}`);
                     setRibbonLine2(`${formattedDate.bannerDate} • ${matchHora} H`);
-                    setImpactLine1(isLocal ? 'UD LA POVEDA' : rivalName.toUpperCase());
-                    setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS UD LA POVEDA');
+                    setImpactLine1(isLocal ? 'CLUB' : rivalName.toUpperCase());
+                    setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS CLUB');
                     setBodyMessage('¡Ven al campo a animar a nuestro equipo! Tu aliento desde la grada es fundamental para conseguir la victoria.');
                     setActionBannerText('¡ENTRADA GENERAL LIBRE!');
                     setSloganLine2('¡CONFIANZA, ENTREGA Y VICTORIA! ¡A POR TODAS!');
@@ -1252,7 +1252,7 @@ export default function MatchdayPosterModal({
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="block leading-tight font-black text-white">Oficial Poveda</span>
+                    <span className="block leading-tight font-black text-white">Oficial Club</span>
                     <span className="text-[9px] bg-cyan-400/20 text-cyan-300 px-1.5 py-0.5 rounded font-bold">Moderno</span>
                   </div>
                   <span className="text-[9px] text-slate-400 font-normal normal-case block mt-0.5">salpicaduras & cielo</span>
@@ -1329,7 +1329,7 @@ export default function MatchdayPosterModal({
                   <span className="text-[9px] text-slate-400 block leading-tight">Balón de cuero clásico</span>
                 </button>
 
-                {/* 1. Jugador Oficial Poveda */}
+                {/* 1. Jugador Oficial Club */}
                 <button
                   type="button"
                   onClick={() => setCharacterMode('captacion_player')}
@@ -1341,7 +1341,7 @@ export default function MatchdayPosterModal({
                 >
                   <div className="flex items-center gap-1.5 mb-1">
                     <Zap className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                    <span className="text-xs font-black">Jugador Poveda</span>
+                    <span className="text-xs font-black">Jugador Club</span>
                   </div>
                   <span className="text-[9px] text-slate-400 block leading-tight">Acción & pintura oficial</span>
                 </button>
@@ -1622,7 +1622,7 @@ export default function MatchdayPosterModal({
                         value={impactLine1}
                         onChange={(e) => setImpactLine1(e.target.value.toUpperCase())}
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white font-black italic focus:outline-none focus:border-cyan-500"
-                        placeholder="U.D. LA POVEDA"
+                        placeholder="CLUB"
                       />
                     </div>
                     <div>
@@ -1744,7 +1744,7 @@ export default function MatchdayPosterModal({
                         value={contactEmail}
                         onChange={(e) => setContactEmail(e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white font-medium focus:outline-none focus:border-cyan-500"
-                        placeholder="POLIDEPORTIVO LA POVEDA"
+                        placeholder="CAMPO MUNICIPAL"
                       />
                     </div>
                     <div>
@@ -2067,7 +2067,7 @@ export default function MatchdayPosterModal({
                           {/* Halftone & duotone vintage ink wash */}
                           <div className="absolute inset-0 bg-gradient-to-t from-[#14234b]/30 via-transparent to-transparent pointer-events-none" />
                           <div className="absolute bottom-0 inset-x-0 bg-[#14234b]/90 text-white text-[7px] sm:text-[8px] font-black uppercase text-center py-0.5 tracking-wider">
-                            U.D. LA POVEDA
+                            CLUB
                           </div>
                         </div>
                       </div>
@@ -2081,7 +2081,7 @@ export default function MatchdayPosterModal({
                           {isLocal ? 'CAMPO DE DEPORTES' : 'CAMPO MUNICIPAL'}
                         </span>
                         <span className="text-xs sm:text-sm font-black text-[#8b1e1e] leading-tight my-0.5">
-                          {isLocal ? '"LA POVEDA"' : rivalName.toUpperCase()}
+                          {isLocal ? '"CLUB"' : rivalName.toUpperCase()}
                         </span>
                         <span className="text-[7.5px] sm:text-[8px] font-bold uppercase text-stone-600 leading-none">
                           {isLocal ? 'ARGANDA DEL REY' : 'MADRID'}
@@ -2164,7 +2164,7 @@ export default function MatchdayPosterModal({
 
                       {/* Club Title */}
                       <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white uppercase italic leading-none drop-shadow-md">
-                        UD LA POVEDA
+                        CLUB
                       </h1>
 
                       {/* Category & Competition */}
@@ -2218,7 +2218,7 @@ export default function MatchdayPosterModal({
                             LOCAL
                           </span>
                           <p className="text-[11px] sm:text-xs md:text-sm font-black text-white uppercase tracking-tight leading-tight mt-0.5 line-clamp-2">
-                            {isLocal ? 'UD LA POVEDA' : rivalName.toUpperCase()}
+                            {isLocal ? 'CLUB' : rivalName.toUpperCase()}
                           </p>
                         </div>
 
@@ -2247,7 +2247,7 @@ export default function MatchdayPosterModal({
                             VISITANTE
                           </span>
                           <p className="text-[11px] sm:text-xs md:text-sm font-black text-white uppercase tracking-tight leading-tight mt-0.5 line-clamp-2">
-                            {isLocal ? rivalName.toUpperCase() : 'UD LA POVEDA'}
+                            {isLocal ? rivalName.toUpperCase() : 'CLUB'}
                           </p>
                         </div>
                       </div>
@@ -2272,7 +2272,7 @@ export default function MatchdayPosterModal({
                         <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-cyan-500/15 to-blue-600/10 rounded-2xl blur-lg pointer-events-none" />
                         <img 
                           src={povedaPlayerBrushImg} 
-                          alt="Jugador UD La Poveda" 
+                          alt="Jugador CLUB" 
                           className="h-full max-h-[95px] sm:max-h-[110px] object-contain drop-shadow-[0_10px_20px_rgba(6,182,212,0.3)] relative z-10 transform -scale-x-100"
                           crossOrigin="anonymous"
                         />
@@ -2375,7 +2375,7 @@ export default function MatchdayPosterModal({
                         </div>
                         <div>
                           <span className="block text-[11px] font-black uppercase text-white tracking-widest leading-none drop-shadow">
-                            U.D. LA POVEDA
+                            CLUB
                           </span>
                           <span className="block text-[8px] font-bold uppercase text-cyan-200 tracking-wider">
                             Arganda del Rey • Madrid
@@ -2428,7 +2428,7 @@ export default function MatchdayPosterModal({
 
                       <img
                         src={activePhotoSrc || povedaPlayerBrushImg}
-                        alt="Jugador UD La Poveda"
+                        alt="Jugador CLUB"
                         className="relative z-10 w-full max-h-[260px] object-contain drop-shadow-[0_12px_24px_rgba(4,24,72,0.35)] transform -scale-x-100 hover:scale-105 transition-transform"
                         crossOrigin="anonymous"
                       />
@@ -2609,7 +2609,7 @@ export default function MatchdayPosterModal({
                         </div>
                         <div>
                           <span className={`block font-black text-xs tracking-wider uppercase leading-tight ${currentBg.primaryText}`}>
-                            U.D. LA POVEDA
+                            CLUB
                           </span>
                           <span className={`block font-bold text-[9px] uppercase tracking-widest leading-none ${currentBg.subText}`}>
                             {teamName}
@@ -2648,13 +2648,13 @@ export default function MatchdayPosterModal({
                     <div className="w-full max-w-sm bg-gradient-to-r from-slate-950/85 via-blue-950/90 to-slate-950/85 border border-blue-500/40 rounded-2xl p-3 shadow-2xl backdrop-blur-md">
                       <div className="flex items-center justify-around">
                         
-                        {/* Club 1: U.D. La Poveda */}
+                        {/* Club 1: CLUB */}
                         <div className="flex flex-col items-center text-center max-w-[120px]">
                           <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white p-1 shadow-lg shadow-blue-500/30 border-2 border-blue-600 flex items-center justify-center">
                             <UDLaPovedaLogo className="w-full h-full" />
                           </div>
                           <span className="mt-1.5 text-xs sm:text-sm font-black text-white uppercase tracking-tight leading-tight">
-                            U.D. LA POVEDA
+                            CLUB
                           </span>
                           <span className="text-[9px] font-extrabold text-blue-300 uppercase">
                             {isLocal ? 'LOCAL' : 'VISITANTE'}
@@ -2739,7 +2739,7 @@ export default function MatchdayPosterModal({
                         <UDLaPovedaLogo className="w-full h-full" />
                       </div>
                       <span className="font-extrabold uppercase tracking-wide text-slate-200 truncate">
-                        U.D. LA POVEDA • MÁS QUE UN CLUB, UNA FAMILIA.
+                        CLUB • MÁS QUE UN CLUB, UNA FAMILIA.
                       </span>
                     </div>
 
@@ -2790,7 +2790,7 @@ export default function MatchdayPosterModal({
                         </div>
                         <div>
                           <span className="block text-blue-950 font-black text-xs uppercase tracking-wider leading-none">
-                            U.D. LA POVEDA
+                            CLUB
                           </span>
                           <span className="block text-blue-700 font-bold text-[9px] uppercase tracking-widest leading-none mt-0.5">
                             {teamName}
@@ -2836,7 +2836,7 @@ export default function MatchdayPosterModal({
                         {isLocal ? 'PARTIDO EN NUESTRO FEUDO' : 'PARTIDO A DOMICILIO'}
                       </div>
                       <div className="text-base sm:text-lg font-black uppercase tracking-tight text-white flex items-center justify-center gap-2">
-                        <span>U.D. LA POVEDA</span>
+                        <span>CLUB</span>
                         <span className="text-amber-400 font-black text-sm">VS</span>
                         <span className="text-yellow-200">{rivalName}</span>
                       </div>
@@ -2900,7 +2900,7 @@ export default function MatchdayPosterModal({
                         <UDLaPovedaLogo className="w-full h-full" />
                       </div>
                       <span className="font-extrabold uppercase tracking-wide text-slate-200 truncate">
-                        U.D. LA POVEDA • MÁS QUE UN CLUB, UNA FAMILIA.
+                        CLUB • MÁS QUE UN CLUB, UNA FAMILIA.
                       </span>
                     </div>
 
@@ -2935,7 +2935,7 @@ export default function MatchdayPosterModal({
                       </div>
                       <div>
                         <span className="text-white font-black text-sm uppercase tracking-wider block leading-none">
-                          U.D. LA POVEDA
+                          CLUB
                         </span>
                         <span className="text-amber-300 text-[10px] font-bold uppercase tracking-widest block mt-0.5">
                           {teamName} • {matchCompeticion}
@@ -2964,7 +2964,7 @@ export default function MatchdayPosterModal({
                     {/* Big Clash Box */}
                     <div className="my-2 bg-black/40 backdrop-blur-md border border-white/20 rounded-2xl p-3 sm:p-3.5 shadow-2xl flex items-center justify-around">
                       <div className="text-center">
-                        <span className="block text-base sm:text-lg font-black text-white uppercase">U.D. LA POVEDA</span>
+                        <span className="block text-base sm:text-lg font-black text-white uppercase">CLUB</span>
                         <span className="text-[9px] font-bold text-cyan-300 uppercase">{isLocal ? 'LOCAL' : 'VISITANTE'}</span>
                       </div>
                       <div className="w-9 h-9 rounded-xl bg-amber-400 text-slate-950 font-black text-sm flex items-center justify-center shadow">
@@ -3010,7 +3010,7 @@ export default function MatchdayPosterModal({
                   {/* Corporate Footer */}
                   <div className="relative z-10 bg-slate-950 border-t border-slate-800 px-4 py-2 flex items-center justify-between text-[10px] text-slate-300">
                     <span className="font-extrabold text-white uppercase truncate">
-                      U.D. LA POVEDA • MÁS QUE UN CLUB, UNA FAMILIA.
+                      CLUB • MÁS QUE UN CLUB, UNA FAMILIA.
                     </span>
                     <span className="font-bold text-slate-400 shrink-0">
                       Arganda del Rey, Madrid

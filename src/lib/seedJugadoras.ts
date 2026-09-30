@@ -128,7 +128,7 @@ export async function syncJugadorasToDatabaseAndLocalStorage() {
           foto_url: null,
           estado: 'Fichado',
           potencial: j.potencial,
-          equipo_actual: j.equipo_actual || 'UD La Poveda',
+          equipo_actual: j.equipo_actual || 'CLUB',
           equipo_asignado: 'SENIOR FEMENINO',
           created_by: user?.id || undefined,
           observaciones: `Posición principal: ${j.posicion_detalle}. Fecha nacimiento: ${j.fecha_nacimiento}`

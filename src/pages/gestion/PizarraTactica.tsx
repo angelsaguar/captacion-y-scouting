@@ -115,7 +115,7 @@ export default function PizarraTactica() {
       };
     };
 
-    // Coordinate templates for UD La Poveda (Left Side, 50 to 380)
+    // Coordinate templates for CLUB (Left Side, 50 to 380)
     let redCoords: { label: string; x: number; y: number; posType: string; slotIdx: number }[] = [];
 
     if (povedaSystem === '1-4-3-3') {
@@ -184,7 +184,7 @@ export default function PizarraTactica() {
         fullName: pInfo.fullName,
         x: coord.x,
         y: coord.y,
-        color: '#ef4444', // Red (La Poveda)
+        color: '#ef4444', // Red (Club)
         posType: coord.posType
       });
     });
@@ -281,7 +281,7 @@ export default function PizarraTactica() {
     if (rivalSystem === '1-4-3-3') {
       suggestion = 'Para contrarrestar un 1-4-3-3 con extremos muy abiertos, proponemos jugar con un **1-3-5-2**. El uso de un centro de campo superpoblado (5 jugadoras contra 3 rivales) nos garantizará una superioridad numérica abrumadora en el carril central para dominar la posesión. Además, nuestros carrileros deben fijar las subidas de sus laterales e impedir la libertad de sus extremos en el juego a las bandas.';
     } else if (rivalSystem === '1-4-4-2') {
-      suggestion = 'Frente al clásico 1-4-4-2 plano del rival, el sistema **1-4-3-3** es la respuesta ideal. Situar 3 delanteras contra sus 4 defensoras obligará a sus centrales a dudar en las marcas. Además, el pivote defensivo de La Poveda se mantendrá libre para iniciar juego limpio, y crearemos superioridades 3v2 constantes frente a su doble pivote en el medio campo.';
+      suggestion = 'Frente al clásico 1-4-4-2 plano del rival, el sistema **1-4-3-3** es la respuesta ideal. Situar 3 delanteras contra sus 4 defensoras obligará a sus centrales a dudar en las marcas. Además, el pivote defensivo de nuestro Club se mantendrá libre para iniciar juego limpio, y crearemos superioridades 3v2 constantes frente a su doble pivote en el medio campo.';
     } else if (rivalSystem === '1-3-4-3') {
       suggestion = 'Contra un esquema agresivo de 3 centrales como el 1-3-4-3, la mejor opción es el **1-4-4-2** o **1-4-3-3**. Al contar el rival con solo 3 zagueros, los pasillos exteriores quedan completamente desprotegidos. Es vital realizar doblamientos laterales rápidos por fuera para generar situaciones de 2 contra 1 letales contra sus defensores exteriores.';
     } else { // 1-3-5-2
@@ -333,7 +333,7 @@ export default function PizarraTactica() {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     ctx.fill();
 
-    // Penalty Area Left (UD La Poveda side)
+    // Penalty Area Left (CLUB side)
     ctx.strokeRect(20, height / 2 - 120, 100, 240);
     ctx.strokeRect(20, height / 2 - 60, 35, 120); // Goal Area
     // Penalty Spot Left
@@ -500,7 +500,7 @@ export default function PizarraTactica() {
         <div className="flex flex-col gap-1.5">
           <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider flex items-center gap-1.5">
             <Trophy className="w-3.5 h-3.5 text-red-500" />
-            <span>Formación UD La Poveda (Rojas)</span>
+            <span>Formación CLUB (Rojas)</span>
           </label>
           <select 
             value={povedaSystem} 
@@ -637,7 +637,7 @@ export default function PizarraTactica() {
       <div className="bg-blue-950/20 border border-blue-500/10 rounded-2xl p-3 flex items-start gap-2.5 text-[11px] text-blue-400 font-semibold leading-relaxed">
         <Info className="w-4 h-4 shrink-0 mt-0.5" />
         <p>
-          Los jugadores de <strong className="text-white">La Poveda (Rojo)</strong> se han cargado automáticamente desde la plantilla real según sus posiciones correspondientes. Coloca el cursor encima de las fichas rojas para ver los nombres completos de las jugadoras asignadas. Arrastra cualquier ficha libremente.
+          Los jugadores de <strong className="text-white">CLUB (Rojo)</strong> se han cargado automáticamente desde la plantilla real según sus posiciones correspondientes. Coloca el cursor encima de las fichas rojas para ver los nombres completos de las jugadoras asignadas. Arrastra cualquier ficha libremente.
         </p>
       </div>
 

@@ -61,7 +61,7 @@ export default function App() {
   if (loading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
-        <div className="animate-pulse text-xl font-bold tracking-tighter text-blue-600">U.D. LA POVEDA SCOUTING...</div>
+        <div className="animate-pulse text-xl font-bold tracking-tighter text-blue-600">CLUB SCOUTING...</div>
       </div>
     );
   }

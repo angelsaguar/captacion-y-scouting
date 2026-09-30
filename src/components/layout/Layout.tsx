@@ -43,7 +43,7 @@ export default function Layout() {
             <UDLaPovedaLogo className="w-8 h-8" />
           </div>
           <div>
-            <h1 className="font-bold text-sm tracking-tight leading-tight">U.D. LA POVEDA</h1>
+            <h1 className="font-bold text-sm tracking-tight leading-tight">CLUB</h1>
             <p className="text-[9px] text-slate-400 uppercase tracking-widest font-semibold">Scouting System</p>
           </div>
         </div>

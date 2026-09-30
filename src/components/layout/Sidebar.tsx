@@ -52,7 +52,7 @@ export default function Sidebar({ onClose, onCollapse, isCollapsed }: SidebarPro
             <UDLaPovedaLogo className="w-10 h-10" />
           </div>
           <div>
-            <h1 className="font-bold text-base tracking-tight leading-tight">U.D. LA POVEDA</h1>
+            <h1 className="font-bold text-base tracking-tight leading-tight">CLUB</h1>
             <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Scouting System</p>
           </div>
         </div>

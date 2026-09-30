@@ -21,7 +21,7 @@ export interface Player {
   email?: string; // New field for player/family email
   contacto_tipo?: ContactType;
   equipo_actual?: string;
-  equipo_asignado?: string; // New field for assigned team in La Poveda club
+  equipo_asignado?: string; // New field for assigned team in Club club
   dorsal?: string;
   posicion: string;
   posicion_secundaria?: string;
@@ -74,7 +74,7 @@ export interface Coach {
   email?: string; // New field for coach email
   telefono?: string; // New field for coach phone number
   observaciones?: string;
-  equipo_asignado?: string; // New field for assigned team in La Poveda club
+  equipo_asignado?: string; // New field for assigned team in Club club
   created_by?: string;
   created_at?: string;
 }

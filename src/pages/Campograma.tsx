@@ -78,8 +78,210 @@ export interface PlayerRoster {
   nombre: string;
   apellidos?: string;
   dorsal?: string | number;
+  posicion?: string;
   posicionOriginal?: string;
+  lateralidad?: string;
   foto_url?: string;
+}
+
+export function getTacticalPositionAffinity(
+  playerPosStr: string,
+  pos: TacticalPosition,
+  playerLateralidad?: string
+): number {
+  if (!playerPosStr) return 500;
+  
+  const raw = playerPosStr
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+  
+  const posLabel = pos.label
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+  const posId = pos.id.toUpperCase();
+
+  // 1. Portero / Portera / Arquero / Guardameta
+  const isGoalkeeper = raw.includes('porter') || raw.includes('arquer') || raw.includes('guardameta') || raw === 'por' || raw === 'gk';
+  const isPosGk = posId === 'GK' || posLabel.includes('porter');
+  if (isGoalkeeper) {
+    return isPosGk ? 10000 : -10000;
+  }
+  if (isPosGk) {
+    return -10000;
+  }
+
+  // Exact match with label or short label
+  if (posLabel === raw || pos.shortLabel.toLowerCase() === raw) {
+    return 9800;
+  }
+
+  // 2. Lateral Izquierdo / Carrilero Zurdo
+  const isLatIzq = (raw.includes('lateral') || raw.includes('carril') || raw === 'li' || raw === 'lci' || raw === 'cri') && 
+                   (raw.includes('izq') || raw.includes('zur') || playerLateralidad === 'Izquierdo');
+  if (isLatIzq) {
+    if (posId === 'LI' || posId === 'CAR_I' || posLabel.includes('lateral izquierdo') || posLabel.includes('carrilero izquierdo')) return 9500;
+    if (posId === 'DFC1' || posId === 'DFC_I' || posLabel.includes('central izquierdo') || posLabel.includes('cierre izquierdo')) return 4000;
+    if (posId.startsWith('DFC') || posId === 'DFC') return 2500;
+    if (posId === 'LD' || posId === 'CAR_D' || posLabel.includes('derech')) return -2000;
+    return 1000;
+  }
+
+  // 3. Lateral Derecho / Carrilero Diestro
+  const isLatDer = (raw.includes('lateral') || raw.includes('carril') || raw === 'ld' || raw === 'lcd' || raw === 'crd') && 
+                   (raw.includes('der') || raw.includes('die') || playerLateralidad === 'Derecho');
+  if (isLatDer) {
+    if (posId === 'LD' || posId === 'CAR_D' || posLabel.includes('lateral derecho') || posLabel.includes('carrilero derecho')) return 9500;
+    if (posId === 'DFC2' || posId === 'DFC_D' || posLabel.includes('central derecho') || posLabel.includes('cierre derecho')) return 4000;
+    if (posId.startsWith('DFC') || posId === 'DFC') return 2500;
+    if (posId === 'LI' || posId === 'CAR_I' || posLabel.includes('izquierd')) return -2000;
+    return 1000;
+  }
+
+  // 4. Lateral genérico (sin banda específica)
+  if (raw.includes('lateral') || raw.includes('carril') || raw === 'lat') {
+    if (posId === 'LI' || posId === 'LD' || posId === 'CAR_I' || posId === 'CAR_D' || posLabel.includes('lateral')) return 9000;
+    if (posId.startsWith('DFC') || posId === 'DFC') return 3500;
+    return 1000;
+  }
+
+  // 5. Central Zurdo / Central Izquierdo
+  const isCentZurdo = (raw.includes('central') || raw.includes('cierre') || raw === 'dfc' || raw === 'cz') && 
+                      (raw.includes('zur') || raw.includes('izq') || playerLateralidad === 'Izquierdo');
+  if (isCentZurdo) {
+    if (posId === 'DFC1' || posId === 'DFC_I' || posLabel.includes('central izquierdo') || posLabel.includes('cierre izquierdo')) return 9500;
+    if (posId === 'DFC_C' || posId === 'DFC' || posLabel.includes('libero') || posLabel.includes('cierre')) return 8000;
+    if (posId === 'DFC2' || posId === 'DFC_D') return 6500;
+    if (posId === 'LI') return 3500;
+    if (posId === 'MCD' || posId === 'MCD1') return 3000;
+    return 1000;
+  }
+
+  // 6. Central Diestro / Central Derecho
+  const isCentDiestro = (raw.includes('central') || raw.includes('cierre') || raw === 'dfc' || raw === 'cd') && 
+                        (raw.includes('die') || raw.includes('der') || playerLateralidad === 'Derecho');
+  if (isCentDiestro) {
+    if (posId === 'DFC2' || posId === 'DFC_D' || posLabel.includes('central derecho') || posLabel.includes('cierre derecho')) return 9500;
+    if (posId === 'DFC_C' || posId === 'DFC' || posLabel.includes('libero') || posLabel.includes('cierre')) return 8000;
+    if (posId === 'DFC1' || posId === 'DFC_I') return 6500;
+    if (posId === 'LD') return 3500;
+    if (posId === 'MCD' || posId === 'MCD2') return 3000;
+    return 1000;
+  }
+
+  // 7. Central genérico / Cierre / Líbero
+  if (raw.includes('central') || raw.includes('cierre') || raw.includes('libero') || raw === 'dfc' || raw === 'cb') {
+    if (posId.startsWith('DFC') || posId === 'DFC' || posLabel.includes('central') || posLabel.includes('cierre') || posLabel.includes('libero')) return 9000;
+    if (posId === 'LI' || posId === 'LD') return 3000;
+    if (posId.startsWith('MCD')) return 2500;
+    return 1000;
+  }
+
+  // 8. Defensa genérica
+  if (raw.includes('defensa') || raw === 'def') {
+    if (posId.startsWith('DFC') || posId === 'DFC' || posId === 'LI' || posId === 'LD' || posLabel.includes('central') || posLabel.includes('lateral')) return 8000;
+    if (posId.startsWith('MCD')) return 2500;
+    return 1000;
+  }
+
+  // 9. Pivote / Medio Centro Defensivo / MCD
+  const isPivote = raw.includes('pivote') || raw.includes('defensivo') || raw === 'mcd' || raw.includes('medio defensivo');
+  if (isPivote) {
+    if (posId === 'MCD' || posId === 'MCD1' || posId === 'MCD2' || posLabel.includes('pivote') || posLabel.includes('defensivo')) return 9500;
+    if (posId === 'MC' || posId === 'MC1' || posId === 'MC2' || posLabel.includes('medio centro')) return 6500;
+    if (posId.startsWith('DFC') || posId === 'DFC') return 3000;
+    return 1500;
+  }
+
+  // 10. Interior Izquierdo / Interior Zurdo / Medio Izquierdo
+  const isIntIzq = (raw.includes('interior') || raw.includes('medio izq') || raw === 'mi' || raw === 'mci' || raw === 'ii') && 
+                   (raw.includes('izq') || raw.includes('zur') || playerLateralidad === 'Izquierdo');
+  if (isIntIzq) {
+    if (posId === 'MC1' || posId === 'MCI' || (posId === 'MI' && pos.y >= 35) || posLabel.includes('interior izquierdo') || posLabel.includes('medio izquierdo')) return 9500;
+    if (posId === 'EI') return 6000;
+    if (posId === 'MC' || posLabel.includes('medio centro')) return 5000;
+    if (posId === 'MC2' || posId === 'MD' || posLabel.includes('derech')) return 1000;
+    return 1500;
+  }
+
+  // 11. Interior Derecho / Interior Diestro / Medio Derecho
+  const isIntDer = (raw.includes('interior') || raw.includes('medio der') || raw === 'md' || (raw === 'mcd' && posLabel.includes('medio derecho')) || raw === 'id') && 
+                   (raw.includes('der') || raw.includes('die') || playerLateralidad === 'Derecho');
+  if (isIntDer) {
+    if (posId === 'MC2' || (posId === 'MCD' && posLabel.includes('medio derecho')) || (posId === 'MD' && pos.y >= 35) || posLabel.includes('interior derecho') || posLabel.includes('medio derecho')) return 9500;
+    if (posId === 'ED') return 6000;
+    if (posId === 'MC' || posLabel.includes('medio centro')) return 5000;
+    if (posId === 'MC1' || posId === 'MI' || posLabel.includes('izquierd')) return 1000;
+    return 1500;
+  }
+
+  // 12. Interior genérico
+  if (raw.includes('interior')) {
+    if (posId === 'MC1' || posId === 'MC2' || posId === 'MCI' || posId === 'MI' || posId === 'MD' || posLabel.includes('interior')) return 9000;
+    if (posId === 'MC' || posLabel.includes('medio centro')) return 7000;
+    if (posId === 'MCO') return 6000;
+    return 2000;
+  }
+
+  // 13. Mediapunta / Enganche / MCO
+  if (raw.includes('mediapunta') || raw.includes('media punta') || raw.includes('enganche') || raw === 'mco' || raw === 'mp') {
+    if (posId === 'MCO' || posLabel.includes('mediapunta') || posLabel.includes('enganche')) return 9500;
+    if (posId === 'MI' || posId === 'MD') return 6500;
+    if (posId === 'MC' || posId === 'MC1' || posId === 'MC2') return 6000;
+    if (posId.startsWith('DC') || posId === 'DC') return 5500;
+    return 2000;
+  }
+
+  // 14. Medio Centro / Mediocentro / Centrocampista / Volante
+  if (raw.includes('medio') || raw.includes('centro') || raw.includes('centrocampista') || raw.includes('volante') || raw === 'mc') {
+    if (posId === 'MC' || posId === 'MC1' || posId === 'MC2' || posLabel.includes('medio centro') || posLabel.includes('medio')) return 8800;
+    if (posId.startsWith('MCD')) return 7000;
+    if (posId === 'MCO') return 6500;
+    return 2000;
+  }
+
+  // 15. Extremo Izquierdo / Extrema Izquierda
+  const isExtIzq = (raw.includes('extremo') || raw.includes('extrema') || raw === 'ei') && 
+                   (raw.includes('izq') || raw.includes('zur') || playerLateralidad === 'Izquierdo');
+  if (isExtIzq) {
+    if (posId === 'EI' || posLabel.includes('extremo izquierdo') || posLabel.includes('extrema izquierda')) return 9500;
+    if (posId === 'MI' && pos.y < 45) return 8000;
+    if (posId === 'DC1' || posId === 'DC') return 5500;
+    if (posId === 'ED' || posLabel.includes('derech')) return -2000;
+    return 1500;
+  }
+
+  // 16. Extremo Derecho / Extrema Derecha
+  const isExtDer = (raw.includes('extremo') || raw.includes('extrema') || raw === 'ed') && 
+                   (raw.includes('der') || raw.includes('die') || playerLateralidad === 'Derecho');
+  if (isExtDer) {
+    if (posId === 'ED' || posLabel.includes('extremo derecho') || posLabel.includes('extrema derecha')) return 9500;
+    if (posId === 'MD' && pos.y < 45) return 8000;
+    if (posId === 'DC2' || posId === 'DC') return 5500;
+    if (posId === 'EI' || posLabel.includes('izquierd')) return -2000;
+    return 1500;
+  }
+
+  // 17. Extremo genérico
+  if (raw.includes('extremo') || raw.includes('extrema')) {
+    if (posId === 'EI' || posId === 'ED' || posLabel.includes('extremo')) return 9000;
+    if (posId.startsWith('DC') || posId === 'DC') return 6000;
+    if (posId === 'MI' || posId === 'MD') return 6000;
+    return 2000;
+  }
+
+  // 18. Delantero / Delantera / Delantero Centro / Punta / Ariete
+  if (raw.includes('delanter') || raw.includes('punta') || raw.includes('ariete') || raw === 'dc') {
+    if (posId === 'DC' || posId === 'DC1' || posId === 'DC2' || posLabel.includes('delanter') || posLabel.includes('punta')) return 9500;
+    if (posId === 'MCO') return 5500;
+    if (posId === 'EI' || posId === 'ED') return 5000;
+    return 1500;
+  }
+
+  return 1000;
 }
 
 export interface TacticalPosition {
@@ -224,7 +426,7 @@ const SYSTEMS_F7: Record<string, TacticalPosition[]> = {
   ]
 };
 
-// Default backups and sample player names (UD La Poveda theme)
+// Default backups and sample player names (CLUB theme)
 const SAMPLE_PLAYERS: Record<string, PlayerRoster[]> = {
   F11: [
     { id: 'p1', nombre: 'Gonzalo Robles', dorsal: 1, posicionOriginal: 'Portero' },
@@ -497,6 +699,7 @@ export default function Campograma() {
             apellidos: oj.apellidos,
             dorsal: oj.dorsal,
             posicion: oj.posicion,
+            lateralidad: oj.lateralidad,
             foto_url: cleanPhotoUrl(oj.foto_url)
           });
         }
@@ -526,6 +729,7 @@ export default function Campograma() {
                   apellidos: cleanSPLast,
                   dorsal: sp.dorsal || '',
                   posicion: sp.posicion || 'JUGADORA',
+                  lateralidad: sp.lateralidad,
                   foto_url: cleanPhotoUrl(sp.foto_url)
                 });
               }
@@ -551,31 +755,93 @@ export default function Campograma() {
                 apellidos: sp.apellidos,
                 dorsal: sp.dorsal || '',
                 posicion: sp.posicion || 'JUGADORA',
+                lateralidad: sp.lateralidad,
                 foto_url: cleanPhotoUrl(sp.foto_url)
               });
             }
           }
         });
-
-        currentList = currentList.map(p => {
-          const scPlayer = scList.find((sp: any) => isPlayerMatch(sp, p));
-          if (scPlayer) {
-            return {
-              ...p,
-              foto_url: scPlayer.foto_url !== undefined && scPlayer.foto_url !== '' ? cleanPhotoUrl(scPlayer.foto_url) : cleanPhotoUrl(p.foto_url),
-              dorsal: scPlayer.dorsal || p.dorsal,
-              posicion: scPlayer.posicion || p.posicion
-            };
-          }
-          return {
-            ...p,
-            foto_url: cleanPhotoUrl(p.foto_url)
-          };
-        });
       } catch {}
     }
 
-    // Deduplicate and format to PlayerRoster
+    // Helper to resolve the player's true official position from their ficha
+    const resolveTrueFichaData = (p: any) => {
+      let truePos: string | undefined = undefined;
+      let trueLat: string | undefined = undefined;
+      let trueDorsal: string | undefined = undefined;
+      let trueFoto: string | undefined = undefined;
+
+      // 1. Signed players
+      try {
+        const signedSaved = localStorage.getItem('signed_players');
+        if (signedSaved) {
+          const sList: any[] = JSON.parse(signedSaved);
+          const found = sList.find(sp => isPlayerMatch(sp, p));
+          if (found) {
+            if (found.posicion && found.posicion !== 'JUGADORA' && found.posicion !== 'Campo' && found.posicion !== 'MEDIOCENTRO') truePos = found.posicion;
+            if (found.lateralidad) trueLat = found.lateralidad;
+            if (found.dorsal) trueDorsal = String(found.dorsal);
+            if (found.foto_url) trueFoto = found.foto_url;
+          }
+        }
+      } catch {}
+
+      // 2. Scouting local players
+      try {
+        const scSaved = localStorage.getItem('scouting_local_players');
+        if (scSaved) {
+          const scList: any[] = JSON.parse(scSaved);
+          const found = scList.find(sp => isPlayerMatch(sp, p));
+          if (found) {
+            if (!truePos && found.posicion && found.posicion !== 'JUGADORA' && found.posicion !== 'Campo' && found.posicion !== 'MEDIOCENTRO') truePos = found.posicion;
+            if (!trueLat && found.lateralidad) trueLat = found.lateralidad;
+            if (!trueDorsal && found.dorsal) trueDorsal = String(found.dorsal);
+            if (!trueFoto && found.foto_url) trueFoto = found.foto_url;
+          }
+        }
+      } catch {}
+
+      // 3. Official team players (JUGADORAS_ADJUNTAS)
+      const oj = JUGADORAS_ADJUNTAS.find(j => isPlayerMatch(j, p) || String(j.id) === String(p.id));
+      if (oj) {
+        if (!truePos && oj.posicion) truePos = oj.posicion;
+        if (!trueLat && oj.lateralidad) trueLat = oj.lateralidad;
+        if (!trueDorsal && oj.dorsal) trueDorsal = String(oj.dorsal);
+        if (!trueFoto && oj.foto_url) trueFoto = oj.foto_url;
+      }
+
+      // 4. Plantilla cached players
+      try {
+        const plantSaved = localStorage.getItem('plantilla_players');
+        if (plantSaved) {
+          const plantList: any[] = JSON.parse(plantSaved);
+          const found = plantList.find(pl => isPlayerMatch(pl, p));
+          if (found) {
+            if (!truePos && found.posicion && found.posicion !== 'JUGADORA' && found.posicion !== 'Campo' && found.posicion !== 'MEDIOCENTRO') truePos = found.posicion;
+            if (!trueLat && found.lateralidad) trueLat = found.lateralidad;
+            if (!trueDorsal && found.dorsal) trueDorsal = String(found.dorsal);
+            if (!trueFoto && found.foto_url) trueFoto = found.foto_url;
+          }
+        }
+      } catch {}
+
+      // Fallback to existing valid position
+      if (!truePos && p.posicion && p.posicion !== 'JUGADORA' && p.posicion !== 'Campo') {
+        truePos = p.posicion;
+      }
+      if (!truePos && p.posicionOriginal && p.posicionOriginal !== 'MEDIOCENTRO' && p.posicionOriginal !== 'JUGADORA') {
+        truePos = p.posicionOriginal;
+      }
+
+      return {
+        posicion: truePos || p.posicion || p.posicionOriginal || 'MEDIOCENTRO',
+        lateralidad: trueLat || p.lateralidad,
+        dorsal: trueDorsal !== undefined ? trueDorsal : (p.dorsal !== undefined && p.dorsal !== null ? String(p.dorsal) : ''),
+        foto_url: trueFoto ? cleanPhotoUrl(trueFoto) : cleanPhotoUrl(p.foto_url)
+      };
+    };
+
+    // Deduplicate and format to PlayerRoster with authentic ficha position
     const cleanDeduplicated: PlayerRoster[] = [];
     const seenKeys = new Set<string>();
 
@@ -587,13 +853,16 @@ export default function Campograma() {
 
       if (!seenKeys.has(keyStr) && !isDeletedPlayer(p.id, cleanNombre, cleanApellidos)) {
         seenKeys.add(keyStr);
+        const resolved = resolveTrueFichaData(p);
         cleanDeduplicated.push({
           id: p.id,
           nombre: fullName,
           apellidos: cleanApellidos,
-          dorsal: p.dorsal !== undefined && p.dorsal !== null ? p.dorsal : '',
-          posicionOriginal: p.posicion || p.posicionOriginal || 'MEDIOCENTRO',
-          foto_url: cleanPhotoUrl(p.foto_url)
+          dorsal: resolved.dorsal,
+          posicion: resolved.posicion,
+          posicionOriginal: resolved.posicion,
+          lateralidad: resolved.lateralidad,
+          foto_url: resolved.foto_url
         });
       }
     });
@@ -626,8 +895,21 @@ export default function Campograma() {
 
         data.forEach(dbP => {
           if (isDeleted(dbP.id, dbP.nombre, dbP.apellidos)) return;
-          const exists = updatedLocal.some(p => isPlayerMatch(p, dbP));
-          if (!exists) {
+          const existingIdx = updatedLocal.findIndex(p => isPlayerMatch(p, dbP));
+          if (existingIdx >= 0) {
+            const currentP = updatedLocal[existingIdx];
+            if (dbP.posicion && (currentP.posicionOriginal !== dbP.posicion || !currentP.lateralidad)) {
+              updatedLocal[existingIdx] = {
+                ...currentP,
+                posicion: dbP.posicion,
+                posicionOriginal: dbP.posicion,
+                lateralidad: dbP.lateralidad || currentP.lateralidad,
+                dorsal: dbP.dorsal || currentP.dorsal,
+                foto_url: dbP.foto_url ? cleanPhotoUrl(dbP.foto_url) : currentP.foto_url
+              };
+              hasChanges = true;
+            }
+          } else {
             const cleanN = (dbP.nombre || '').trim();
             const cleanA = (dbP.apellidos || '').trim();
             if (!cleanN) return;
@@ -637,7 +919,9 @@ export default function Campograma() {
               nombre: fullName,
               apellidos: cleanA,
               dorsal: dbP.dorsal || '',
+              posicion: dbP.posicion || 'MEDIOCENTRO',
               posicionOriginal: dbP.posicion || 'MEDIOCENTRO',
+              lateralidad: dbP.lateralidad,
               foto_url: cleanPhotoUrl(dbP.foto_url)
             });
             hasChanges = true;
@@ -1297,7 +1581,7 @@ export default function Campograma() {
 
   // WhatsApp Convocatoria / Matchday briefing output generator
   const getWhatsAppBreifing = () => {
-    let text = `📋 *Alineación Oficial UD LA POVEDA* 📋\n`;
+    let text = `📋 *Alineación Oficial CLUB* 📋\n`;
     text += `⚽ *Equipo:* ${selectedTeam} (${selectedSeason})\n`;
     text += `📐 *Sistema:* ${selectedFormation}\n`;
     text += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
@@ -1332,7 +1616,7 @@ export default function Campograma() {
       text += `_No se hallaron reservas en la plantilla o todos juegan._\n`;
     }
 
-    text += `\n📅 _Creado por el portal de scouting de la U.D. La Poveda._`;
+    text += `\n📅 _Creado por el portal de scouting del CLUB._`;
     return text;
   };
 
@@ -1411,7 +1695,7 @@ export default function Campograma() {
     toast.success('Se ha cargado la plantilla predeterminada e inicial para pruebas');
   };
 
-  // Auto assign players based on position/order (attempts to position ALL roster players in their positions)
+  // Auto assign players based on position/order (assigns starting XI / 7 to their exact natural tactical positions)
   const handleAutoAssign = () => {
     const nextLineup: Record<string, string[]> = {};
     
@@ -1419,54 +1703,74 @@ export default function Campograma() {
       nextLineup[pos.id] = [];
     });
 
-    // Map each current roster player into their best tactical position list
-    currentRoster.forEach(player => {
-      // Find a position that matches their original position
-      let matchedPos = currentPositions.find(pos => 
-        player.posicionOriginal?.toLowerCase() === pos.label.toLowerCase() || 
-        player.posicionOriginal?.toLowerCase() === pos.shortLabel.toLowerCase()
-      );
+    const assignedPlayers = new Set<string>();
+    const assignedSlots = new Set<string>();
 
-      // If no perfect match, match by generic terms
-      if (!matchedPos) {
-        if (player.posicionOriginal?.toLowerCase().includes('portero') || player.posicionOriginal?.toLowerCase() === 'por') {
-          matchedPos = currentPositions.find(pos => pos.id === 'GK');
-        } else if (player.posicionOriginal?.toLowerCase().includes('defensa') || player.posicionOriginal?.toLowerCase().includes('central') || player.posicionOriginal?.toLowerCase().includes('lateral')) {
-          matchedPos = currentPositions.find(pos => pos.id.startsWith('DF') || pos.id === 'LI' || pos.id === 'LD' || pos.id === 'DFC1' || pos.id === 'DFC2');
-        } else if (player.posicionOriginal?.toLowerCase().includes('medio') || player.posicionOriginal?.toLowerCase().includes('pivote') || player.posicionOriginal?.toLowerCase().includes('centro') || player.posicionOriginal?.toLowerCase().includes('interior')) {
-          matchedPos = currentPositions.find(pos => pos.id.startsWith('MC') || pos.id === 'MCD');
-        } else if (player.posicionOriginal?.toLowerCase().includes('delantero') || player.posicionOriginal?.toLowerCase().includes('extremo') || player.posicionOriginal?.toLowerCase().includes('punta')) {
-          matchedPos = currentPositions.find(pos => pos.id === 'DC' || pos.id === 'EI' || pos.id === 'ED' || pos.id.startsWith('DC'));
+    // 1. First assign Goalkeeper (isolated role)
+    const gkPos = currentPositions.find(p => p.id === 'GK' || p.label.toLowerCase().includes('portero'));
+    if (gkPos) {
+      let bestGk: PlayerRoster | null = null;
+      let bestGkScore = 0;
+      currentRoster.forEach(player => {
+        const score = getTacticalPositionAffinity(player.posicionOriginal || player.posicion || '', gkPos, player.lateralidad);
+        if (score > bestGkScore) {
+          bestGkScore = score;
+          bestGk = player;
         }
+      });
+      if (bestGk) {
+        nextLineup[gkPos.id] = [(bestGk as PlayerRoster).id];
+        assignedPlayers.add((bestGk as PlayerRoster).id);
+        assignedSlots.add(gkPos.id);
       }
+    }
 
-      // If still no match, find a position with least players
-      if (!matchedPos) {
-        let minCount = Infinity;
-        let selectedPos = currentPositions[0];
-        currentPositions.forEach(pos => {
-          const count = nextLineup[pos.id]?.length || 0;
-          if (count < minCount) {
-            minCount = count;
-            selectedPos = pos;
+    // 2. Greedily match outfield positions by highest affinity across all available (slot, player) pairs
+    while (assignedSlots.size < currentPositions.length && assignedPlayers.size < currentRoster.length) {
+      let bestPair: { posId: string; playerId: string; score: number } | null = null;
+
+      currentPositions.forEach(pos => {
+        if (assignedSlots.has(pos.id)) return;
+        currentRoster.forEach(player => {
+          if (assignedPlayers.has(player.id)) return;
+          const score = getTacticalPositionAffinity(player.posicionOriginal || player.posicion || '', pos, player.lateralidad);
+          if (score > 0 && (!bestPair || score > bestPair.score)) {
+            bestPair = { posId: pos.id, playerId: player.id, score };
           }
         });
-        matchedPos = selectedPos;
-      }
+      });
 
-      const pId = matchedPos.id;
-      if (!nextLineup[pId]) {
-        nextLineup[pId] = [];
-      }
-      nextLineup[pId].push(player.id);
-    });
+      if (!bestPair) break;
+
+      const bp: { posId: string; playerId: string; score: number } = bestPair;
+      nextLineup[bp.posId] = [bp.playerId];
+      assignedSlots.add(bp.posId);
+      assignedPlayers.add(bp.playerId);
+    }
+
+    // 3. If there are still empty tactical slots and unassigned players, fill remaining empty slots
+    if (assignedSlots.size < currentPositions.length && assignedPlayers.size < currentRoster.length) {
+      currentPositions.forEach(pos => {
+        if (assignedSlots.has(pos.id)) return;
+        const availablePlayer = currentRoster.find(p => 
+          !assignedPlayers.has(p.id) && 
+          !p.posicionOriginal?.toLowerCase().includes('porter') &&
+          !p.posicion?.toLowerCase().includes('porter')
+        );
+        if (availablePlayer) {
+          nextLineup[pos.id] = [availablePlayer.id];
+          assignedSlots.add(pos.id);
+          assignedPlayers.add(availablePlayer.id);
+        }
+      });
+    }
 
     const nextLineups = {
       ...lineups,
       [selectedTeam]: nextLineup
     };
     saveLineupsToStorage(nextLineups);
-    toast.success('Pizarra autocompletada: Todos los jugadores han sido colocados según sus posiciones');
+    toast.success('Pizarra autocompletada: Cada jugadora ha sido colocada en su posición exacta de la ficha.');
   };
 
   const handleClearLineup = () => {
@@ -1782,7 +2086,7 @@ export default function Campograma() {
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(14);
       doc.setTextColor(255, 255, 255);
-      doc.text('C.D. U.D. LA POVEDA', 15, 19);
+      doc.text('CLUB', 15, 19);
 
       doc.setFontSize(8.5);
       doc.setFont('Helvetica', 'bold');
@@ -2023,7 +2327,7 @@ export default function Campograma() {
       doc.setFont('Helvetica', 'normal');
       doc.setFontSize(7);
       doc.setTextColor(100, 116, 139);
-      doc.text('C.D. U.D. La Poveda • Sistema de Gestión y Metodología Táctica', 10, pageHeight - 5);
+      doc.text('CLUB • Sistema de Gestión y Metodología Táctica', 10, pageHeight - 5);
       doc.text('Página 1 de 1', 200, pageHeight - 5, { align: 'right' });
 
       // Save PDF file
@@ -2437,34 +2741,52 @@ export default function Campograma() {
                             {currentRoster.length === 0 ? (
                               <div className="text-[10px] text-slate-500 italic p-1">Plantilla vacía</div>
                             ) : (
-                              currentRoster.map((rosterPlayer) => {
-                                const isAssignedToThis = assignedIds.includes(rosterPlayer.id);
-                                const isAssignedElsewhere = isPlayerAssigned(rosterPlayer.id) && !isAssignedToThis;
-                                const dText = getDisplayDorsal(rosterPlayer);
-                                return (
-                                  <button
-                                    key={rosterPlayer.id}
-                                    onClick={() => {
-                                      assignPlayerToPosition(pos.id, rosterPlayer.id);
-                                    }}
-                                    className={`w-full text-left font-semibold text-xs py-1.5 px-2 rounded flex items-center justify-between hover:bg-slate-800 text-white transition-all cursor-pointer ${
-                                      isAssignedToThis ? 'bg-blue-600/25 border border-blue-500/30 text-blue-200 font-bold' : 'border border-transparent'
-                                    }`}
-                                  >
-                                    <span className="truncate pr-1 flex items-center gap-1">
-                                      {isAssignedToThis && <Check className="w-3 h-3 text-blue-400 shrink-0" />}
-                                      {dText ? `[${dText}] ` : ''}{rosterPlayer.nombre}
-                                    </span>
-                                    {isAssignedToThis ? (
-                                      <span className="text-[8px] bg-blue-500 text-white font-bold px-1 rounded uppercase">Puesto</span>
-                                    ) : isAssignedElsewhere ? (
-                                      <span className="text-[8px] bg-slate-900 text-slate-500 border border-slate-850 px-1 rounded uppercase">Otro</span>
-                                    ) : (
-                                      <span className="text-[8px] bg-slate-950 text-slate-400 border border-slate-850 px-1 rounded uppercase">Libre</span>
-                                    )}
-                                  </button>
-                                );
-                              })
+                              [...currentRoster]
+                                .sort((a, b) => {
+                                  const affA = getTacticalPositionAffinity(a.posicionOriginal || a.posicion || '', pos, a.lateralidad);
+                                  const affB = getTacticalPositionAffinity(b.posicionOriginal || b.posicion || '', pos, b.lateralidad);
+                                  return affB - affA;
+                                })
+                                .map((rosterPlayer) => {
+                                  const isAssignedToThis = assignedIds.includes(rosterPlayer.id);
+                                  const isAssignedElsewhere = isPlayerAssigned(rosterPlayer.id) && !isAssignedToThis;
+                                  const dText = getDisplayDorsal(rosterPlayer);
+                                  const affScore = getTacticalPositionAffinity(rosterPlayer.posicionOriginal || rosterPlayer.posicion || '', pos, rosterPlayer.lateralidad);
+                                  const isNaturalPos = affScore >= 8000;
+                                  return (
+                                    <button
+                                      key={rosterPlayer.id}
+                                      onClick={() => {
+                                        assignPlayerToPosition(pos.id, rosterPlayer.id);
+                                      }}
+                                      className={`w-full text-left font-semibold text-xs py-1.5 px-2 rounded flex items-center justify-between hover:bg-slate-800 text-white transition-all cursor-pointer ${
+                                        isAssignedToThis 
+                                          ? 'bg-blue-600/25 border border-blue-500/30 text-blue-200 font-bold' 
+                                          : isNaturalPos
+                                            ? 'bg-slate-900/60 border border-emerald-500/20 hover:border-emerald-500/40'
+                                            : 'border border-transparent'
+                                      }`}
+                                    >
+                                      <div className="flex flex-col min-w-0 pr-1">
+                                        <span className="truncate flex items-center gap-1">
+                                          {isAssignedToThis && <Check className="w-3 h-3 text-blue-400 shrink-0" />}
+                                          {dText ? `[${dText}] ` : ''}{rosterPlayer.nombre}
+                                        </span>
+                                        <span className="text-[9px] text-slate-400 font-medium truncate">
+                                          {rosterPlayer.posicionOriginal || rosterPlayer.posicion || 'Sin posición'}
+                                          {isNaturalPos && <span className="ml-1 text-emerald-400 font-bold">★ Ideal</span>}
+                                        </span>
+                                      </div>
+                                      {isAssignedToThis ? (
+                                        <span className="text-[8px] bg-blue-500 text-white font-bold px-1 rounded uppercase shrink-0">Puesto</span>
+                                      ) : isAssignedElsewhere ? (
+                                        <span className="text-[8px] bg-slate-900 text-slate-500 border border-slate-850 px-1 rounded uppercase shrink-0">Otro</span>
+                                      ) : (
+                                        <span className="text-[8px] bg-slate-950 text-slate-400 border border-slate-850 px-1 rounded uppercase shrink-0">Libre</span>
+                                      )}
+                                    </button>
+                                  );
+                                })
                             )}
                           </div>
 
@@ -2685,7 +3007,51 @@ export default function Campograma() {
                                 </div>
                               </div>
                               
-                              <div className="flex items-center gap-1 shrink-0 ml-2">
+                              <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                                {!assigned ? (
+                                  <button
+                                    onClick={() => {
+                                      let bestSlot = currentPositions[0];
+                                      let bestScore = -10000;
+                                      currentPositions.forEach(slot => {
+                                        const score = getTacticalPositionAffinity(player.posicionOriginal || player.posicion || '', slot, player.lateralidad);
+                                        if (score > bestScore) {
+                                          bestScore = score;
+                                          bestSlot = slot;
+                                        }
+                                      });
+                                      assignPlayerToPosition(bestSlot.id, player.id);
+                                      toast.success(`${player.nombre} colocada en ${bestSlot.label}`);
+                                    }}
+                                    className="text-[10px] text-blue-400 hover:text-white px-2 py-0.5 rounded bg-blue-950/40 hover:bg-blue-600 border border-blue-500/30 transition-all font-bold flex items-center gap-1 cursor-pointer"
+                                    title={`Colocar a ${player.nombre} en ${player.posicionOriginal || 'el campo'}`}
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                    Alinear
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => {
+                                      const updatedLineup = { ...currentLineup };
+                                      Object.keys(updatedLineup).forEach(posKey => {
+                                        const val = updatedLineup[posKey];
+                                        if (Array.isArray(val)) {
+                                          updatedLineup[posKey] = val.filter(id => id !== player.id);
+                                        } else if (val === player.id) {
+                                          delete updatedLineup[posKey];
+                                        }
+                                      });
+                                      const nextLineups = { ...lineups, [selectedTeam]: updatedLineup };
+                                      saveLineupsToStorage(nextLineups);
+                                      toast.info(`${player.nombre} devuelta al banquillo`);
+                                    }}
+                                    className="text-[10px] text-slate-400 hover:text-red-300 px-1.5 py-0.5 rounded bg-slate-900 hover:bg-red-950/30 border border-slate-800 transition-all font-semibold cursor-pointer"
+                                    title="Quitar del campo y enviar al banquillo"
+                                  >
+                                    Al Banquillo
+                                  </button>
+                                )}
+
                                 {isAdminOrScout && (
                                   <>
                                     <button

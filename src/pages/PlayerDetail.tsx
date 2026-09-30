@@ -425,7 +425,7 @@ export default function PlayerDetail() {
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(22);
     doc.setFont('Helvetica', 'bold');
-    doc.text('U.D. LA POVEDA • DOSSIER TÉCNICO', 15, 18);
+    doc.text('CLUB • DOSSIER TÉCNICO', 15, 18);
     doc.setFontSize(10);
     doc.setFont('Helvetica', 'normal');
     doc.setTextColor(200, 200, 200);

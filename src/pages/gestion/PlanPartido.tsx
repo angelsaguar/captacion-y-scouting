@@ -429,7 +429,7 @@ export default function PlanPartido() {
           .join('\n')
       : 'No se han seleccionado jugadoras convocadas.';
 
-    const initialMsg = `📢 *U.D. LA POVEDA - CONVOCATORIA OFICIAL* 📢\n\n` +
+    const initialMsg = `📢 *CLUB - CONVOCATORIA OFICIAL* 📢\n\n` +
       `⚔️ *Rival:* VS ${activePlan.rivalName}\n` +
       `📅 *Fecha:* ${activePlan.fechaPartido}\n\n` +
       `📋 *Jugadoras Convocadas:* \n${listText}\n\n` +
@@ -941,7 +941,7 @@ export default function PlanPartido() {
         <div id="printable-convocatoria" className="print-only-convocatoria-container text-black bg-white min-h-screen">
           <div className="border-4 border-double border-emerald-400 p-12 rounded-3xl relative max-w-2xl mx-auto my-12">
             <div className="border-b-4 border-emerald-600 pb-4 text-center">
-              <h1 className="text-3xl font-black tracking-tight text-emerald-700">U.D. LA POVEDA</h1>
+              <h1 className="text-3xl font-black tracking-tight text-emerald-700">CLUB</h1>
               <p className="text-sm font-extrabold text-slate-600 uppercase tracking-widest mt-1">CONVOCATORIA OFICIAL MATCHDAY</p>
               <div className="text-[10px] text-slate-400 font-bold uppercase mt-1">
                 TEMPORADA 2026/2027 • JORNADA DE COMPETICIÓN
@@ -992,7 +992,7 @@ export default function PlanPartido() {
 
             <div className="pt-12 text-center max-w-md mx-auto">
               <div className="border-t border-slate-350 pt-3">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Cuerpo Técnico • U.D. LA POVEDA</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Cuerpo Técnico • CLUB</p>
                 <p className="text-[10px] text-slate-500 mt-1">Por favor, acudan con la equipación oficial 1 hora antes del encuentro.</p>
               </div>
             </div>
@@ -1008,7 +1008,7 @@ export default function PlanPartido() {
           {/* PAGE 1: DOSSIER TÁCTICO */}
           <div className="print-page border-4 border-double border-slate-400 p-12 rounded-3xl relative mb-12">
             <div className="border-b-4 border-slate-900 pb-4 text-center">
-              <h1 className="text-2xl font-black tracking-tight text-slate-900">U.D. LA POVEDA</h1>
+              <h1 className="text-2xl font-black tracking-tight text-slate-900">CLUB</h1>
               <p className="text-xs font-bold text-slate-500 uppercase">DOSSIER TÁCTICO OFICIAL • {selectedTeam}</p>
             </div>
 
@@ -1054,14 +1054,14 @@ export default function PlanPartido() {
             </div>
             
             <div className="pt-8 text-center text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-              <span>U.D. LA POVEDA © 2026 • DOSSIER DE COMPETICIÓN</span>
+              <span>CLUB © 2026 • DOSSIER DE COMPETICIÓN</span>
             </div>
           </div>
 
           {/* PAGE 2: HOJA DE CONVOCATORIA (IMPRESA POR SEPARADO) */}
           <div className="print-page border-4 border-double border-emerald-400 p-12 rounded-3xl relative">
             <div className="border-b-4 border-emerald-600 pb-4 text-center">
-              <h1 className="text-3xl font-black tracking-tight text-emerald-700">U.D. LA POVEDA</h1>
+              <h1 className="text-3xl font-black tracking-tight text-emerald-700">CLUB</h1>
               <p className="text-sm font-extrabold text-slate-600 uppercase tracking-widest mt-1">CONVOCATORIA OFICIAL MATCHDAY</p>
               <div className="bg-emerald-600/10 border border-emerald-500/20 rounded-lg p-2.5 mt-3 max-w-md mx-auto">
                 <p className="text-xs font-extrabold text-emerald-800 uppercase">Jornada de Competición • {selectedTeam}</p>
@@ -1112,7 +1112,7 @@ export default function PlanPartido() {
 
             <div className="pt-12 text-center max-w-md mx-auto">
               <div className="border-t border-slate-350 pt-3">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Cuerpo Técnico • U.D. LA POVEDA</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Cuerpo Técnico • CLUB</p>
                 <p className="text-[10px] text-slate-500 mt-1">Por favor, acudan con la equipación oficial 1 hora antes del encuentro.</p>
               </div>
             </div>

@@ -105,7 +105,7 @@ export default function Register() {
               <UDLaPovedaLogo className="w-16 h-16" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold tracking-tight text-white uppercase italic">ÚNETE A U.D. LA POVEDA</CardTitle>
+          <CardTitle className="text-2xl font-bold tracking-tight text-white uppercase italic">ÚNETE AL CLUB</CardTitle>
           <CardDescription className="text-slate-400">
             Crea tu cuenta de analista para empezar a scoutear
           </CardDescription>
@@ -149,7 +149,7 @@ export default function Register() {
                 <Input 
                   id="email" 
                   type="email" 
-                  placeholder="analista@lapoveda.com" 
+                  placeholder="analista@club.com" 
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="bg-slate-800 border-slate-700 text-white pl-10 focus:ring-red-600"
@@ -197,7 +197,7 @@ export default function Register() {
         </form>
       </Card>
       <div className="absolute bottom-8 text-center w-full text-slate-500 text-xs tracking-widest uppercase font-semibold">
-        © 2026 U.D. LA POVEDA - PROFESSIONAL SCOUTING DIVISION
+        © 2026 CLUB - PROFESSIONAL SCOUTING DIVISION
       </div>
     </div>
   );

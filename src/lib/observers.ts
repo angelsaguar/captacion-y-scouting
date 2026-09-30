@@ -14,7 +14,7 @@ const DEFAULT_OBSERVERS: Observer[] = [
   { id: 'def-1', nombre: 'Ángel Saguar', created_at: new Date().toISOString() },
   { id: 'def-2', nombre: 'Alejandro Saguar', created_at: new Date().toISOString() },
   { id: 'def-3', nombre: 'Javier Asensio', created_at: new Date().toISOString() },
-  { id: 'def-4', nombre: 'Scout UD La Poveda', created_at: new Date().toISOString() }
+  { id: 'def-4', nombre: 'Scout CLUB', created_at: new Date().toISOString() }
 ];
 
 export async function getObservers(): Promise<Observer[]> {

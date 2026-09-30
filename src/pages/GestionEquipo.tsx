@@ -207,7 +207,7 @@ export default function GestionEquipo() {
 
           <div className="flex items-center gap-1.5 text-xs text-slate-400 font-bold bg-slate-900/60 border border-slate-900 px-3 py-1.5 rounded-xl">
             <LayoutGrid className="w-4 h-4 text-slate-500" />
-            <span>U.D. La Poveda</span>
+            <span>Club</span>
           </div>
         </div>
       ) : (
@@ -216,7 +216,7 @@ export default function GestionEquipo() {
             Gestión del Equipo
           </h1>
           <p className="text-xs text-slate-400 font-medium">
-            Administración completa de jugadoras, convocatorias, asistencias, tácticas y control médico de la U.D. La Poveda.
+            Administración completa de jugadoras, convocatorias, asistencias, tácticas y control médico del Club.
           </p>
         </div>
       )}

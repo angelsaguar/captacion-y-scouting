@@ -699,7 +699,7 @@ export default function PruebasFisicas() {
         <div className="space-y-1 z-10">
           <span className="text-[10px] text-amber-500 font-black tracking-widest uppercase block">MÓDULO DE VALORACIÓN</span>
           <h2 className="text-2xl font-black text-white tracking-tight uppercase">Control y Pruebas Físicas</h2>
-          <p className="text-xs text-slate-400 font-bold uppercase">U.D. LA POVEDA • HISTORIAL DE CAPACIDAD ATLÉTICA Y EVOLUCIÓN</p>
+          <p className="text-xs text-slate-400 font-bold uppercase">CLUB • HISTORIAL DE CAPACIDAD ATLÉTICA Y EVOLUCIÓN</p>
         </div>
 
         <div className="flex flex-wrap gap-2.5 z-10 w-full md:w-auto">

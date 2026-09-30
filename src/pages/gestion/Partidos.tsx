@@ -115,12 +115,12 @@ interface Match {
 }
 
 const MOTIVATIONAL_PHRASES = [
-  "¡VAMOS POVEDA! ¡A POR LA VICTORIA!",
+  "¡VAMOS CLUB! ¡A POR LA VICTORIA!",
   "¡Orgullo, pasión y corazón en cada balón!",
   "¡Unidas y fuertes, hoy luchamos por nuestro escudo!",
   "¡La fuerza del equipo está en cada una de vosotras!",
   "¡Humildad en el trabajo, grandeza en el campo!",
-  "¡Hoy salimos a darlo todo por la U.D. La Poveda!",
+  "¡Hoy salimos a darlo todo por el Club!",
   "¡Confianza, entrega y victoria! ¡A por todas!",
   "¡No jugamos solas, jugamos por el club y la afición!",
   "¡Con garra, ilusión y alma hasta el último segundo!",
@@ -370,7 +370,7 @@ export default function Partidos() {
       }
     }
 
-    msg += `💪 ¡Vamos U.D. La Poveda! ¡A ganar! ⚽`;
+    msg += `💪 ¡Vamos CLUB! ¡A ganar! ⚽`;
 
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
   };
@@ -389,8 +389,8 @@ export default function Partidos() {
   ) => {
     const isLocal = match.tipo === 'Local';
     const matchTitle = isLocal 
-      ? `U.D. LA POVEDA 🆚 ${match.rival.toUpperCase()}`
-      : `${match.rival.toUpperCase()} 🆚 U.D. LA POVEDA`;
+      ? `CLUB 🆚 ${match.rival.toUpperCase()}`
+      : `${match.rival.toUpperCase()} 🆚 CLUB`;
 
     const convokedPlayers = allPlayers.filter(p => convocadasIds.includes(p.id));
 
@@ -447,7 +447,7 @@ export default function Partidos() {
       }
     }
 
-    return `🔵⚪ *U.D. LA POVEDA* ⚪🔵
+    return `🔵⚪ *CLUB* ⚪🔵
 📋 *CONVOCATORIA OFICIAL DE PARTIDO*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -455,7 +455,7 @@ export default function Partidos() {
 ⚔️ *ENCUENTRO:* ${isLocal ? '🏠 LOCAL' : '🚌 VISITANTE'} • ${matchTitle}
 📅 *FECHA:* ${formattedDate}
 ⏰ *HORA DE PARTIDO:* ${match.hora} h
-📍 *LUGAR / CAMPO:* ${citLugar || (isLocal ? 'Polideportivo Municipal La Poveda' : match.rival)}
+📍 *LUGAR / CAMPO:* ${citLugar || (isLocal ? 'Campo Municipal (Principal)' : match.rival)}
 ⏱️ *HORA DE CITACIÓN:* ${citHora || '1 hora antes del encuentro'}
 👕 *INDUMENTARIA:* ${citEquip || '1ª Equipación Oficial + Chándal'}
 
@@ -469,7 +469,7 @@ ${playersListText}
 ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔵⚪ *${citMotivacional || '¡VAMOS POVEDA! ¡A POR LA VICTORIA!'}* ⚽🔥
+🔵⚪ *${citMotivacional || '¡VAMOS CLUB! ¡A POR LA VICTORIA!'}* ⚽🔥
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
   };
 
@@ -523,9 +523,35 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
           if (matchedSc?.apodo) bestApodo = matchedSc.apodo.trim();
         }
 
+        let bestPosicion = (p.posicion || '').trim();
+        if (!bestPosicion || bestPosicion === 'Campo' || bestPosicion === 'Jugadora') {
+          const matchedLocal = localList.find(lp => isPlayerMatch(lp, p));
+          if (matchedLocal?.posicion && matchedLocal.posicion !== 'Campo') bestPosicion = matchedLocal.posicion;
+        }
+        if (!bestPosicion || bestPosicion === 'Campo' || bestPosicion === 'Jugadora') {
+          const matchedSc = scList.find(sp => isPlayerMatch(sp, p));
+          if (matchedSc?.posicion && matchedSc.posicion !== 'Campo') bestPosicion = matchedSc.posicion;
+        }
+        if (!bestPosicion || bestPosicion === 'Campo' || bestPosicion === 'Jugadora') {
+          const matchedOj = JUGADORAS_ADJUNTAS.find(oj => isPlayerMatch(oj, p));
+          if (matchedOj?.posicion) bestPosicion = matchedOj.posicion;
+        }
+
+        let bestDorsal = (p.dorsal || '').trim();
+        if (!bestDorsal) {
+          const matchedLocal = localList.find(lp => isPlayerMatch(lp, p));
+          if (matchedLocal?.dorsal) bestDorsal = matchedLocal.dorsal;
+        }
+        if (!bestDorsal) {
+          const matchedOj = JUGADORAS_ADJUNTAS.find(oj => isPlayerMatch(oj, p));
+          if (matchedOj?.dorsal) bestDorsal = matchedOj.dorsal;
+        }
+
         return {
           ...p,
           apodo: bestApodo || p.apodo || '',
+          posicion: bestPosicion || p.posicion || 'Campo',
+          dorsal: bestDorsal || p.dorsal || '',
           foto_url: bestFoto || p.foto_url || ''
         };
       });
@@ -563,7 +589,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
     setCitacionHora(defaultCitHora);
 
     const defaultLugar = match.estadisticas?.lugar || match.lugar || 
-      (match.tipo === 'Local' ? 'Polideportivo Municipal La Poveda (Campo Principal)' : `Campo Municipal del Rival (${match.rival})`);
+      (match.tipo === 'Local' ? 'Campo Municipal (Principal)' : `Campo Municipal del Rival (${match.rival})`);
     setCitacionLugar(defaultLugar);
 
     const defaultEquip = match.estadisticas?.equipacion || match.equipacion || '1ª Equipación Oficial + Chándal';
@@ -927,7 +953,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
             tipo: 'Local', 
             competicion: 'Amistoso', 
             estado: 'Programado',
-            lugar: 'Polideportivo Municipal La Poveda (Campo Principal)',
+            lugar: 'Campo Municipal (Principal)',
             hora_citacion: '12:00 h (1h 15m antes)',
             equipacion: '1ª Equipación Oficial + Chándal',
             observaciones: '• Acudir con puntualidad a la hora fijada.\n• Confirmar recepción del mensaje en el grupo de WhatsApp.'
@@ -1083,7 +1109,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
     }
 
     const calculatedCitacion = formData.hora_citacion?.trim() || calculateDefaultCitacionHora(formData.hora);
-    const defaultLugar = formData.lugar?.trim() || (formData.tipo === 'Local' ? 'Polideportivo Municipal La Poveda (Campo Principal)' : `Campo Municipal del Rival (${formData.rival})`);
+    const defaultLugar = formData.lugar?.trim() || (formData.tipo === 'Local' ? 'Campo Municipal (Principal)' : `Campo Municipal del Rival (${formData.rival})`);
     const defaultEquip = formData.equipacion?.trim() || '1ª Equipación Oficial + Chándal';
 
     const newMatch: Match = {
@@ -1366,7 +1392,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                 onChange={(e) => setFormData({...formData, tipo: e.target.value as any})}
                 className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1 font-semibold cursor-pointer"
               >
-                <option value="Local">Local (UD La Poveda)</option>
+                <option value="Local">Local (CLUB)</option>
                 <option value="Visitante">Visitante (Fuera)</option>
               </select>
             </div>
@@ -1495,7 +1521,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                       </div>
                     )}
                     <span className="font-extrabold text-white text-xs uppercase truncate max-w-full">
-                      {match.tipo === 'Local' ? 'LA POVEDA' : match.rival}
+                      {match.tipo === 'Local' ? 'CLUB' : match.rival}
                     </span>
                   </div>
 
@@ -1534,7 +1560,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                       </div>
                     )}
                     <span className="font-extrabold text-white text-xs uppercase truncate max-w-full">
-                      {match.tipo === 'Local' ? match.rival : 'LA POVEDA'}
+                      {match.tipo === 'Local' ? match.rival : 'CLUB'}
                     </span>
                   </div>
                 </div>
@@ -1680,7 +1706,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-semibold text-slate-400">Goles La Poveda</label>
+                        <label className="text-[10px] font-semibold text-slate-400">Goles Club</label>
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
@@ -2145,7 +2171,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                       <span>Convocatoria Oficial EA FC & Cartel FIFA</span>
                     </h3>
                     <p className="text-xs text-slate-400 font-medium">
-                      {selectedTeam} • {showConvocatoriaModal.tipo === 'Local' ? 'U.D. LA POVEDA vs ' + showConvocatoriaModal.rival : showConvocatoriaModal.rival + ' vs U.D. LA POVEDA'}
+                      {selectedTeam} • {showConvocatoriaModal.tipo === 'Local' ? 'CLUB vs ' + showConvocatoriaModal.rival : showConvocatoriaModal.rival + ' vs CLUB'}
                     </p>
                   </div>
                 </div>
@@ -2288,7 +2314,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                           </div>
 
                           <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-100 uppercase italic leading-none mb-1 drop-shadow-sm">
-                            U.D. LA POVEDA
+                            CLUB
                           </h2>
                           
                           <p className="text-xs font-black text-slate-300 uppercase tracking-wide mb-2">
@@ -2314,7 +2340,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                             <div className="flex-1">
                               <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">LOCAL</p>
                               <p className="text-sm font-black text-white uppercase tracking-tight leading-tight mt-0.5">
-                                {showConvocatoriaModal.tipo === 'Local' ? 'U.D. LA POVEDA' : showConvocatoriaModal.rival}
+                                {showConvocatoriaModal.tipo === 'Local' ? 'CLUB' : showConvocatoriaModal.rival}
                               </p>
                             </div>
                             
@@ -2325,7 +2351,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                             <div className="flex-1">
                               <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">VISITANTE</p>
                               <p className="text-sm font-black text-white uppercase tracking-tight leading-tight mt-0.5">
-                                {showConvocatoriaModal.tipo === 'Local' ? showConvocatoriaModal.rival : 'U.D. LA POVEDA'}
+                                {showConvocatoriaModal.tipo === 'Local' ? showConvocatoriaModal.rival : 'CLUB'}
                               </p>
                             </div>
                           </div>
@@ -2443,7 +2469,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                                     {/* Bottom Footer Bar */}
                                     <div className="flex items-center justify-between border-t border-slate-300/20 pt-1 mt-1 relative z-10">
                                       <span className="text-[8px] font-extrabold text-slate-300 uppercase tracking-widest truncate">
-                                        LA POVEDA
+                                        CLUB
                                       </span>
                                       <span className="text-[9px]">⚽</span>
                                     </div>
@@ -2468,7 +2494,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                         <div className="relative z-10 border-t-2 border-slate-300/40 pt-3 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
                           <p className="text-blue-200 flex items-center justify-center gap-1.5 flex-wrap px-2">
                             <span>🔵⚪</span>
-                            <span className="italic">{citacionMensajeMotivacional || '¡VAMOS POVEDA! ¡A POR LA VICTORIA!'}</span>
+                            <span className="italic">{citacionMensajeMotivacional || '¡VAMOS CLUB! ¡A POR LA VICTORIA!'}</span>
                             <span>⚽🔥</span>
                           </p>
                         </div>
@@ -2523,7 +2549,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                               <UDLaPovedaLogo className="w-12 h-12 shrink-0" />
                               <div>
                                 <h1 className="text-xl font-black tracking-tight text-blue-950 uppercase leading-none">
-                                  U.D. LA POVEDA
+                                  CLUB
                                 </h1>
                                 <p className="text-xs font-bold text-slate-600 uppercase tracking-widest mt-1">
                                   HOJA OFICIAL DE CONVOCATORIA DE PARTIDO
@@ -2549,7 +2575,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                             <div>
                               <span className="text-[9px] font-black text-slate-500 uppercase block">ENCUENTRO:</span>
                               <p className="font-extrabold text-blue-950 text-sm truncate">
-                                {showConvocatoriaModal.tipo === 'Local' ? `U.D. LA POVEDA vs ${showConvocatoriaModal.rival}` : `${showConvocatoriaModal.rival} vs U.D. LA POVEDA`}
+                                {showConvocatoriaModal.tipo === 'Local' ? `CLUB vs ${showConvocatoriaModal.rival}` : `${showConvocatoriaModal.rival} vs CLUB`}
                               </p>
                               <p className="text-[10px] text-slate-600 font-semibold mt-0.5">
                                 Condición: <strong className="text-blue-900 font-bold">{showConvocatoriaModal.tipo || 'Oficial'}</strong>
@@ -2569,7 +2595,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                             <div>
                               <span className="text-[9px] font-black text-slate-500 uppercase block">UBICACIÓN & EQUIPACIÓN:</span>
                               <p className="font-semibold text-slate-800 text-[11px] truncate">
-                                📍 {citacionLugar || 'Polideportivo La Poveda'}
+                                📍 {citacionLugar || 'Campo Municipal'}
                               </p>
                               <p className="text-[10px] text-slate-600 truncate mt-0.5">
                                 👕 {citacionEquipacion || '1ª Equipación Oficial'}
@@ -2678,7 +2704,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                           </div>
 
                           <div className="flex items-center justify-between text-[8px] text-slate-500 font-semibold uppercase tracking-wider pt-2 border-t border-slate-200">
-                            <span>U.D. LA POVEDA • ARGANDA DEL REY</span>
+                            <span>CLUB • FÚTBOL BASE Y SENIOR</span>
                             <span>DOCUMENTO OFICIAL DE CLUB</span>
                             <span>{new Date().toLocaleDateString('es-ES')}</span>
                           </div>
@@ -2876,7 +2902,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                           setCitacionLugar(e.target.value);
                           setIsMsgCustomEdited(false);
                         }}
-                        placeholder="Ej. Polideportivo Municipal La Poveda (Campo Principal)"
+                        placeholder="Ej. Campo Municipal (Principal)"
                         className="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-green-500 font-medium leading-normal resize-y"
                       />
                     </div>
@@ -2963,7 +2989,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                       <span className="text-xs font-extrabold text-white uppercase tracking-wider">Plantilla WhatsApp Corporativa</span>
                     </div>
                     <span className="text-[9px] bg-green-500/20 text-green-300 font-black px-2 py-0.5 rounded-full border border-green-500/30">
-                      U.D. LA POVEDA
+                      CLUB
                     </span>
                   </div>
 
@@ -3142,7 +3168,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                     onChange={(e) => setEditingMatch({ ...editingMatch, tipo: e.target.value as any })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all font-semibold cursor-pointer"
                   >
-                    <option value="Local">Local (UD La Poveda)</option>
+                    <option value="Local">Local (CLUB)</option>
                     <option value="Visitante">Visitante (Fuera)</option>
                   </select>
                 </div>
@@ -3192,7 +3218,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                       value={editingMatch.lugar || ''}
                       onChange={(e) => setEditingMatch({ ...editingMatch, lugar: e.target.value })}
                       className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1"
-                      placeholder="Ej. Polideportivo Municipal La Poveda"
+                      placeholder="Ej. Campo Municipal"
                     />
                   </div>
 

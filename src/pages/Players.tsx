@@ -218,7 +218,7 @@ export default function Players() {
         foto_url: cleanPhotoUrl(j.foto_url),
         estado: 'Fichado',
         potencial: j.potencial,
-        equipo_actual: j.equipo_actual || 'UD La Poveda',
+        equipo_actual: j.equipo_actual || 'CLUB',
         equipo_asignado: 'SENIOR FEMENINO',
         observaciones: `Posición principal: ${j.posicion_detalle}. Fecha nacimiento: ${j.fecha_nacimiento}`
       }));

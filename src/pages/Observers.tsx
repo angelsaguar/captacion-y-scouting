@@ -187,7 +187,7 @@ export default function Observers() {
         <div>
           <h1 className="text-3xl font-black text-white italic uppercase tracking-tight">Directorio de Scouters</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Gestiona el equipo de observadores y analistas de la UD La Poveda.
+            Gestiona el equipo de observadores y analistas del Club.
           </p>
         </div>
       </div>

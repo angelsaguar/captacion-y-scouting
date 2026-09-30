@@ -759,7 +759,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
   // Observations report based on the scouting attributes
   const generateObservations = () => {
     if (attributes.length === 0) {
-      return `Se requiere registrar valoraciones específicas de captación y scouting para el jugador/a a fin de realizar un análisis individualizado. En base a los registros de rendimiento y estadísticas generales de la temporada, destaca su aportación al grupo con una valoración general de ${stats.rating_general || 50}/100 y una asistencia excelente del ${attendance}% a los entrenamientos. Demuestra un gran espíritu deportivo, seriedad táctica y una progresión regular dentro de la estructura de la U.D. La Poveda.`;
+      return `Se requiere registrar valoraciones específicas de captación y scouting para el jugador/a a fin de realizar un análisis individualizado. En base a los registros de rendimiento y estadísticas generales de la temporada, destaca su aportación al grupo con una valoración general de ${stats.rating_general || 50}/100 y una asistencia excelente del ${attendance}% a los entrenamientos. Demuestra un gran espíritu deportivo, seriedad táctica y una progresión regular dentro de la estructura del Club.`;
     }
 
     const strongAttrs = attributes
@@ -793,7 +793,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
       text += `• **Consistencia General:** No se registran debilidades críticas en su informe de scouting. Muestra un perfil táctico homogéneo de alta fiabilidad, clave para sostener la competitividad regular del equipo. \n\n`;
     }
 
-    text += `• **Conclusión Metodológica:** Con una valoración general de **${stats.rating_general || 50}** y un ratio de compromiso del **${attendance}%** en entrenamientos, se concluye que **${player.nombre}** representa un perfil alineado con la filosofía de juego de la **U.D. La Poveda**. Su regularidad diaria y madurez deportiva avalan la confianza depositada por el staff técnico.`;
+    text += `• **Conclusión Metodológica:** Con una valoración general de **${stats.rating_general || 50}** y un ratio de compromiso del **${attendance}%** en entrenamientos, se concluye que **${player.nombre}** representa un perfil alineado con la filosofía de juego del **Club**. Su regularidad diaria y madurez deportiva avalan la confianza depositada por el staff técnico.`;
 
     return text;
   };
@@ -805,7 +805,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
       <div className="bg-[#020617] rounded-[2.5rem] border border-blue-900/40 p-8 sm:p-12 relative overflow-hidden flex flex-col justify-between aspect-[1.41/1] w-full min-h-[600px] shadow-2xl page-break">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(59,130,246,0.12),transparent_70%)] pointer-events-none" />
         <div className="flex justify-between items-center border-b border-blue-950 pb-6">
-          <span className="text-blue-500 font-black tracking-[0.2em] text-[10px] uppercase">UD LA POVEDA • ÁREA DE RENDIMIENTO</span>
+          <span className="text-blue-500 font-black tracking-[0.2em] text-[10px] uppercase">CLUB • ÁREA DE RENDIMIENTO</span>
           <span className="text-xs font-mono text-slate-500">REF: DOSSIER-{player.id.substring(0,6).toUpperCase()}</span>
         </div>
         
@@ -835,7 +835,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
               
               {/* Shield Badge */}
               <div className="absolute top-1/2 -translate-y-1/2 -left-4 w-10 h-10 bg-slate-900 border-2 border-blue-500 rounded-lg flex items-center justify-center shadow-md">
-                <span className="text-[9px] font-black text-blue-400">UDLP</span>
+                <span className="text-[9px] font-black text-blue-400">CLUB</span>
               </div>
             </div>
           </div>
@@ -854,7 +854,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         </div>
 
         <div className="border-t border-blue-950 pt-6 flex justify-between items-center text-[10px] text-slate-500 uppercase tracking-wider">
-          <span>U.D. LA POVEDA METODOLOGÍA</span>
+          <span>CLUB METODOLOGÍA</span>
           <span>SOPORTE DE DATOS ANALÍTICOS</span>
           <span>TEMPORADA 2025 / 2026</span>
         </div>
@@ -1004,7 +1004,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         </div>
 
         <div className="border-t border-slate-900 pt-4 flex justify-between items-center text-[9px] text-slate-500 uppercase tracking-wider">
-          <span>U.D. LA POVEDA © 2026</span>
+          <span>CLUB © 2026</span>
           <span>ÁREA DE METODOLOGÍA Y RENDIMIENTO</span>
         </div>
       </div>
@@ -1152,7 +1152,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         </div>
 
         <div className="border-t border-slate-900 pt-4 flex justify-between items-center text-[9px] text-slate-500 uppercase tracking-wider">
-          <span>U.D. LA POVEDA © 2026</span>
+          <span>CLUB © 2026</span>
           <span>ÁREA DE METODOLOGÍA Y RENDIMIENTO</span>
         </div>
       </div>
@@ -1390,7 +1390,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         </div>
 
         <div className="border-t border-slate-900 pt-3 flex justify-between items-center text-[9px] text-slate-500 uppercase tracking-wider">
-          <span>U.D. LA POVEDA © 2026</span>
+          <span>CLUB © 2026</span>
           <span>ÁREA DE METODOLOGÍA Y RENDIMIENTO</span>
         </div>
       </div>
@@ -1512,7 +1512,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
           </div>
 
           <div className="border-t border-slate-900 pt-4 flex justify-between items-center text-[9px] text-slate-500 uppercase tracking-wider">
-            <span>U.D. LA POVEDA © 2026</span>
+            <span>CLUB © 2026</span>
             <span>ÁREA DE METODOLOGÍA Y RENDIMIENTO</span>
           </div>
         </div>
@@ -1568,7 +1568,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
           </div>
 
           <div className="border-t border-slate-900 pt-4 flex justify-between items-center text-[9px] text-slate-500 uppercase tracking-wider">
-            <span>U.D. LA POVEDA © 2026</span>
+            <span>CLUB © 2026</span>
             <span>ÁREA DE METODOLOGÍA Y RENDIMIENTO</span>
           </div>
         </div>
@@ -1696,7 +1696,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         </div>
 
         <div className="border-t border-slate-900 pt-4 flex justify-between items-center text-[9px] text-slate-500 uppercase tracking-wider">
-          <span>U.D. LA POVEDA © 2026</span>
+          <span>CLUB © 2026</span>
           <span>ÁREA DE METODOLOGÍA Y RENDIMIENTO</span>
         </div>
       </div>
@@ -1712,7 +1712,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
             <div className="space-y-1">
               <span className="text-[10px] text-amber-500 font-black tracking-widest uppercase block">INFORME DE RENDIMIENTO</span>
               <h2 className="text-3xl font-black text-white tracking-tight uppercase">08. COMPARATIVA TRIMESTRAL</h2>
-              <p className="text-xs text-slate-400 font-bold uppercase">U.D. LA POVEDA • HISTORIAL DE VALORACIONES ANUALES</p>
+              <p className="text-xs text-slate-400 font-bold uppercase">CLUB • HISTORIAL DE VALORACIONES ANUALES</p>
             </div>
             <div className="text-right">
               <span className="text-xs font-black text-slate-600 block uppercase">PÁGINA 8 DE 10</span>
@@ -1789,7 +1789,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         </div>
 
         <div className="border-t border-slate-900 pt-4 flex justify-between items-center text-[9px] text-slate-500 uppercase tracking-wider">
-          <span>U.D. LA POVEDA © 2026</span>
+          <span>CLUB © 2026</span>
           <span>ÁREA DE METODOLOGÍA Y RENDIMIENTO</span>
         </div>
       </div>
@@ -1805,7 +1805,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
             <div className="space-y-1">
               <span className="text-[10px] text-amber-500 font-black tracking-widest uppercase block">ÁREA DE RENDIMIENTO</span>
               <h2 className="text-3xl font-black text-white tracking-tight uppercase">09. CONTROL BIOMÉTRICO Y PRUEBAS FÍSICAS</h2>
-              <p className="text-xs text-slate-400 font-bold uppercase">U.D. LA POVEDA • HISTORIAL DE COMPOSICIÓN Y RENDIMIENTO FÍSICO</p>
+              <p className="text-xs text-slate-400 font-bold uppercase">CLUB • HISTORIAL DE COMPOSICIÓN Y RENDIMIENTO FÍSICO</p>
             </div>
             <div className="text-right">
               <span className="text-xs font-black text-slate-600 block uppercase">PÁGINA 9 DE 10</span>
@@ -2086,7 +2086,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         </div>
 
         <div className="border-t border-slate-900 pt-4 flex justify-between items-center text-[9px] text-slate-500 uppercase tracking-wider">
-          <span>U.D. LA POVEDA © 2026</span>
+          <span>CLUB © 2026</span>
           <span>ÁREA DE METODOLOGÍA Y RENDIMIENTO</span>
         </div>
       </div>
@@ -2248,7 +2248,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         </div>
 
         <div className="border-t border-slate-900 pt-4 flex justify-between items-center text-[9px] text-slate-500 uppercase tracking-wider">
-          <span>U.D. LA POVEDA © 2026</span>
+          <span>CLUB © 2026</span>
           <span>ÁREA DE METODOLOGÍA Y RENDIMIENTO</span>
         </div>
       </div>
@@ -2405,7 +2405,7 @@ function FUTPlayerCard({ player, stats }: { player: TeamPlayer; stats: any }) {
             <div className="bg-yellow-400 h-1.5 w-full" />
             <div className="bg-red-600 h-0.5 w-full" />
           </div>
-          <span className="text-[8px] font-black uppercase tracking-wider text-amber-400">CD LA POVEDA</span>
+          <span className="text-[8px] font-black uppercase tracking-wider text-amber-400">CLUB</span>
           <span className="text-white/30 text-[8px]">•</span>
           <span className="text-[8px] font-extrabold uppercase text-white tracking-wider">
             {player.anio_nacimiento ? `${2026 - parseInt(player.anio_nacimiento as any)} AÑOS` : '15 AÑOS'}
@@ -3022,7 +3022,7 @@ export default function Plantilla() {
         email: updatedPlayer.email || null,
         estado: 'Fichado',
         equipo_asignado: selectedTeam,
-        equipo_actual: 'UD La Poveda',
+        equipo_actual: 'CLUB',
         es_plantilla: (updatedPlayer as any).origen === 'scouting' ? false : true,
         origen: (updatedPlayer as any).origen || 'plantilla'
       };
@@ -3984,7 +3984,7 @@ export default function Plantilla() {
         email: newPlayer.email || null,
         estado: 'Fichado',
         equipo_asignado: selectedTeam,
-        equipo_actual: 'UD La Poveda',
+        equipo_actual: 'CLUB',
         es_plantilla: true,
         origen: 'plantilla'
       };
@@ -5085,7 +5085,7 @@ export default function Plantilla() {
                           </div>
 
                           <div className="text-[6px] font-bold text-amber-800 text-center uppercase tracking-widest leading-none pb-1">
-                            U.D. LA POVEDA INFORME
+                            CLUB INFORME
                           </div>
                         </div>
                       </div>
@@ -5572,7 +5572,7 @@ export default function Plantilla() {
                           <html lang="es">
                             <head>
                               <meta charset="utf-8" />
-                              <title>Informe ${selectedPlayerProfile.nombre} ${selectedPlayerProfile.apellidos} - UD La Poveda</title>
+                              <title>Informe ${selectedPlayerProfile.nombre} ${selectedPlayerProfile.apellidos} - CLUB</title>
                               ${styles}
                               <style>
                                 html, body {
@@ -5747,7 +5747,7 @@ export default function Plantilla() {
                               {/* Dossier Header */}
                               <div>
                                 <div className="flex items-center gap-2 text-amber-500 font-bold uppercase tracking-widest text-[10px] mb-1">
-                                  <span>U.D. LA POVEDA • ÁREA DE METODOLOGÍA</span>
+                                  <span>CLUB • ÁREA DE METODOLOGÍA</span>
                                 </div>
                                 <h2 className="text-3xl font-black uppercase tracking-tight text-white leading-none">
                                   {selectedPlayerProfile.nombre} {selectedPlayerProfile.apellidos}
@@ -5834,7 +5834,7 @@ export default function Plantilla() {
 
                               {/* Dossier Footer */}
                               <div className="flex justify-between items-center text-[9px] text-slate-500 font-bold uppercase tracking-widest pt-4 border-t border-slate-900">
-                                <span>U.D. LA POVEDA © 2026</span>
+                                <span>CLUB © 2026</span>
                                 <span>ÁREA DE METODOLOGÍA Y RENDIMIENTO</span>
                               </div>
                             </>
@@ -5892,7 +5892,7 @@ export default function Plantilla() {
                     <>
                       <div>
                         <div className="text-amber-500 font-extrabold uppercase tracking-widest text-[10px] mb-1">
-                          U.D. LA POVEDA • ÁREA DE METODOLOGÍA
+                          CLUB • ÁREA DE METODOLOGÍA
                         </div>
                         <h2 className="text-4xl font-black uppercase tracking-tight text-white leading-none">
                           {selectedPlayerProfile.nombre} {selectedPlayerProfile.apellidos}
@@ -5946,7 +5946,7 @@ export default function Plantilla() {
                       </div>
 
                       <div className="flex justify-between items-center text-[9px] text-slate-500 font-bold uppercase tracking-widest pt-4 border-t border-slate-900">
-                        <span>U.D. LA POVEDA © 2026</span>
+                        <span>CLUB © 2026</span>
                         <span>ÁREA DE METODOLOGÍA Y RENDIMIENTO</span>
                       </div>
                     </>

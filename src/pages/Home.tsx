@@ -108,7 +108,7 @@ export default function Home() {
           </div>
           <div>
             <h1 className="font-extrabold text-base md:text-lg tracking-tight text-white uppercase leading-tight flex items-center gap-2">
-              U.D. LA POVEDA <span className="text-xs bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/20 font-normal normal-case">Portal Oficial</span>
+              CLUB <span className="text-xs bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/20 font-normal normal-case">Portal Oficial</span>
             </h1>
             <p className="text-xs text-slate-400 font-semibold tracking-wide">ÁREA DEPORTIVA Y TÉCNICA</p>
           </div>
@@ -150,7 +150,7 @@ export default function Home() {
         <div className="relative rounded-3xl overflow-hidden border border-slate-900 shadow-2xl bg-slate-900/40 aspect-[21/9] min-h-[220px] md:min-h-[350px] group flex flex-col justify-end" id="team-photo-container">
           <img 
             src={teamPhoto} 
-            alt="U.D. La Poveda Team Photo" 
+            alt="CLUB Team Photo" 
             className="absolute inset-0 w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-700 ease-out"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
@@ -161,8 +161,8 @@ export default function Home() {
                 <Sparkles className="w-3.5 h-3.5 animate-pulse" />
                 <span>Nuestra Plantilla</span>
               </div>
-              <h3 className="text-xl md:text-3xl font-extrabold text-white uppercase tracking-tight shadow-sm">U.D. LA POVEDA</h3>
-              <p className="text-xs md:text-sm text-slate-300 font-medium">Fútbol Base y Profesional • Arganda del Rey, Madrid</p>
+              <h3 className="text-xl md:text-3xl font-extrabold text-white uppercase tracking-tight shadow-sm">CLUB</h3>
+              <p className="text-xs md:text-sm text-slate-300 font-medium">Fútbol Base y Profesional</p>
             </div>
 
             <Button
@@ -237,7 +237,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="border-t border-slate-900 py-6 text-center text-slate-600 text-xs font-semibold uppercase tracking-wider select-none">
-        U.D. LA POVEDA © 2026 • Portal Profesional de Gestión Deportiva
+        CLUB © 2026 • Portal Profesional de Gestión Deportiva
       </footer>
 
       {/* Photo Update Modal */}

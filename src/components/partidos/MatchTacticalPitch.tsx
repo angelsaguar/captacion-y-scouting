@@ -414,6 +414,9 @@ export default function MatchTacticalPitch({
   const [selectedEntraId, setSelectedEntraId] = useState<string>('');
   const [selectedPosicionEntra, setSelectedPosicionEntra] = useState<string>('');
   
+  // Tactical position selector modal state
+  const [selectedTacticalPlayer, setSelectedTacticalPlayer] = useState<MatchPlayerStat | null>(null);
+  
   // Calculate current minute as a numeric integer (default from chrono)
   const currentChronoMinute = useMemo(() => {
     const mins = Math.max(1, Math.floor(chronoSeconds / 60));
@@ -622,13 +625,43 @@ export default function MatchTacticalPitch({
       setDraggingPlayerId(null);
       dragInfoRef.current = null;
 
-      // If barely moved, treat as a tap/click to open substitution modal!
+      // If barely moved, treat as a tap/click to open tactical player options!
       if (!moved) {
-        handleOpenSubForPlayer(player);
+        setSelectedTacticalPlayer(player);
       } else {
-        toast.info(`Posición de ${player.nombre} ajustada manualmente en el campo.`, { duration: 1500 });
+        const apodo = player.apodo || player.nombre;
+        toast.info(`Posición de ${apodo} ajustada en el campo.`, { duration: 1500 });
       }
     }
+  };
+
+  // Helper to reassign or swap player position into a tactical slot
+  const handleAssignPosition = (targetPlayer: MatchPlayerStat, targetSlot: TacticalSlot) => {
+    // Check if another on-field player currently occupies this slot in placedLayout
+    const currentOccupant = placedLayout.playerPlacements.find(p => p.slot.id === targetSlot.id);
+    if (currentOccupant && currentOccupant.player.playerId !== targetPlayer.playerId) {
+      // Swap positions
+      const otherPlayer = currentOccupant.player;
+      const myCurrentSlot = placedLayout.playerPlacements.find(p => p.player.playerId === targetPlayer.playerId)?.slot;
+      if (myCurrentSlot && onPositionChange) {
+        onPositionChange(otherPlayer.playerId, myCurrentSlot.name);
+      }
+    }
+
+    if (onPositionChange) {
+      onPositionChange(targetPlayer.playerId, targetSlot.name);
+    }
+
+    // Reset manual drag coordinates for this player so she snaps perfectly to the slot
+    setCustomPositions(prev => {
+      const next = { ...prev };
+      delete next[targetPlayer.playerId];
+      return next;
+    });
+
+    const apodo = targetPlayer.apodo || targetPlayer.nombre;
+    toast.success(`★ ${apodo} colocada en su posición: ${targetSlot.name} (${targetSlot.label})`);
+    setSelectedTacticalPlayer(null);
   };
 
   const handlePointerCancel = () => {
@@ -913,6 +946,9 @@ export default function MatchTacticalPitch({
               const hasEnteredAsSub = substitutions.some(s => s.entraId === player.playerId);
               const currentMinutes = player.minutos ?? 0;
               const isDragging = draggingPlayerId === player.playerId;
+              const displayApodo = (player.apodo && player.apodo.trim().length > 0)
+                ? player.apodo.trim()
+                : player.nombre?.trim() || 'Jugadora';
 
               return (
                 <div
@@ -931,16 +967,28 @@ export default function MatchTacticalPitch({
                       ? 'z-50 scale-125 cursor-grabbing drop-shadow-2xl'
                       : 'cursor-grab hover:scale-110 active:scale-105'
                   }`}
-                  title={`${player.nombre} #${player.dorsal} • Campo: ${slot.name} (${slot.label}) • Plantilla: ${player.posicion || '-'}. Arrastra para mover o toca para sustituir.`}
+                  title={`${displayApodo} (${player.nombre} ${player.apellidos}) #${player.dorsal} • Puesto: ${slot.name} (${slot.label}) • Plantilla: ${player.posicion || '-'}. Toca para cambiar de posición o sustituir.`}
                 >
-                  {/* Dorsal Circle Avatar */}
-                  <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br ${slot.color} border-2 ${
+                  {/* Foto de la jugadora en Avatar Circular con dorsal */}
+                  <div className={`relative w-11 h-11 sm:w-12 sm:h-12 rounded-full overflow-hidden border-2 ${
                     isManual ? 'border-amber-300 ring-2 ring-amber-400/80 shadow-amber-500/40' : 'border-white'
-                  } shadow-lg flex items-center justify-center text-white font-black text-xs sm:text-sm font-mono relative transition-shadow group-hover:ring-4 group-hover:ring-emerald-400/50`}>
-                    <span>{player.dorsal || '-'}</span>
+                  } shadow-xl flex items-center justify-center bg-slate-900 transition-transform group-hover:scale-110 group-hover:ring-4 group-hover:ring-emerald-400/60`}>
+                    {player.foto_url ? (
+                      <img
+                        src={player.foto_url}
+                        alt={displayApodo}
+                        className="w-full h-full object-cover object-top"
+                        crossOrigin="anonymous"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className={`w-full h-full bg-gradient-to-br ${slot.color} flex items-center justify-center text-white font-black text-xs sm:text-sm font-mono`}>
+                        {player.dorsal || displayApodo.substring(0, 2)}
+                      </div>
+                    )}
 
                     {/* Drag indicator icon on hover */}
-                    <span className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-slate-900 border border-emerald-400 text-emerald-300 flex items-center justify-center shadow">
+                    <span className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-0 right-0 w-4 h-4 rounded-full bg-slate-900 border border-emerald-400 text-emerald-300 flex items-center justify-center shadow">
                       <Move className="w-2.5 h-2.5" />
                     </span>
 
@@ -964,13 +1012,18 @@ export default function MatchTacticalPitch({
                     )}
                   </div>
 
-                  {/* Player Name and Quick Sub Badge */}
-                  <div className="mt-1 bg-slate-950/90 border border-white/20 rounded-md px-1.5 py-0.5 text-center shadow-md max-w-[85px] sm:max-w-[105px] truncate group-hover:border-emerald-400 transition-colors pointer-events-none">
-                    <span className="text-[9px] sm:text-[10px] font-extrabold text-white block truncate leading-tight">
-                      {player.nombre.split(' ')[0]} {player.apellidos ? player.apellidos.charAt(0) + '.' : ''}
+                  {/* Dorsal Badge flotante */}
+                  <span className="absolute -top-1.5 -left-1.5 min-w-[20px] h-[20px] px-1 rounded-full bg-slate-950/95 border border-white/70 text-white font-mono font-black text-[9px] flex items-center justify-center shadow-md z-10">
+                    #{player.dorsal || '-'}
+                  </span>
+
+                  {/* Player Apodo & Posición Badge */}
+                  <div className="mt-1 bg-slate-950/95 border border-white/25 rounded-md px-1.5 py-0.5 text-center shadow-lg max-w-[95px] sm:max-w-[115px] truncate group-hover:border-emerald-400 transition-colors pointer-events-none">
+                    <span className="text-[10px] sm:text-[11px] font-black uppercase text-white block truncate leading-tight tracking-tight">
+                      {displayApodo}
                     </span>
                     <div className="flex items-center justify-center gap-1 text-[8px] font-bold text-emerald-300">
-                      <span title={`Puesto táctico: ${slot.name} • En plantilla: ${player.posicion || '-'}`}>{slot.label}</span>
+                      <span className="text-cyan-300 font-extrabold" title={`Puesto táctico: ${slot.name} • En plantilla: ${player.posicion || '-'}`}>{slot.label}</span>
                       {isManual && <span className="text-[8px] text-amber-300 font-bold" title="Posición ajustada manualmente">●</span>}
                       <span>•</span>
                       <span>{currentMinutes}'</span>
@@ -1041,18 +1094,37 @@ export default function MatchTacticalPitch({
                 const habitualPos = player.posicionActiva || getDefaultCampoPosition(player.posicion);
                 const hasPlayed = (player.minutos || 0) > 0;
 
+                const benchApodo = (player.apodo && player.apodo.trim().length > 0)
+                  ? player.apodo.trim()
+                  : player.nombre?.trim() || 'Jugadora';
+
                 return (
                   <div
                     key={player.playerId}
                     className="bg-slate-900/80 hover:bg-slate-850 border border-slate-800 hover:border-amber-500/50 p-2 rounded-xl flex items-center justify-between gap-2 transition-all"
                   >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-300 font-mono font-bold text-xs shrink-0">
-                        #{player.dorsal || '-'}
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="relative w-8 h-8 rounded-full overflow-hidden border border-slate-700 bg-slate-800 shrink-0 flex items-center justify-center">
+                        {player.foto_url ? (
+                          <img
+                            src={player.foto_url}
+                            alt={benchApodo}
+                            className="w-full h-full object-cover object-top"
+                            crossOrigin="anonymous"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <span className="text-[10px] font-bold text-amber-300 font-mono">
+                            #{player.dorsal || '-'}
+                          </span>
+                        )}
+                        <span className="absolute -top-1 -left-1 px-1 min-w-[16px] h-[16px] rounded-full bg-slate-950 border border-slate-600 text-white font-mono font-bold text-[8px] flex items-center justify-center">
+                          {player.dorsal || '-'}
+                        </span>
                       </div>
                       <div className="min-w-0">
-                        <span className="text-xs font-bold text-white block truncate">
-                          {player.nombre} {player.apellidos}
+                        <span className="text-xs font-black uppercase text-white block truncate">
+                          {benchApodo}
                         </span>
                         <span className="text-[10px] text-slate-400 truncate block">
                           {habitualPos} {hasPlayed ? `• ${player.minutos}' jugados` : ''}
@@ -1381,6 +1453,132 @@ export default function MatchTacticalPitch({
               </Button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE ASIGNACIÓN / CAMBIO DE POSICIÓN TÁCTICA */}
+      {selectedTacticalPlayer && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-slate-900 border border-cyan-500/40 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-cyan-950 via-slate-900 to-cyan-950 border-b border-cyan-500/30 p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="relative w-12 h-12 rounded-full overflow-hidden border-2 border-cyan-400 bg-slate-800 shrink-0 flex items-center justify-center shadow-md">
+                  {selectedTacticalPlayer.foto_url ? (
+                    <img
+                      src={selectedTacticalPlayer.foto_url}
+                      alt={selectedTacticalPlayer.apodo || selectedTacticalPlayer.nombre}
+                      className="w-full h-full object-cover object-top"
+                      crossOrigin="anonymous"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <span className="text-white font-mono font-black text-sm">
+                      #{selectedTacticalPlayer.dorsal}
+                    </span>
+                  )}
+                  <span className="absolute -top-1 -left-1 px-1 min-w-[18px] h-[18px] rounded-full bg-slate-950 border border-cyan-400 text-white font-mono font-bold text-[9px] flex items-center justify-center">
+                    {selectedTacticalPlayer.dorsal || '-'}
+                  </span>
+                </div>
+                <div>
+                  <h4 className="font-black text-base text-white uppercase tracking-tight">
+                    {selectedTacticalPlayer.apodo || selectedTacticalPlayer.nombre}
+                  </h4>
+                  <p className="text-xs text-slate-400">
+                    {selectedTacticalPlayer.nombre} {selectedTacticalPlayer.apellidos} • <span className="text-cyan-300 font-bold">{selectedTacticalPlayer.posicion || 'Campo'}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedTacticalPlayer(null)}
+                className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-5 space-y-4">
+              <div>
+                <span className="text-[11px] font-black text-cyan-400 uppercase tracking-wider block mb-2">
+                  📍 Colocar en Puesto Táctico del Campo ({tacticalSystem})
+                </span>
+                <p className="text-[11px] text-slate-400 mb-3">
+                  Toca la posición donde quieres colocar a <strong>{selectedTacticalPlayer.apodo || selectedTacticalPlayer.nombre}</strong>. Si el puesto ya está ocupado, intercambiarán posiciones automáticamente.
+                </p>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {TACTICAL_SYSTEMS[tacticalSystem].slots.map(slot => {
+                    const currentOccupant = placedLayout.playerPlacements.find(p => p.slot.id === slot.id);
+                    const isCurrent = currentOccupant?.player.playerId === selectedTacticalPlayer.playerId;
+                    const occupantApodo = currentOccupant 
+                      ? (currentOccupant.player.apodo || currentOccupant.player.nombre) 
+                      : null;
+
+                    return (
+                      <button
+                        key={slot.id}
+                        type="button"
+                        onClick={() => handleAssignPosition(selectedTacticalPlayer, slot)}
+                        className={`p-2 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                          isCurrent
+                            ? 'bg-cyan-500/20 border-cyan-400 ring-2 ring-cyan-400/40 text-white shadow-md'
+                            : 'bg-slate-950/70 hover:bg-slate-800 border-slate-800 hover:border-cyan-500/50 text-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1 w-full">
+                          <span className={`text-[10px] font-black px-1.5 py-0.5 rounded font-mono ${
+                            isCurrent ? 'bg-cyan-400 text-black' : 'bg-slate-800 text-cyan-300'
+                          }`}>
+                            {slot.label}
+                          </span>
+                          {isCurrent && (
+                            <span className="text-[9px] font-black text-cyan-300">★ Actual</span>
+                          )}
+                        </div>
+                        <span className="font-extrabold text-[11px] text-white mt-1 truncate block leading-tight">
+                          {slot.name}
+                        </span>
+                        <span className="text-[9px] text-slate-400 truncate block mt-0.5">
+                          {isCurrent ? 'En este puesto' : occupantApodo ? `Ocupa: ${occupantApodo}` : 'Libre'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Botón directo de sustitución */}
+              <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    const p = selectedTacticalPlayer;
+                    setSelectedTacticalPlayer(null);
+                    handleOpenSubForPlayer(p);
+                  }}
+                  variant="outline"
+                  className="w-full text-xs font-bold border-amber-500/40 text-amber-300 hover:bg-amber-950/40 cursor-pointer flex items-center justify-center gap-1.5 h-9"
+                >
+                  <ArrowRightLeft className="w-3.5 h-3.5" />
+                  <span>Sustituir por jugadora del banquillo</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-slate-950 border-t border-slate-800 p-3 flex items-center justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setSelectedTacticalPlayer(null)}
+                className="h-8 px-4 text-xs font-bold border-slate-700 text-slate-300 hover:text-white cursor-pointer"
+              >
+                Cerrar
+              </Button>
+            </div>
           </div>
         </div>
       )}

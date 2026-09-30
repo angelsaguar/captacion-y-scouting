@@ -87,7 +87,7 @@ export default function Login() {
               <UDLaPovedaLogo className="w-16 h-16" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold tracking-tight text-white uppercase">U.D. LA POVEDA SCOUTING</CardTitle>
+          <CardTitle className="text-2xl font-bold tracking-tight text-white uppercase">CLUB SCOUTING</CardTitle>
           <CardDescription className="text-slate-400 font-medium">
             Acceso autorizado para el administrador Ángel Saguar y los observadores (SANTI, ALEJANDRO SAGUAR).
           </CardDescription>
@@ -148,7 +148,7 @@ export default function Login() {
         </form>
       </Card>
       <div className="absolute bottom-8 text-center w-full text-slate-500 text-xs tracking-widest uppercase font-semibold">
-        © 2026 U.D. LA POVEDA - PROFESSIONAL SCOUTING DIVISION
+        © 2026 CLUB - PROFESSIONAL SCOUTING DIVISION
       </div>
     </div>
   );

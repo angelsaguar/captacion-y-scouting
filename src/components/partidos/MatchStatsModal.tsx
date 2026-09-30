@@ -46,6 +46,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { toast } from 'sonner';
 import { isPlayerMatch, normalizePlayerNameKey, cleanPhotoUrl } from '@/lib/utils';
+import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 import MatchTacticalPitch, { MatchSubstitution } from './MatchTacticalPitch';
 
 export const POSICIONES_CAMPO = [
@@ -115,44 +116,45 @@ export function getPlayerRoleCategory(posRaw?: string): 'portero' | 'defensa' | 
   return 'medio';
 }
 
-export function getDefaultCampoPosition(posRaw?: string): PosicionCampo {
+export function getDefaultCampoPosition(posRaw?: string, lateralidad?: string): PosicionCampo {
   if (!posRaw) return 'Medio Centro';
   const p = posRaw.toLowerCase().trim();
+  const lat = (lateralidad || '').toLowerCase().trim();
   
   // 1. Portero
   if (p.includes('port') || p === 'por' || p === 'gk') return 'Portero';
 
   // 2. Delantero / Extremos / Puntas
-  if ((p.includes('ext') || p.includes('extremo')) && (p.includes('izq') || p.includes('zur') || p === 'ei')) return 'Extremo Izquierda';
-  if ((p.includes('ext') || p.includes('extremo')) && (p.includes('der') || p.includes('die') || p === 'ed')) return 'Extremo Derecha';
+  if ((p.includes('ext') || p.includes('extremo')) && (p.includes('izq') || p.includes('zur') || p === 'ei' || lat.includes('izq') || lat.includes('zur'))) return 'Extremo Izquierda';
+  if ((p.includes('ext') || p.includes('extremo')) && (p.includes('der') || p.includes('die') || p === 'ed' || lat.includes('der') || lat.includes('die'))) return 'Extremo Derecha';
   if (p === 'ei') return 'Extremo Izquierda';
   if (p === 'ed') return 'Extremo Derecha';
-  if (p.includes('extremo')) return 'Extremo Derecha';
+  if (p.includes('extremo')) return lat.includes('izq') ? 'Extremo Izquierda' : 'Extremo Derecha';
   if (p.includes('delant') || p.includes('punta') || p.includes('ariete') || p === 'dc' || p === 'del') return 'Delantero';
 
-  // 3. Centrocampistas, Interiores, Pivotes (Evaluated BEFORE defense so "medio centro" is never classified as defense)
+  // 3. Centrocampistas, Interiores, Pivotes
   if (p.includes('pivote') || p.includes('mcd') || p === 'piv') return 'Medio Centro';
-  if (p.includes('int') && (p.includes('izq') || p.includes('zur') || p === 'ii')) return 'Interior Izquierda';
-  if (p.includes('int') && (p.includes('der') || p.includes('die') || p === 'id')) return 'Interior Derecha';
+  if (p.includes('int') && (p.includes('izq') || p.includes('zur') || p === 'ii' || lat.includes('izq'))) return 'Interior Izquierda';
+  if (p.includes('int') && (p.includes('der') || p.includes('die') || p === 'id' || lat.includes('der'))) return 'Interior Derecha';
   if (p === 'ii' || p === 'mi') return 'Interior Izquierda';
   if (p === 'id' || p === 'md') return 'Interior Derecha';
-  if (p.includes('interior')) return 'Interior Izquierda';
-  if (p.includes('media punta') || p.includes('mediapunta') || p === 'mco') return 'Interior Izquierda';
+  if (p.includes('interior')) return lat.includes('der') ? 'Interior Derecha' : 'Interior Izquierda';
+  if (p.includes('media punta') || p.includes('mediapunta') || p === 'mco') return lat.includes('der') ? 'Interior Derecha' : 'Interior Izquierda';
   if (p.includes('medio') || p.includes('volante') || p.includes('centrocamp') || p === 'mc') return 'Medio Centro';
 
   // 4. Laterales
-  if ((p.includes('lat') || p.includes('carril')) && (p.includes('izq') || p.includes('zur') || p === 'li')) return 'Lateral Izquierdo';
-  if ((p.includes('lat') || p.includes('carril')) && (p.includes('der') || p.includes('die') || p === 'ld')) return 'Lateral Derecho';
+  if ((p.includes('lat') || p.includes('carril')) && (p.includes('izq') || p.includes('zur') || p === 'li' || lat.includes('izq') || lat.includes('zur'))) return 'Lateral Izquierdo';
+  if ((p.includes('lat') || p.includes('carril')) && (p.includes('der') || p.includes('die') || p === 'ld' || lat.includes('der') || lat.includes('die'))) return 'Lateral Derecho';
   if (p === 'li') return 'Lateral Izquierdo';
   if (p === 'ld') return 'Lateral Derecho';
-  if (p.includes('lateral') || p.includes('carrilero') || p.includes('carril')) return 'Lateral Derecho';
+  if (p.includes('lateral') || p.includes('carrilero') || p.includes('carril')) return lat.includes('izq') ? 'Lateral Izquierdo' : 'Lateral Derecho';
 
   // 5. Centrales y Defensas
-  if (p.includes('central') && (p.includes('izq') || p.includes('zur') || p === 'cz' || p === 'ci')) return 'Central Zurdo';
-  if (p.includes('central') && (p.includes('der') || p.includes('die') || p === 'cd')) return 'Central Diestro';
+  if (p.includes('central') && (p.includes('izq') || p.includes('zur') || p === 'cz' || p === 'ci' || lat.includes('izq') || lat.includes('zur'))) return 'Central Zurdo';
+  if (p.includes('central') && (p.includes('der') || p.includes('die') || p === 'cd' || lat.includes('der') || lat.includes('die'))) return 'Central Diestro';
   if (p === 'cz' || p === 'ci') return 'Central Zurdo';
   if (p === 'cd') return 'Central Diestro';
-  if (p.includes('central') || p.includes('cierre') || p.includes('defensa') || p === 'def' || p === 'dfc') return 'Central Diestro';
+  if (p.includes('central') || p.includes('cierre') || p.includes('defensa') || p === 'def' || p === 'dfc') return lat.includes('izq') ? 'Central Zurdo' : 'Central Diestro';
 
   return 'Medio Centro';
 }
@@ -164,21 +166,21 @@ export function getPositionAbbr(pos?: string): string {
   if (!pos) return 'CAM';
   const p = pos.toLowerCase().trim();
   if (p.includes('port') || p === 'por' || p === 'gk') return 'POR';
-  if ((p.includes('lat') || p.includes('carril')) && (p.includes('der') || p.includes('die') || p === 'ld')) return 'LTD';
-  if ((p.includes('lat') || p.includes('carril')) && (p.includes('izq') || p.includes('zur') || p === 'li')) return 'LTI';
-  if (p.includes('central') && (p.includes('der') || p.includes('die') || p === 'cd')) return 'CEN D';
-  if (p.includes('central') && (p.includes('izq') || p.includes('zur') || p === 'cz' || p === 'ci')) return 'CEN Z';
-  if (p.includes('central') || p.includes('defensa') || p === 'def' || p === 'dfc') return 'CEN';
+  if ((p.includes('lat') || p.includes('carril')) && (p.includes('der') || p.includes('die') || p === 'ld')) return 'LD';
+  if ((p.includes('lat') || p.includes('carril')) && (p.includes('izq') || p.includes('zur') || p === 'li')) return 'LI';
   if (p.includes('lateral')) return 'LAT';
+  if (p.includes('central') && (p.includes('der') || p.includes('die') || p === 'cd')) return 'CD';
+  if (p.includes('central') && (p.includes('izq') || p.includes('zur') || p === 'cz' || p === 'ci')) return 'CZ';
+  if (p.includes('central') || p.includes('defensa') || p === 'def' || p === 'dfc') return 'CEN';
   if (p.includes('pivote') || p === 'piv' || p === 'mcd') return 'PIV';
-  if (p.includes('interior') && (p.includes('der') || p.includes('die') || p === 'id')) return 'INT D';
-  if (p.includes('interior') && (p.includes('izq') || p.includes('zur') || p === 'ii')) return 'INT I';
+  if (p.includes('interior') && (p.includes('der') || p.includes('die') || p === 'id')) return 'ID';
+  if (p.includes('interior') && (p.includes('izq') || p.includes('zur') || p === 'ii')) return 'II';
   if (p.includes('media punta') || p.includes('mediapunta') || p === 'mco') return 'MCO';
   if (p.includes('medio') || p.includes('centrocamp') || p === 'mc') return 'MC';
-  if (p.includes('extremo') && (p.includes('der') || p.includes('die') || p === 'ed')) return 'EXT D';
-  if (p.includes('extremo') && (p.includes('izq') || p.includes('zur') || p === 'ei')) return 'EXT I';
+  if (p.includes('extremo') && (p.includes('der') || p.includes('die') || p === 'ed')) return 'ED';
+  if (p.includes('extremo') && (p.includes('izq') || p.includes('zur') || p === 'ei')) return 'EI';
   if (p.includes('extremo')) return 'EXT';
-  if (p.includes('delant') || p.includes('punta') || p.includes('ariete') || p === 'dc') return 'DEL';
+  if (p.includes('delant') || p.includes('punta') || p.includes('ariete') || p === 'dc' || p === 'del') return 'DC';
   return pos.slice(0, 4).toUpperCase();
 }
 
@@ -903,11 +905,94 @@ export default function MatchStatsModal({
       // Check if player is convocada
       const isConv = true;
 
-      // Respect registered position from Plantilla:
-      const registeredPos = p.posicion && p.posicion !== 'Campo' && p.posicion !== 'Jugadora' ? p.posicion : (existing?.posicion || 'Campo');
-      const defaultTacticalPos = getDefaultCampoPosition(registeredPos);
+      // Direct lookup from scouting_local_players and team_roster to get 100% accurate ficha data
+      let fichaPos = '';
+      let fichaLat = '';
+      let fichaApodo = '';
+      let fichaDorsal = '';
+      let fichaFoto = '';
+
+      // 1. Scouting local players (Ficha oficial del jugador)
+      try {
+        const scSaved = localStorage.getItem('scouting_local_players');
+        if (scSaved) {
+          const scList: any[] = JSON.parse(scSaved);
+          if (Array.isArray(scList)) {
+            const scP = scList.find(sp => 
+              String(sp.id) === pIdStr || 
+              isPlayerMatch(sp, p) || 
+              normalizePlayerNameKey(sp.nombre, sp.apellidos) === pNormKey
+            );
+            if (scP) {
+              if (scP.posicion && scP.posicion !== 'Campo' && scP.posicion !== 'Jugadora') fichaPos = scP.posicion;
+              if (scP.lateralidad) fichaLat = scP.lateralidad;
+              if (scP.apodo) fichaApodo = scP.apodo;
+              if (scP.dorsal) fichaDorsal = scP.dorsal;
+              if (scP.foto_url) fichaFoto = scP.foto_url;
+            }
+          }
+        }
+      } catch {}
+
+      // 2. Team roster
+      if (!fichaPos || !fichaFoto) {
+        try {
+          const trSaved = localStorage.getItem(`team_roster_${teamName}`);
+          if (trSaved) {
+            const trList: any[] = JSON.parse(trSaved);
+            if (Array.isArray(trList)) {
+              const trP = trList.find(tp => 
+                String(tp.id) === pIdStr || 
+                isPlayerMatch(tp, p) || 
+                normalizePlayerNameKey(tp.nombre, tp.apellidos) === pNormKey
+              );
+              if (trP) {
+                if (!fichaPos && trP.posicion && trP.posicion !== 'Campo' && trP.posicion !== 'Jugadora') fichaPos = trP.posicion;
+                if (!fichaLat && trP.lateralidad) fichaLat = trP.lateralidad;
+                if (!fichaApodo && trP.apodo) fichaApodo = trP.apodo;
+                if (!fichaDorsal && trP.dorsal) fichaDorsal = trP.dorsal;
+                if (!fichaFoto && trP.foto_url) fichaFoto = trP.foto_url;
+              }
+            }
+          }
+        } catch {}
+      }
+
+      // 3. JUGADORAS_ADJUNTAS
+      if (!fichaPos || !fichaFoto) {
+        const ojP = JUGADORAS_ADJUNTAS.find(oj => 
+          String(oj.id) === pIdStr || 
+          isPlayerMatch(oj, p) || 
+          normalizePlayerNameKey(oj.nombre, oj.apellidos) === pNormKey
+        );
+        if (ojP) {
+          if (!fichaPos && ojP.posicion) fichaPos = ojP.posicion;
+          if (!fichaLat && ojP.lateralidad) fichaLat = ojP.lateralidad;
+          if (!fichaDorsal && ojP.dorsal) fichaDorsal = ojP.dorsal;
+          if (!fichaFoto && ojP.foto_url) fichaFoto = ojP.foto_url;
+        }
+      }
+
+      // Source player resolution for photo, apodo, position & dorsal
+      const sourcePlayer = allPlayers.find(ap => 
+        String(ap.id) === pIdStr || 
+        isPlayerMatch(ap, p) || 
+        normalizePlayerNameKey(ap.nombre, ap.apellidos) === pNormKey
+      );
+      const playerPhoto = cleanPhotoUrl(p.foto_url || fichaFoto || sourcePlayer?.foto_url || (existing as any)?.foto_url || '');
+      const playerApodo = (p.apodo || fichaApodo || sourcePlayer?.apodo || (existing as any)?.apodo || '').trim();
+
+      // Respect registered position from ficha:
+      const registeredPos = fichaPos 
+        || (p.posicion && p.posicion !== 'Campo' && p.posicion !== 'Jugadora' ? p.posicion : '')
+        || (sourcePlayer?.posicion && sourcePlayer.posicion !== 'Campo' && sourcePlayer.posicion !== 'Jugadora' ? sourcePlayer.posicion : '')
+        || (existing?.posicion && existing.posicion !== 'Campo' && existing.posicion !== 'Jugadora' ? existing.posicion : '')
+        || 'Campo';
+
+      const playerLateralidad = fichaLat || (p as any).lateralidad || (sourcePlayer as any)?.lateralidad || '';
+      const defaultTacticalPos = getDefaultCampoPosition(registeredPos, playerLateralidad);
       
-      // Keep existing.posicionActiva ONLY if it matches the role category of the player's registered position in Plantilla
+      // Keep existing.posicionActiva ONLY if it matches the role category of the player's registered position in ficha
       const registeredRole = getPlayerRoleCategory(registeredPos);
       const existingActiveRole = existing?.posicionActiva ? getPlayerRoleCategory(existing.posicionActiva) : null;
       
@@ -937,22 +1022,13 @@ export default function MatchStatsModal({
         };
       }
 
-      // Source player resolution for photo & apodo
-      const sourcePlayer = allPlayers.find(ap => 
-        String(ap.id) === pIdStr || 
-        isPlayerMatch(ap, p) || 
-        normalizePlayerNameKey(ap.nombre, ap.apellidos) === pNormKey
-      );
-      const playerPhoto = cleanPhotoUrl(p.foto_url || sourcePlayer?.foto_url || (existing as any)?.foto_url || '');
-      const playerApodo = (p.apodo || sourcePlayer?.apodo || (existing as any)?.apodo || '').trim();
-
       return {
         playerId: pIdStr,
         nombre: p.nombre || '',
         apellidos: p.apellidos || '',
         apodo: playerApodo,
         foto_url: playerPhoto,
-        dorsal: p.dorsal || '',
+        dorsal: p.dorsal || sourcePlayer?.dorsal || '',
         posicion: registeredPos,
         posicionActiva: activeTacticalPos,
         stats_por_posicion: statsPorPosicion,

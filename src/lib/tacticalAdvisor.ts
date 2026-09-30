@@ -11,7 +11,7 @@ export function generateLocalTacticalAdvice(
   rivalSystem: string,
   rivalName?: string,
   myRoster?: any[],
-  teamName: string = 'U.D. La Poveda'
+  teamName: string = 'CLUB'
 ): TacticalAdviceResult {
   const normRival = (rivalSystem || '').trim();
   const rival = rivalName || 'Rival';
@@ -167,7 +167,7 @@ export async function getTacticalAdvice(params: {
     if (apiKey) {
       const { GoogleGenAI, Type } = await import('@google/genai');
       const ai = new GoogleGenAI({ apiKey });
-      const prompt = `Eres el Director Técnico y Analista Táctico Máster de fútbol para el equipo ${teamName || 'U.D. La Poveda'}.
+      const prompt = `Eres el Director Técnico y Analista Táctico Máster de fútbol para el equipo ${teamName || 'CLUB'}.
 Nos enfrentamos al rival "${rivalName || 'Rival'}" que juega habitualmente con el sistema de juego: ${rivalSystem}.
 ${rivalNotes ? `Información/Notas sobre el juego del rival: ${rivalNotes}` : ''}
 ${myRoster && myRoster.length > 0 ? `Nuestra plantilla disponible incluye a: ${myRoster.map((p: any) => `${p.nombre} (${p.posicion || 'Jugadora'})`).join(', ')}.` : ''}

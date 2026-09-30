@@ -29,7 +29,7 @@ export const JUGADORAS_ADJUNTAS: JugadoraOficial[] = [
     dorsal: '6',
     lateralidad: 'Derecho',
     estado: 'Fichado',
-    equipo_actual: 'UD La Poveda',
+    equipo_actual: 'CLUB',
     equipo_asignado: 'SENIOR FEMENINO',
     potencial: 5
   },
@@ -44,7 +44,7 @@ export const JUGADORAS_ADJUNTAS: JugadoraOficial[] = [
     dorsal: '9',
     lateralidad: 'Derecho',
     estado: 'Fichado',
-    equipo_actual: 'UD La Poveda',
+    equipo_actual: 'CLUB',
     equipo_asignado: 'SENIOR FEMENINO',
     potencial: 5
   },
@@ -59,7 +59,7 @@ export const JUGADORAS_ADJUNTAS: JugadoraOficial[] = [
     dorsal: '3',
     lateralidad: 'Izquierdo',
     estado: 'Fichado',
-    equipo_actual: 'UD La Poveda',
+    equipo_actual: 'CLUB',
     equipo_asignado: 'SENIOR FEMENINO',
     potencial: 4
   },
@@ -74,7 +74,7 @@ export const JUGADORAS_ADJUNTAS: JugadoraOficial[] = [
     dorsal: '1',
     lateralidad: 'Derecho',
     estado: 'Fichado',
-    equipo_actual: 'UD La Poveda',
+    equipo_actual: 'CLUB',
     equipo_asignado: 'SENIOR FEMENINO',
     potencial: 5
   },
@@ -89,7 +89,7 @@ export const JUGADORAS_ADJUNTAS: JugadoraOficial[] = [
     dorsal: '12',
     lateralidad: 'Izquierdo',
     estado: 'Fichado',
-    equipo_actual: 'UD La Poveda',
+    equipo_actual: 'CLUB',
     equipo_asignado: 'SENIOR FEMENINO',
     potencial: 4
   },
@@ -104,7 +104,7 @@ export const JUGADORAS_ADJUNTAS: JugadoraOficial[] = [
     dorsal: '2',
     lateralidad: 'Derecho',
     estado: 'Fichado',
-    equipo_actual: 'UD La Poveda',
+    equipo_actual: 'CLUB',
     equipo_asignado: 'SENIOR FEMENINO',
     potencial: 4
   },
@@ -119,7 +119,7 @@ export const JUGADORAS_ADJUNTAS: JugadoraOficial[] = [
     dorsal: '19',
     lateralidad: 'Derecho',
     estado: 'Fichado',
-    equipo_actual: 'UD La Poveda',
+    equipo_actual: 'CLUB',
     equipo_asignado: 'SENIOR FEMENINO',
     potencial: 4
   },
@@ -134,7 +134,7 @@ export const JUGADORAS_ADJUNTAS: JugadoraOficial[] = [
     dorsal: '10',
     lateralidad: 'Derecho',
     estado: 'Fichado',
-    equipo_actual: 'UD La Poveda',
+    equipo_actual: 'CLUB',
     equipo_asignado: 'SENIOR FEMENINO',
     potencial: 5
   },
@@ -149,7 +149,7 @@ export const JUGADORAS_ADJUNTAS: JugadoraOficial[] = [
     dorsal: '8',
     lateralidad: 'Derecho',
     estado: 'Fichado',
-    equipo_actual: 'UD La Poveda',
+    equipo_actual: 'CLUB',
     equipo_asignado: 'SENIOR FEMENINO',
     potencial: 5
   },
@@ -164,7 +164,7 @@ export const JUGADORAS_ADJUNTAS: JugadoraOficial[] = [
     dorsal: '14',
     lateralidad: 'Derecho',
     estado: 'Fichado',
-    equipo_actual: 'UD La Poveda',
+    equipo_actual: 'CLUB',
     equipo_asignado: 'SENIOR FEMENINO',
     potencial: 4
   },
@@ -179,7 +179,7 @@ export const JUGADORAS_ADJUNTAS: JugadoraOficial[] = [
     dorsal: '17',
     lateralidad: 'Derecho',
     estado: 'Fichado',
-    equipo_actual: 'UD La Poveda',
+    equipo_actual: 'CLUB',
     equipo_asignado: 'SENIOR FEMENINO',
     potencial: 4
   },
@@ -194,7 +194,7 @@ export const JUGADORAS_ADJUNTAS: JugadoraOficial[] = [
     dorsal: '13',
     lateralidad: 'Derecho',
     estado: 'Fichado',
-    equipo_actual: 'UD La Poveda',
+    equipo_actual: 'CLUB',
     equipo_asignado: 'SENIOR FEMENINO',
     potencial: 4
   },
@@ -209,7 +209,7 @@ export const JUGADORAS_ADJUNTAS: JugadoraOficial[] = [
     dorsal: '18',
     lateralidad: 'Derecho',
     estado: 'Fichado',
-    equipo_actual: 'UD La Poveda',
+    equipo_actual: 'CLUB',
     equipo_asignado: 'SENIOR FEMENINO',
     potencial: 5
   },
@@ -224,7 +224,7 @@ export const JUGADORAS_ADJUNTAS: JugadoraOficial[] = [
     dorsal: '4',
     lateralidad: 'Derecho',
     estado: 'Fichado',
-    equipo_actual: 'UD La Poveda',
+    equipo_actual: 'CLUB',
     equipo_asignado: 'SENIOR FEMENINO',
     potencial: 5
   },
@@ -239,7 +239,7 @@ export const JUGADORAS_ADJUNTAS: JugadoraOficial[] = [
     dorsal: '7',
     lateralidad: 'Derecho',
     estado: 'Fichado',
-    equipo_actual: 'UD La Poveda',
+    equipo_actual: 'CLUB',
     equipo_asignado: 'SENIOR FEMENINO',
     potencial: 5
   }

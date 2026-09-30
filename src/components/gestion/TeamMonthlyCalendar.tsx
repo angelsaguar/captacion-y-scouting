@@ -154,7 +154,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           '2026-08-26': { dateStr: '2026-08-26', title: 'Descanso', type: 'Descanso' },
           '2026-08-27': { dateStr: '2026-08-27', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
           '2026-08-28': { dateStr: '2026-08-28', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-08-29': { dateStr: '2026-08-29', title: 'vs AD PARLA', type: 'Partido', condicion: 'Local', competicion: 'Amistoso', rival: 'AD PARLA', hora: '20:00 h', lugar: 'Polideportivo La Poveda' },
+          '2026-08-29': { dateStr: '2026-08-29', title: 'vs AD PARLA', type: 'Partido', condicion: 'Local', competicion: 'Amistoso', rival: 'AD PARLA', hora: '20:00 h', lugar: 'Campo Municipal' },
           '2026-08-30': { dateStr: '2026-08-30', title: 'Descanso', type: 'Descanso' },
 
           '2026-08-31': { dateStr: '2026-08-31', title: 'Descanso', type: 'Descanso' },
@@ -162,7 +162,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           '2026-09-02': { dateStr: '2026-09-02', title: 'Descanso', type: 'Descanso' },
           '2026-09-03': { dateStr: '2026-09-03', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
           '2026-09-04': { dateStr: '2026-09-04', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-05': { dateStr: '2026-09-05', title: 'vs AD LA PLATA', type: 'Partido', condicion: 'Local', competicion: 'Amistoso', rival: 'AD LA PLATA', hora: '13:15 h', lugar: 'Polideportivo La Poveda' },
+          '2026-09-05': { dateStr: '2026-09-05', title: 'vs AD LA PLATA', type: 'Partido', condicion: 'Local', competicion: 'Amistoso', rival: 'AD LA PLATA', hora: '13:15 h', lugar: 'Campo Municipal' },
           '2026-09-06': { dateStr: '2026-09-06', title: 'Descanso', type: 'Descanso' },
 
           '2026-09-07': { dateStr: '2026-09-07', title: 'Descanso', type: 'Descanso' },
@@ -178,7 +178,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           '2026-09-16': { dateStr: '2026-09-16', title: 'Descanso', type: 'Descanso' },
           '2026-09-17': { dateStr: '2026-09-17', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
           '2026-09-18': { dateStr: '2026-09-18', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-19': { dateStr: '2026-09-19', title: 'vs CD INTER PROMESAS', type: 'Partido', condicion: 'Local', competicion: 'Amistoso', rival: 'CD INTER PROMESAS', hora: '20:00 h', lugar: 'Polideportivo La Poveda' },
+          '2026-09-19': { dateStr: '2026-09-19', title: 'vs CD INTER PROMESAS', type: 'Partido', condicion: 'Local', competicion: 'Amistoso', rival: 'CD INTER PROMESAS', hora: '20:00 h', lugar: 'Campo Municipal' },
           '2026-09-20': { dateStr: '2026-09-20', title: 'Descanso', type: 'Descanso' },
 
           '2026-09-21': { dateStr: '2026-09-21', title: 'Descanso', type: 'Descanso' },
@@ -245,7 +245,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           rival: m.rival || m.title.replace(/^vs\s+/i, '').replace(/^@\s+/i, '') || 'Rival',
           tipo: m.title.toLowerCase().includes('@') ? 'Visitante' : 'Local',
           hora: m.hora || '20:00 h',
-          lugar: m.lugar || (m.title.toLowerCase().includes('@') ? 'Campo Visitante' : 'Polideportivo La Poveda'),
+          lugar: m.lugar || (m.title.toLowerCase().includes('@') ? 'Campo Visitante' : 'Campo Municipal'),
           estadisticas: {}
         };
         const { error } = await supabase
@@ -342,7 +342,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
             condicion: m.tipo === 'Local' ? 'Local' : 'Visitante',
             competicion: compDetermined,
             hora: m.hora || '20:00 h',
-            lugar: m.lugar || (m.tipo === 'Local' ? 'Polideportivo La Poveda' : 'Campo Visitante'),
+            lugar: m.lugar || (m.tipo === 'Local' ? 'Campo Municipal' : 'Campo Visitante'),
             rival: m.rival
           };
           matchesCount++;
@@ -521,7 +521,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         title: 'Entrenamiento',
         type: 'Entrenamiento',
         hora: '19:30 h',
-        lugar: 'Polideportivo La Poveda',
+        lugar: 'Campo Municipal',
         notas: ''
       });
     }
@@ -595,7 +595,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
             tipo: eventToSave.condicion || (eventToSave.title.toLowerCase().includes('@') ? 'Visitante' : 'Local'),
             competicion: compVal,
             hora: eventToSave.hora || '20:00 h',
-            lugar: eventToSave.lugar || 'Polideportivo La Poveda',
+            lugar: eventToSave.lugar || 'Campo Municipal',
             estadisticas: {}
           });
 
@@ -612,7 +612,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           tipo: eventToSave.condicion || (eventToSave.title.toLowerCase().includes('@') ? 'Visitante' : 'Local'),
           competicion: compVal,
           hora: eventToSave.hora || '20:00 h',
-          lugar: eventToSave.lugar || 'Polideportivo La Poveda'
+          lugar: eventToSave.lugar || 'Campo Municipal'
         };
         if (existingMatchIdx >= 0) {
           currentMatches[existingMatchIdx] = matchPayload;
@@ -788,7 +788,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
   // Generate WhatsApp summary text for current month's events
   const generateWhatsAppSummary = () => {
     const monthName = MONTH_NAMES[currentMonth].toUpperCase();
-    let text = `📅 *UD LA POVEDA - CALENDARIO DE ${monthName} ${currentYear}*\n`;
+    let text = `📅 *CLUB - CALENDARIO DE ${monthName} ${currentYear}*\n`;
     text += `⚽ *Equipo:* ${selectedTeam}\n`;
     text += `🏆 *Temporada:* ${seasonLabel}\n`;
     text += `------------------------------------\n\n`;
@@ -1058,7 +1058,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
             {/* Club & Category Titles */}
             <div>
               <h2 className="text-3xl sm:text-4xl font-black italic tracking-wider text-white uppercase drop-shadow-md">
-                UD LA POVEDA
+                CLUB
               </h2>
               <p className="text-xs sm:text-sm font-black text-blue-400 uppercase tracking-widest mt-1">
                 {selectedTeam} • CALENDARIO MENSUAL DE ACTIVIDAD
@@ -1462,7 +1462,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
                         onClick={() => setEventForm({ 
                           ...eventForm, 
                           condicion: 'Local',
-                          lugar: eventForm.lugar || 'Polideportivo La Poveda'
+                          lugar: eventForm.lugar || 'Campo Municipal'
                         })}
                         className={`flex items-center justify-center gap-2 px-3 py-2 text-xs font-black rounded-xl border transition-all cursor-pointer ${
                           getMatchCondition(eventForm) === 'Local'
@@ -1479,7 +1479,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
                         onClick={() => setEventForm({ 
                           ...eventForm, 
                           condicion: 'Visitante',
-                          lugar: eventForm.lugar === 'Polideportivo La Poveda' ? '' : eventForm.lugar
+                          lugar: eventForm.lugar === 'Campo Municipal' ? '' : eventForm.lugar
                         })}
                         className={`flex items-center justify-center gap-2 px-3 py-2 text-xs font-black rounded-xl border transition-all cursor-pointer ${
                           getMatchCondition(eventForm) === 'Visitante'
@@ -1556,7 +1556,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
                     value={eventForm.lugar || ''}
                     onChange={(e) => setEventForm({ ...eventForm, lugar: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500 transition-all"
-                    placeholder="Ej. Polideportivo La Poveda"
+                    placeholder="Ej. Campo Municipal"
                   />
                 </div>
               </div>
