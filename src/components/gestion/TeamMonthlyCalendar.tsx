@@ -197,6 +197,21 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
 
     // Trigger auto synchronization from Supabase / localStorage matches & attendance
     syncAutoData(false);
+
+    const handleSync = () => {
+      const refreshed = localStorage.getItem(storageKey);
+      if (refreshed) {
+        try {
+          setEvents(JSON.parse(refreshed));
+        } catch {}
+      }
+    };
+    window.addEventListener('calendar-updated', handleSync);
+    window.addEventListener('session-updated', handleSync);
+    return () => {
+      window.removeEventListener('calendar-updated', handleSync);
+      window.removeEventListener('session-updated', handleSync);
+    };
   }, [selectedTeam, currentYear, currentMonth]);
 
   // Save changes to localStorage and optionally sync to Supabase
@@ -359,14 +374,18 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       const localSessionsStr = localStorage.getItem(`team_sessions_${selectedTeam}`) || localStorage.getItem(`attendance_sessions_${selectedTeam}`);
       const localSessions = localSessionsStr ? JSON.parse(localSessionsStr) : [];
 
+      const deletedRaw = localStorage.getItem(`team_deleted_sessions_${selectedTeam}`);
+      const deletedList: { id?: string; fecha: string }[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+      const isDel = (id?: string, f?: string) => deletedList.some(d => (id && d.id && d.id === id) || (f && d.fecha && d.fecha === f));
+
       const allSessionsMap = new Map<string, any>();
       (dbSessions || []).forEach(s => { 
-        if (s.fecha && s.tipo !== 'CalendarioMensual' && (s.team_name === selectedTeam || s.team_id === selectedTeam || s.team === selectedTeam || !s.team_id)) {
+        if (s.fecha && s.tipo !== 'CalendarioMensual' && !isDel(s.id, s.fecha) && (s.team_name === selectedTeam || s.team_id === selectedTeam || s.team === selectedTeam || !s.team_id)) {
           allSessionsMap.set(s.fecha, s); 
         }
       });
       localSessions.forEach((s: any) => { 
-        if (s.fecha && s.tipo !== 'CalendarioMensual') allSessionsMap.set(s.fecha, s); 
+        if (s.fecha && s.tipo !== 'CalendarioMensual' && !isDel(s.id, s.fecha)) allSessionsMap.set(s.fecha, s); 
       });
 
       allSessionsMap.forEach((s, dateStr) => {

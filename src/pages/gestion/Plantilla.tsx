@@ -3212,17 +3212,27 @@ export default function Plantilla() {
       try {
         const localSessionsKey = `team_sessions_${selectedTeam}`;
         const localSaved = localStorage.getItem(localSessionsKey);
+        const initKey = `team_sessions_initialized_${selectedTeam}`;
+        const isInitialized = localStorage.getItem(initKey) === 'true';
         
-        // Only populate local storage if it is completely empty
-        if (!localSaved || JSON.parse(localSaved).length === 0) {
+        // Only populate local storage if it was NEVER initialized or saved before
+        if (localSaved === null && !isInitialized) {
           const { data: sessionsData } = await supabase
             .from('attendance_sessions')
             .select('*')
             .eq('team', selectedTeam)
             .neq('tipo', 'CalendarioMensual');
           if (sessionsData) {
+            const deletedRaw = localStorage.getItem(`team_deleted_sessions_${selectedTeam}`);
+            const deletedList: { id?: string; fecha: string }[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+            const isDel = (id?: string, f?: string) => deletedList.some(d => (id && d.id && d.id === id) || (f && d.fecha && d.fecha === f));
+
             const formatted = sessionsData
-              .filter(item => item.tipo !== 'CalendarioMensual' && !(typeof item.descripcion === 'string' && item.descripcion.trim().startsWith('{')))
+              .filter(item => 
+                item.tipo !== 'CalendarioMensual' && 
+                !(typeof item.descripcion === 'string' && item.descripcion.trim().startsWith('{')) &&
+                !isDel(item.id, item.fecha)
+              )
               .map(item => ({
                 id: item.id,
                 fecha: item.fecha,
@@ -3234,6 +3244,7 @@ export default function Plantilla() {
               }));
             if (formatted.length > 0) {
               localStorage.setItem(localSessionsKey, JSON.stringify(formatted));
+              localStorage.setItem(initKey, 'true');
             }
           }
         }

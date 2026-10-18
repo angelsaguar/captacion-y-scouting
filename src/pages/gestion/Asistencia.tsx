@@ -268,11 +268,26 @@ export const loadCompleteTeamRoster = (teamName: string): TeamPlayer[] => {
   return cleanDeduplicated;
 };
 
+export const getDeletedSessions = (teamName: string): { id?: string; fecha: string }[] => {
+  try {
+    const raw = localStorage.getItem(`team_deleted_sessions_${teamName}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const isSessionDeleted = (teamName: string, id?: string, fecha?: string): boolean => {
+  const deleted = getDeletedSessions(teamName);
+  return deleted.some(d => (id && d.id && d.id === id) || (fecha && d.fecha && d.fecha === fecha));
+};
+
 export default function Asistencia() {
   const [selectedTeam, setSelectedTeam] = useState<string>(CLUB_TEAMS[0]);
   const [players, setPlayers] = useState<TeamPlayer[]>([]);
   const [sessions, setSessions] = useState<AttendanceSession[]>([]);
   const [selectedSession, setSelectedSession] = useState<AttendanceSession | null>(null);
+  const [confirmDeleteSession, setConfirmDeleteSession] = useState<AttendanceSession | null>(null);
   const [activeTab, setActiveTab] = useState<'asistencia' | 'planificacion'>('asistencia');
   const [observacionesInput, setObservacionesInput] = useState<string>('');
   const [observacionesSaved, setObservacionesSaved] = useState<boolean>(true);
@@ -397,55 +412,59 @@ export default function Asistencia() {
 
     const sessionsKey = `team_sessions_${selectedTeam}`;
     const activeKey = `active_session_id_${selectedTeam}`;
+    const initKey = `team_sessions_initialized_${selectedTeam}`;
 
     // 1. Synchronously load local storage first so user never loses their changes
     const savedSessions = localStorage.getItem(sessionsKey);
+    const isExplicitlyInitialized = localStorage.getItem(initKey) === 'true';
     let initialList: AttendanceSession[] = [];
-    if (savedSessions) {
+
+    if (savedSessions !== null) {
       try {
         const parsed = JSON.parse(savedSessions);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           const cleanParsed = parsed.filter((item: any) => 
             item && 
             item.tipo !== 'CalendarioMensual' && 
-            !(typeof item.descripcion === 'string' && item.descripcion.trim().startsWith('{'))
+            !(typeof item.descripcion === 'string' && item.descripcion.trim().startsWith('{')) &&
+            !isSessionDeleted(selectedTeam, item.id, item.fecha)
           );
-          if (cleanParsed.length > 0) {
-            initialList = cleanParsed.map((item: any) => {
-              const cleaned = cleanSessionRecords(item.records || [], currentRoster);
-              // Ensure all current roster players are included in records so user never sees truncated 5-player rosters
-              const existingIds = new Set(cleaned.map(r => r.playerId));
-              const existingNames = new Set(cleaned.map(r => normalizePlayerNameKey(r.playerName || '', r.playerLastName || '')));
-              const completeRecords = [...cleaned];
-              currentRoster.forEach(p => {
-                const norm = normalizePlayerNameKey(p.nombre, p.apellidos);
-                if (!existingIds.has(p.id) && !existingNames.has(norm)) {
-                  completeRecords.push({
-                    playerId: p.id,
-                    playerName: p.nombre,
-                    playerLastName: p.apellidos,
-                    playerDorsal: p.dorsal,
-                    playerPosition: p.posicion,
-                    foto_url: p.foto_url,
-                    status: undefined
-                  });
-                }
-              });
 
-              return {
-                ...item,
-                id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id) ? item.id : crypto.randomUUID(),
-                records: completeRecords
-              };
+          initialList = cleanParsed.map((item: any) => {
+            const cleaned = cleanSessionRecords(item.records || [], currentRoster);
+            // Ensure all current roster players are included in records so user never sees truncated 5-player rosters
+            const existingIds = new Set(cleaned.map(r => r.playerId));
+            const existingNames = new Set(cleaned.map(r => normalizePlayerNameKey(r.playerName || '', r.playerLastName || '')));
+            const completeRecords = [...cleaned];
+            currentRoster.forEach(p => {
+              const norm = normalizePlayerNameKey(p.nombre, p.apellidos);
+              if (!existingIds.has(p.id) && !existingNames.has(norm)) {
+                completeRecords.push({
+                  playerId: p.id,
+                  playerName: p.nombre,
+                  playerLastName: p.apellidos,
+                  playerDorsal: p.dorsal,
+                  playerPosition: p.posicion,
+                  foto_url: p.foto_url,
+                  status: undefined
+                });
+              }
             });
-            // Persist the complete records to local storage immediately
-            localStorage.setItem(sessionsKey, JSON.stringify(initialList));
-          }
+
+            return {
+              ...item,
+              id: item.id || crypto.randomUUID(),
+              records: completeRecords
+            };
+          });
+          // Persist the complete records to local storage immediately
+          safeLocalStorageSetSessions(sessionsKey, initialList);
         }
       } catch {}
     }
 
-    if (initialList.length === 0) {
+    // Only build default training sessions if sessions were NEVER initialized before and local storage is empty
+    if (savedSessions === null && !isExplicitlyInitialized && initialList.length === 0) {
       // Build default training sessions from current team calendar or standard pre-season
       const defaultRecords = currentRoster.map(p => ({
         playerId: p.id,
@@ -471,7 +490,7 @@ export default function Asistencia() {
           const calEvents = JSON.parse(calSaved);
           const found: typeof trainingDates = [];
           Object.values(calEvents).forEach((ev: any) => {
-            if (ev && ev.type === 'Entrenamiento' && ev.dateStr) {
+            if (ev && ev.type === 'Entrenamiento' && ev.dateStr && !isSessionDeleted(selectedTeam, undefined, ev.dateStr)) {
               found.push({
                 fecha: ev.dateStr,
                 hora: ev.hora || '19:30 h',
@@ -486,28 +505,31 @@ export default function Asistencia() {
         }
       } catch {}
 
-      initialList = trainingDates.map(tr => ({
-        id: crypto.randomUUID(),
-        fecha: tr.fecha,
-        hora: tr.hora,
-        tipo: 'Entrenamiento',
-        descripcion: tr.desc,
-        observaciones: '',
-        records: defaultRecords,
-        tareas: [],
-        archivos: [],
-        videos: []
-      }));
+      initialList = trainingDates
+        .filter(tr => !isSessionDeleted(selectedTeam, undefined, tr.fecha))
+        .map(tr => ({
+          id: crypto.randomUUID(),
+          fecha: tr.fecha,
+          hora: tr.hora,
+          tipo: 'Entrenamiento',
+          descripcion: tr.desc,
+          observaciones: '',
+          records: defaultRecords,
+          tareas: [],
+          archivos: [],
+          videos: []
+        }));
 
-      localStorage.setItem(sessionsKey, JSON.stringify(initialList));
+      safeLocalStorageSetSessions(sessionsKey, initialList);
+      localStorage.setItem(initKey, 'true');
     }
 
     setSessions(initialList);
     const lastActiveId = localStorage.getItem(activeKey);
-    const foundActive = initialList.find(s => s.id === lastActiveId) || initialList[0];
+    const foundActive = (lastActiveId ? initialList.find(s => s.id === lastActiveId) : null) || initialList[0] || null;
     setSelectedSession(foundActive);
 
-    // 2. Fetch from Supabase in the background and safely merge without overwriting local changes
+    // 2. Fetch from Supabase in the background and safely merge without overwriting local changes or resurrecting deleted sessions
     const syncFromSupabase = async () => {
       try {
         const { data, error } = await supabase
@@ -524,21 +546,42 @@ export default function Asistencia() {
           );
 
           if (cleanData.length > 0) {
+            // Also clean up any lingering deleted sessions in the background
+            const currentDeleted = getDeletedSessions(selectedTeam);
+            for (const item of cleanData) {
+              if (currentDeleted.some(d => (d.id && d.id === item.id) || (d.fecha && d.fecha === item.fecha))) {
+                supabase.from('attendance_sessions').delete().eq('id', item.id).catch(() => {});
+                if (item.fecha) {
+                  supabase.from('attendance_sessions').delete().eq('team', selectedTeam).eq('fecha', item.fecha).catch(() => {});
+                }
+              }
+            }
+
             const currentSavedStr = localStorage.getItem(sessionsKey);
             const currentSaved: AttendanceSession[] = currentSavedStr ? JSON.parse(currentSavedStr) : [];
             const mergedMap = new Map<string, AttendanceSession>();
 
             // Put current local sessions first (they have highest priority for user edits)
             currentSaved.forEach(s => {
-              mergedMap.set(s.fecha, s);
+              if (!isSessionDeleted(selectedTeam, s.id, s.fecha)) {
+                mergedMap.set(s.fecha, s);
+              }
             });
+
+            const hasInitializedLocal = localStorage.getItem(initKey) === 'true' || currentSavedStr !== null;
 
             // Merge in cloud data safely
             cleanData.forEach(cloudItem => {
+              // Never restore deleted sessions!
+              if (isSessionDeleted(selectedTeam, cloudItem.id, cloudItem.fecha)) {
+                return;
+              }
+
               const cloudRecords = cleanSessionRecords(cloudItem.records || [], currentRoster);
               const existing = mergedMap.get(cloudItem.fecha);
-              if (!existing) {
-                // New session from cloud
+              
+              if (!existing && !hasInitializedLocal) {
+                // New session from cloud ONLY if the app was completely uninitialized locally
                 mergedMap.set(cloudItem.fecha, {
                   id: cloudItem.id,
                   fecha: cloudItem.fecha,
@@ -551,7 +594,7 @@ export default function Asistencia() {
                   archivos: cloudItem.archivos || [],
                   videos: cloudItem.videos || []
                 });
-              } else {
+              } else if (existing) {
                 // If cloud has more records than local, merge missing ones
                 const localIds = new Set(existing.records.map(r => r.playerId));
                 cloudRecords.forEach(cr => {
@@ -562,16 +605,26 @@ export default function Asistencia() {
                 if (!existing.observaciones && cloudItem.observaciones) {
                   existing.observaciones = cloudItem.observaciones;
                 }
+                if ((!existing.tareas || existing.tareas.length === 0) && cloudItem.tareas && cloudItem.tareas.length > 0) {
+                  existing.tareas = cloudItem.tareas;
+                }
+                if ((!existing.archivos || existing.archivos.length === 0) && cloudItem.archivos && cloudItem.archivos.length > 0) {
+                  existing.archivos = cloudItem.archivos;
+                }
+                if ((!existing.videos || existing.videos.length === 0) && cloudItem.videos && cloudItem.videos.length > 0) {
+                  existing.videos = cloudItem.videos;
+                }
               }
             });
 
             const mergedList = Array.from(mergedMap.values()).sort((a, b) => b.fecha.localeCompare(a.fecha));
             setSessions(mergedList);
-            localStorage.setItem(sessionsKey, JSON.stringify(mergedList));
+            safeLocalStorageSetSessions(sessionsKey, mergedList);
+            localStorage.setItem(initKey, 'true');
             
-            const lastActiveId = localStorage.getItem(activeKey);
-            const foundActive = mergedList.find(s => s.id === lastActiveId) || mergedList[0];
-            setSelectedSession(foundActive);
+            const currActiveId = localStorage.getItem(activeKey);
+            const foundActiveAfterSync = (currActiveId ? mergedList.find(s => s.id === currActiveId) : null) || mergedList[0] || null;
+            setSelectedSession(foundActiveAfterSync);
           }
         }
       } catch (err) {
@@ -608,6 +661,7 @@ export default function Asistencia() {
     setSessions(validSessions);
     const sessionsKey = `team_sessions_${selectedTeam}`;
     safeLocalStorageSetSessions(sessionsKey, validSessions);
+    localStorage.setItem(`team_sessions_initialized_${selectedTeam}`, 'true');
     window.dispatchEvent(new CustomEvent('session-updated', { detail: { team: selectedTeam } }));
     window.dispatchEvent(new Event('storage'));
 
@@ -617,7 +671,19 @@ export default function Asistencia() {
       if (match) {
         setSelectedSession(match);
         localStorage.setItem(`active_session_id_${selectedTeam}`, match.id);
+      } else if (validSessions.length > 0) {
+        setSelectedSession(validSessions[0]);
+        localStorage.setItem(`active_session_id_${selectedTeam}`, validSessions[0].id);
+      } else {
+        setSelectedSession(null);
+        localStorage.removeItem(`active_session_id_${selectedTeam}`);
       }
+    } else if (validSessions.length > 0) {
+      setSelectedSession(validSessions[0]);
+      localStorage.setItem(`active_session_id_${selectedTeam}`, validSessions[0].id);
+    } else {
+      setSelectedSession(null);
+      localStorage.removeItem(`active_session_id_${selectedTeam}`);
     }
 
     // Try to sync to Supabase in the background
@@ -754,6 +820,14 @@ export default function Asistencia() {
       tareas: [],
       archivos: []
     };
+
+    // Clear any previous deletion tombstone for this date
+    try {
+      const deletedKey = `team_deleted_sessions_${selectedTeam}`;
+      const currentDeleted = getDeletedSessions(selectedTeam);
+      const filtered = currentDeleted.filter(d => d.fecha !== newSessionData.fecha);
+      localStorage.setItem(deletedKey, JSON.stringify(filtered));
+    } catch {}
 
     const updated = [newSession, ...sessions];
     saveSessions(updated);
@@ -1122,23 +1196,104 @@ export default function Asistencia() {
   };
 
   const handleDeleteSession = async (id: string) => {
-    const updated = sessions.filter(s => s.id !== id);
+    const sessionToDelete = sessions.find(s => s.id === id) || (selectedSession?.id === id ? selectedSession : null);
+    const fechaToDelete = sessionToDelete?.fecha;
+
+    // 1. Mark as deleted in tombstone storage so it is never resurrected
+    const deletedKey = `team_deleted_sessions_${selectedTeam}`;
+    try {
+      const currentDeleted = getDeletedSessions(selectedTeam);
+      const updatedDeleted = [...currentDeleted, { id, fecha: fechaToDelete || '' }];
+      localStorage.setItem(deletedKey, JSON.stringify(updatedDeleted));
+    } catch (e) {
+      console.warn('Error saving deleted sessions tombstone:', e);
+    }
+
+    // 2. Filter from local React state and local storage immediately
+    const updated = sessions.filter(s => s.id !== id && (!fechaToDelete || s.fecha !== fechaToDelete));
     
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-    if (isUuid) {
-      try {
+    // Explicitly record initialization flag so empty list doesn't trigger default generator
+    localStorage.setItem(`team_sessions_initialized_${selectedTeam}`, 'true');
+    const sessionsKey = `team_sessions_${selectedTeam}`;
+    safeLocalStorageSetSessions(sessionsKey, updated);
+    setSessions(updated);
+
+    // Update active selection
+    const nextActive = updated.length > 0 ? updated[0] : null;
+    setSelectedSession(nextActive);
+    if (nextActive) {
+      localStorage.setItem(`active_session_id_${selectedTeam}`, nextActive.id);
+    } else {
+      localStorage.removeItem(`active_session_id_${selectedTeam}`);
+    }
+
+    window.dispatchEvent(new CustomEvent('session-updated', { detail: { team: selectedTeam } }));
+    window.dispatchEvent(new Event('storage'));
+
+    // 3. Purge from Supabase / Backend Storage
+    try {
+      // Direct delete by ID
+      await supabase
+        .from('attendance_sessions')
+        .delete()
+        .eq('id', id);
+
+      // Direct delete by team & fecha
+      if (fechaToDelete) {
         await supabase
           .from('attendance_sessions')
           .delete()
-          .eq('id', id);
-      } catch (err) {
-        console.warn('Failed to delete attendance session from Supabase:', err);
+          .eq('team', selectedTeam)
+          .eq('fecha', fechaToDelete);
+          
+        await supabase
+          .from('attendance_sessions')
+          .delete()
+          .eq('fecha', fechaToDelete);
       }
+    } catch (err) {
+      console.warn('Failed to delete attendance session from Supabase:', err);
     }
 
-    saveSessions(updated);
-    setSelectedSession(updated.length > 0 ? updated[0] : null);
-    toast.success('Sesión de asistencia eliminada.');
+    // 4. Also purge directly from the local fallback table if in local mode
+    try {
+      const rawTable = localStorage.getItem('ud_lapoveda_table_attendance_sessions');
+      if (rawTable) {
+        const tableData: any[] = JSON.parse(rawTable);
+        const filteredTable = tableData.filter((item: any) => {
+          if (item.id === id) return false;
+          if (fechaToDelete && item.fecha === fechaToDelete && (item.team === selectedTeam || item.team_id === selectedTeam || !item.team_id)) return false;
+          return true;
+        });
+        localStorage.setItem('ud_lapoveda_table_attendance_sessions', JSON.stringify(filteredTable));
+      }
+    } catch (e) {
+      console.warn('Error cleaning fallback table:', e);
+    }
+
+    // 5. Also if calendar has this date as 'Entrenamiento', remove from calendar events
+    try {
+      if (fechaToDelete) {
+        const d = new Date(fechaToDelete);
+        if (!isNaN(d.getTime())) {
+          const calKey = `team_monthly_calendar_${selectedTeam}_${d.getFullYear()}_${d.getMonth()}`;
+          const calSaved = localStorage.getItem(calKey);
+          if (calSaved) {
+            const calEvents = JSON.parse(calSaved);
+            if (calEvents[fechaToDelete] && calEvents[fechaToDelete].type === 'Entrenamiento') {
+              delete calEvents[fechaToDelete];
+              localStorage.setItem(calKey, JSON.stringify(calEvents));
+              window.dispatchEvent(new CustomEvent('calendar-updated', { detail: { team: selectedTeam } }));
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Error removing calendar event:', e);
+    }
+
+    setConfirmDeleteSession(null);
+    toast.success('Sesión de entrenamiento eliminada permanentemente.');
   };
 
   const handleAddTask = (titulo: string, duracion: string, descripcion: string) => {
@@ -1601,7 +1756,20 @@ export default function Asistencia() {
                         </span>
                         <h6 className="font-extrabold text-white text-xs leading-snug break-words">{sess.descripcion}</h6>
                       </div>
-                      <span className="text-[10px] font-extrabold text-white bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-md shrink-0">{sess.fecha}</span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[10px] font-extrabold text-white bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-md">{sess.fecha}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmDeleteSession(sess);
+                          }}
+                          className="p-1 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+                          title="Eliminar sesión de entrenamiento"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="flex items-center justify-between border-t border-slate-900/60 pt-2 text-[10px]">
@@ -1661,11 +1829,12 @@ export default function Asistencia() {
                   </Button>
 
                   <Button 
-                    onClick={() => handleDeleteSession(selectedSession.id)}
+                    onClick={() => setConfirmDeleteSession(selectedSession)}
                     variant="ghost"
-                    className="text-xs font-bold text-slate-500 hover:text-red-400 py-1.5 h-auto rounded-xl"
+                    className="text-xs font-bold text-slate-500 hover:text-red-400 py-1.5 h-auto rounded-xl gap-1.5 cursor-pointer"
                   >
-                    Eliminar Sesión
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Eliminar Sesión</span>
                   </Button>
                 </div>
               </div>
@@ -3247,6 +3416,50 @@ export default function Asistencia() {
               )}
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Modal Confirmación de Eliminación de Sesión */}
+      {confirmDeleteSession && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl text-left space-y-4">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="p-2.5 bg-red-500/10 rounded-2xl border border-red-500/20">
+                <Trash2 className="w-6 h-6 text-red-400" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-white text-base uppercase tracking-wider">
+                  ¿Eliminar Sesión?
+                </h4>
+                <p className="text-[11px] text-slate-400 font-semibold">
+                  Esta acción no se puede deshacer
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              ¿Estás seguro de que deseas eliminar permanentemente la sesión de <strong className="text-white font-bold">{confirmDeleteSession.descripcion}</strong> del día <strong className="text-white font-bold">{confirmDeleteSession.fecha}</strong>? Se borrarán todos los registros de asistencia de las jugadoras y archivos adjuntos.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setConfirmDeleteSession(null)}
+                className="text-xs font-bold text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-white rounded-xl py-2 px-4 cursor-pointer"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                onClick={() => handleDeleteSession(confirmDeleteSession.id)}
+                className="text-xs font-black uppercase tracking-wider bg-red-600 hover:bg-red-700 text-white rounded-xl py-2 px-4 shadow-lg shadow-red-950/40 cursor-pointer flex items-center gap-2"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Eliminar Definitivamente</span>
+              </Button>
+            </div>
           </div>
         </div>
       )}
