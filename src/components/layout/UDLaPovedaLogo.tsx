@@ -1,102 +1,70 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 interface ClubLogoProps {
   className?: string;
+  alt?: string;
 }
 
-export default function UDLaPovedaLogo({ className = "w-10 h-10" }: ClubLogoProps) {
+export default function UDLaPovedaLogo({ 
+  className = "w-10 h-10",
+  alt = "Escudo S.A.D. Fundación Escuela de Fútbol AFE"
+}: ClubLogoProps) {
+  const [imgError, setImgError] = useState(false);
+
   return (
-    <div className={`${className} flex items-center justify-center`} id="club-generic-crest">
-      <svg 
-        viewBox="0 0 120 120" 
-        fill="none" 
-        xmlns="http://www.w3.org/2000/svg"
-        className="w-full h-full object-contain block"
-      >
-        <defs>
-          <linearGradient id="shieldGrad" x1="60" y1="5" x2="60" y2="115" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#1e3a8a" />
-            <stop offset="100%" stopColor="#0f172a" />
-          </linearGradient>
-          <linearGradient id="goldGrad" x1="20" y1="10" x2="100" y2="110" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#fde047" />
-            <stop offset="50%" stopColor="#eab308" />
-            <stop offset="100%" stopColor="#ca8a04" />
-          </linearGradient>
-        </defs>
-
-        {/* Outer Shield Border */}
-        <path 
-          d="M 60,8 C 94,8 108,24 108,46 C 108,82 60,112 60,112 C 60,112 12,82 12,46 C 12,24 26,8 60,8 Z" 
-          fill="url(#goldGrad)" 
+    <div className={`${className} flex items-center justify-center relative select-none`} id="club-afe-crest">
+      {!imgError ? (
+        <img 
+          src="/escudo.png" 
+          alt={alt}
+          onError={() => setImgError(true)}
+          className="w-full h-full object-contain block drop-shadow-xs"
+          loading="eager"
+          decoding="async"
         />
-
-        {/* Inner Shield Body */}
-        <path 
-          d="M 60,12 C 90,12 103,26 103,46 C 103,78 60,106 60,106 C 60,106 17,78 17,46 C 17,26 30,12 60,12 Z" 
-          fill="url(#shieldGrad)" 
-        />
-
-        {/* Subtle split overlay */}
-        <path 
-          d="M 60,12 C 78,12 103,22 103,46 C 103,78 60,106 60,106 L 60,12 Z" 
-          fill="rgba(255, 255, 255, 0.08)" 
-        />
-
-        {/* Diagonal Sash */}
-        <path 
-          d="M 24,32 L 96,82 L 92,90 L 20,40 Z" 
-          fill="url(#goldGrad)" 
-          opacity="0.3"
-        />
-
-        {/* Center Soccer Ball Graphic */}
-        <g transform="translate(60, 50)">
-          {/* Ball Outer Circle */}
-          <circle cx="0" cy="0" r="17" fill="#ffffff" stroke="url(#goldGrad)" strokeWidth="1.5" />
-          
-          {/* Central Pentagon */}
-          <polygon points="0,-6.5 6.2,-2 3.8,5.4 -3.8,5.4 -6.2,-2" fill="#0f172a" />
-          
-          {/* Radiating lines & outer pentagons */}
-          <line x1="0" y1="-6.5" x2="0" y2="-17" stroke="#0f172a" strokeWidth="1.2" />
-          <line x1="6.2" y1="-2" x2="15.5" y2="-5.2" stroke="#0f172a" strokeWidth="1.2" />
-          <line x1="3.8" y1="5.4" x2="10.5" y2="13.2" stroke="#0f172a" strokeWidth="1.2" />
-          <line x1="-3.8" y1="5.4" x2="-10.5" y2="13.2" stroke="#0f172a" strokeWidth="1.2" />
-          <line x1="-6.2" y1="-2" x2="-15.5" y2="-5.2" stroke="#0f172a" strokeWidth="1.2" />
-          
-          <path d="M -5,-16 L 0,-17 L 5,-16 L 3.2,-12.8 L -3.2,-12.8 Z" fill="#0f172a" />
-          <path d="M 13.5,-9.8 L 15.5,-5.2 L 16.5,-0.5 L 12.8,0.5 L 10.4,-4.2 Z" fill="#0f172a" />
-          <path d="M 15.5,6.2 L 10.5,13.2 L 5.8,16 L 4.8,12.2 L 9,7.5 Z" fill="#0f172a" />
-          <path d="M -5.8,16 L -10.5,13.2 L -15.5,6.2 L -9,7.5 L -4.8,12.2 Z" fill="#0f172a" />
-          <path d="M -16.5,-0.5 L -15.5,-5.2 L -13.5,-9.8 L -10.4,-4.2 L -12.8,0.5 Z" fill="#0f172a" />
-        </g>
-
-        {/* Golden Banner at bottom reading "CLUB" */}
-        <path 
-          d="M 28,78 L 92,78 L 86,93 L 34,93 Z" 
-          fill="url(#goldGrad)" 
-          stroke="#ca8a04" 
-          strokeWidth="0.8" 
-        />
-        <text 
-          x="60" 
-          y="89" 
-          textAnchor="middle" 
-          fill="#0f172a" 
-          fontFamily="'Inter', 'Arial Black', sans-serif" 
-          fontWeight="900" 
-          fontSize="11" 
-          letterSpacing="0.2em"
+      ) : (
+        /* Vector fallback matching the official S.A.D. Fundación Escuela de Fútbol AFE crest */
+        <svg 
+          viewBox="0 0 200 200" 
+          fill="none" 
+          xmlns="http://www.w3.org/2000/svg"
+          className="w-full h-full object-contain block"
         >
-          CLUB
-        </text>
+          {/* White circular badge */}
+          <circle cx="100" cy="100" r="95" fill="#ffffff" stroke="#173062" strokeWidth="4" />
+          
+          {/* Top text arc */}
+          <path id="afeArcFallback" d="M 32,100 A 68,68 0 1,1 168,100" fill="none" />
+          <text fill="#173062" fontSize="13" fontWeight="900" letterSpacing="0.16em" fontFamily="'Inter', system-ui, sans-serif">
+            <textPath href="#afeArcFallback" startOffset="50%" textAnchor="middle">
+              ESCUELA DE FÚTBOL AFE
+            </textPath>
+          </text>
 
-        {/* 3 Stars at top */}
-        <polygon points="60,17 61.5,21 65.5,21 62.2,23.5 63.5,27.5 60,25 56.5,27.5 57.8,23.5 54.5,21 58.5,21" fill="url(#goldGrad)" />
-        <polygon points="45,21 46.2,24.2 49.5,24.2 46.8,26.2 47.8,29.5 45,27.5 42.2,29.5 43.2,26.2 40.5,24.2 43.8,24.2" fill="url(#goldGrad)" />
-        <polygon points="75,21 76.2,24.2 79.5,24.2 76.8,26.2 77.8,29.5 75,27.5 72.2,29.5 73.2,26.2 70.5,24.2 73.8,24.2" fill="url(#goldGrad)" />
-      </svg>
+          {/* 19 and 86 */}
+          <text x="32" y="104" fill="#173062" fontSize="13" fontWeight="900" fontFamily="sans-serif">19</text>
+          <text x="168" y="104" fill="#173062" fontSize="13" fontWeight="900" fontFamily="sans-serif">86</text>
+
+          {/* AFE Centered Logo */}
+          <g transform="translate(45, 68)">
+            {/* A */}
+            <path d="M 12,42 L 23,4 L 34,42 L 27,42 L 24,31 L 18,31 L 15,42 Z M 19.8,24 L 22.8,13.5 L 25.8,24 Z" fill="#173062" />
+            {/* F */}
+            <path d="M 40,4 L 66,4 L 66,12 L 48,12 L 48,19 L 63,19 L 63,27 L 48,27 L 48,42 L 40,42 Z" fill="#173062" />
+            {/* E */}
+            <path d="M 72,4 L 98,4 L 98,12 L 80,12 L 80,19 L 95,19 L 95,27 L 80,27 L 80,34 L 98,34 L 98,42 L 72,42 Z" fill="#173062" />
+          </g>
+
+          {/* 5 Bottom Stars */}
+          <g fill="#173062">
+            <polygon points="46,132 47.5,136.5 52,136.5 48.5,139 50,143.5 46,140.5 42,143.5 43.5,139 40,136.5 44.5,136.5" />
+            <polygon points="70,149 71.5,153.5 76,153.5 72.5,156 74,160.5 70,157.5 66,160.5 67.5,156 64,153.5 68.5,153.5" />
+            <polygon points="100,157 101.5,161.5 106,161.5 102.5,164 104,168.5 100,165.5 96,168.5 97.5,164 94,161.5 98.5,161.5" />
+            <polygon points="130,149 131.5,153.5 136,153.5 132.5,156 134,160.5 130,157.5 126,160.5 127.5,156 124,153.5 128.5,153.5" />
+            <polygon points="154,132 155.5,136.5 160,136.5 156.5,139 158,143.5 154,140.5 150,143.5 151.5,139 148,136.5 152.5,136.5" />
+          </g>
+        </svg>
+      )}
     </div>
   );
 }

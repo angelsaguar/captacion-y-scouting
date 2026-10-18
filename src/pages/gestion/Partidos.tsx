@@ -2309,8 +2309,8 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
                         {/* Top Header Banner - Vertical Stack */}
                         <div className="relative z-10 text-center border-b-2 border-slate-300/40 pb-4">
-                          <div className="w-16 h-16 rounded-2xl bg-gradient-to-b from-blue-900 to-slate-950 border-2 border-slate-200/80 p-2 shadow-2xl flex items-center justify-center mx-auto mb-2.5 shrink-0">
-                            <UDLaPovedaLogo className="w-12 h-12 drop-shadow" />
+                          <div className="w-16 h-16 rounded-2xl bg-white border-2 border-blue-600 p-1.5 shadow-2xl flex items-center justify-center mx-auto mb-2.5 shrink-0">
+                            <UDLaPovedaLogo className="w-full h-full" />
                           </div>
 
                           <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-100 uppercase italic leading-none mb-1 drop-shadow-sm">

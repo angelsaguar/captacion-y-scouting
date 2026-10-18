@@ -2380,7 +2380,7 @@ function FUTPlayerCard({ player, stats }: { player: TeamPlayer; stats: any }) {
 
           {/* Top Right: Custom Club Crest Shield */}
           <div className="mt-1 pr-1">
-            <div className="w-10 h-10 bg-white/10 backdrop-blur-xs p-1 rounded-xl flex items-center justify-center shadow-lg border border-amber-500/30">
+            <div className="w-10 h-10 bg-white p-1 rounded-xl flex items-center justify-center shadow-lg border border-slate-200">
               <UDLaPovedaLogo className="w-full h-full" />
             </div>
           </div>

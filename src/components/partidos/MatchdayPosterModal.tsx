@@ -2158,8 +2158,8 @@ export default function MatchdayPosterModal({
                     {/* 1. TOP HEADER BANNER */}
                     <div className="text-center pb-1.5 border-b border-blue-400/25">
                       {/* Crest Badge */}
-                      <div className="w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-gradient-to-b from-blue-700 to-[#06142e] border-2 border-cyan-300/80 p-1.5 shadow-2xl flex items-center justify-center mx-auto mb-1 shrink-0 ring-2 ring-blue-500/30">
-                        <UDLaPovedaLogo className="w-full h-full drop-shadow" />
+                      <div className="w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-white border-2 border-cyan-400 p-1 shadow-2xl flex items-center justify-center mx-auto mb-1 shrink-0 ring-2 ring-blue-500/30">
+                        <UDLaPovedaLogo className="w-full h-full drop-shadow-xs" />
                       </div>
 
                       {/* Club Title */}
@@ -2205,9 +2205,9 @@ export default function MatchdayPosterModal({
                       <div className="relative z-10 flex items-center justify-between text-center gap-2">
                         {/* Team Local */}
                         <div className="flex-1 min-w-0 flex flex-col items-center">
-                          <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-full bg-[#071736] border-2 border-cyan-400/80 p-1.5 shadow-lg flex items-center justify-center mb-1 ring-2 ring-cyan-500/20">
+                          <div className={`w-11 h-11 sm:w-13 sm:h-13 rounded-full ${isLocal ? 'bg-white p-1 border-2 border-cyan-400/80' : 'bg-[#071736] border-2 border-cyan-400/80 p-1.5'} shadow-lg flex items-center justify-center mb-1 ring-2 ring-cyan-500/20`}>
                             {isLocal ? (
-                              <UDLaPovedaLogo className="w-full h-full drop-shadow" />
+                              <UDLaPovedaLogo className="w-full h-full drop-shadow-xs" />
                             ) : (
                               <div className="flex flex-col items-center justify-center text-amber-300">
                                 <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-amber-400" />
@@ -2234,13 +2234,13 @@ export default function MatchdayPosterModal({
 
                         {/* Team Visitante */}
                         <div className="flex-1 min-w-0 flex flex-col items-center">
-                          <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-full bg-[#071736] border-2 border-amber-400/80 p-1.5 shadow-lg flex items-center justify-center mb-1 ring-2 ring-amber-500/20">
+                          <div className={`w-11 h-11 sm:w-13 sm:h-13 rounded-full ${!isLocal ? 'bg-white p-1 border-2 border-amber-400/80' : 'bg-[#071736] border-2 border-amber-400/80 p-1.5'} shadow-lg flex items-center justify-center mb-1 ring-2 ring-amber-500/20`}>
                             {isLocal ? (
                               <div className="flex flex-col items-center justify-center text-amber-300">
                                 <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-amber-400" />
                               </div>
                             ) : (
-                              <UDLaPovedaLogo className="w-full h-full drop-shadow" />
+                              <UDLaPovedaLogo className="w-full h-full drop-shadow-xs" />
                             )}
                           </div>
                           <span className="text-[7.5px] sm:text-[8px] font-black text-amber-400 uppercase tracking-widest block">
