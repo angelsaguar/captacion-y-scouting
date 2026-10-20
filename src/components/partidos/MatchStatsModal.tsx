@@ -47,6 +47,7 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { toast } from 'sonner';
 import { isPlayerMatch, normalizePlayerNameKey, cleanPhotoUrl } from '@/lib/utils';
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
+import { getCategoryMatchDuration } from '@/lib/matchDuration';
 import MatchTacticalPitch, { MatchSubstitution } from './MatchTacticalPitch';
 
 export const POSICIONES_CAMPO = [
@@ -215,35 +216,35 @@ export type ChronoPhase = 'pre' | '1t' | 'descanso' | '2t' | 'finalizado';
  * - 1er tiempo: de 0 a 45 más descuento. Si son 47 min de partido total (minuto 2 de descuento), devuelve "45+2'".
  * - 2º tiempo: empieza en minuto 45. De 45 a 90 más descuento. Si son 93 min de partido (minuto 3 de descuento), devuelve "90+3'".
  */
-export function formatMatchMinute(seconds: number, phase: ChronoPhase): string {
+export function formatMatchMinute(seconds: number, phase: ChronoPhase, totalMinutes: number = 90, halfMinutes: number = 45): string {
   if (phase === 'pre') return "0'";
 
   if (phase === '1t' || phase === 'descanso') {
-    const totalMinutes = Math.floor(seconds / 60);
-    if (totalMinutes < 45) {
-      return `${totalMinutes}'`;
+    const elapsedMinutes = Math.floor(seconds / 60);
+    if (elapsedMinutes < halfMinutes) {
+      return `${elapsedMinutes}'`;
     } else {
-      // 1er tiempo en descuento (ej: min 47 -> "45+2'")
-      const extraMinutes = Math.floor((seconds - 45 * 60) / 60);
-      return `45+${extraMinutes}'`;
+      // 1er tiempo en descuento (ej: min 37 en infantil -> "35+2'")
+      const extraMinutes = Math.floor((seconds - halfMinutes * 60) / 60);
+      return `${halfMinutes}+${extraMinutes}'`;
     }
   }
 
-  // 2ª Parte o Finalizado (arranca en 45')
-  const totalMinutes = Math.floor(seconds / 60);
-  if (totalMinutes < 90) {
-    return `${totalMinutes}'`;
+  // 2ª Parte o Finalizado (arranca en halfMinutes')
+  const elapsedMinutes = Math.floor(seconds / 60);
+  if (elapsedMinutes < totalMinutes) {
+    return `${elapsedMinutes}'`;
   } else {
-    // 2º tiempo en descuento (ej: min 93 -> "90+3'")
-    const extraMinutes = Math.floor((seconds - 90 * 60) / 60);
-    return `90+${extraMinutes}'`;
+    // 2º tiempo en descuento (ej: min 73 en infantil -> "70+3'")
+    const extraMinutes = Math.floor((seconds - totalMinutes * 60) / 60);
+    return `${totalMinutes}+${extraMinutes}'`;
   }
 }
 
 /**
- * Devuelve los valores de visualización del marcador digital del cronómetro
+ * Devuelve los valores de visualización del marcador digital del cronómetro adaptado a la duración de la categoría
  */
-export function getChronoDisplay(seconds: number, phase: ChronoPhase, isRunning: boolean = false) {
+export function getChronoDisplay(seconds: number, phase: ChronoPhase, isRunning: boolean = false, totalMinutes: number = 90, halfMinutes: number = 45) {
   if (phase === 'pre') {
     return {
       mainTime: '00:00',
@@ -255,7 +256,7 @@ export function getChronoDisplay(seconds: number, phase: ChronoPhase, isRunning:
   }
 
   if (phase === '1t' || phase === 'descanso') {
-    const isFirstHalfDiscount = seconds > 45 * 60;
+    const isFirstHalfDiscount = seconds > halfMinutes * 60;
     if (!isFirstHalfDiscount) {
       const mins = Math.floor(seconds / 60);
       const secs = seconds % 60;
@@ -271,13 +272,13 @@ export function getChronoDisplay(seconds: number, phase: ChronoPhase, isRunning:
         isExtraTime: false
       };
     } else {
-      const extraTotalSecs = seconds - 45 * 60;
+      const extraTotalSecs = seconds - halfMinutes * 60;
       const extraMins = Math.floor(extraTotalSecs / 60);
       const extraSecs = extraTotalSecs % 60;
       return {
-        mainTime: '45:00',
+        mainTime: `${String(halfMinutes).padStart(2, '0')}:00`,
         extraTime: `+${String(extraMins).padStart(2, '0')}:${String(extraSecs).padStart(2, '0')}`,
-        matchMinuteStr: `45+${extraMins}'`,
+        matchMinuteStr: `${halfMinutes}+${extraMins}'`,
         phaseLabel: phase === 'descanso' 
           ? 'Descanso (Fin 1ª Parte)' 
           : isRunning 
@@ -289,7 +290,7 @@ export function getChronoDisplay(seconds: number, phase: ChronoPhase, isRunning:
   }
 
   // 2ª Parte ('2t' o 'finalizado')
-  const isSecondHalfDiscount = seconds > 90 * 60;
+  const isSecondHalfDiscount = seconds > totalMinutes * 60;
   if (!isSecondHalfDiscount) {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -301,19 +302,19 @@ export function getChronoDisplay(seconds: number, phase: ChronoPhase, isRunning:
         ? 'Partido Finalizado' 
         : isRunning 
         ? '2ª Parte en juego' 
-        : seconds === 45 * 60
-        ? '2ª Parte (Listo en 45:00)'
+        : seconds === halfMinutes * 60
+        ? `2ª Parte (Listo en ${halfMinutes}:00)`
         : '2ª Parte (En pausa)',
       isExtraTime: false
     };
   } else {
-    const extraTotalSecs = seconds - 90 * 60;
+    const extraTotalSecs = seconds - totalMinutes * 60;
     const extraMins = Math.floor(extraTotalSecs / 60);
     const extraSecs = extraTotalSecs % 60;
     return {
-      mainTime: '90:00',
+      mainTime: `${String(totalMinutes).padStart(2, '0')}:00`,
       extraTime: `+${String(extraMins).padStart(2, '0')}:${String(extraSecs).padStart(2, '0')}`,
-      matchMinuteStr: `90+${extraMins}'`,
+      matchMinuteStr: `${totalMinutes}+${extraMins}'`,
       phaseLabel: phase === 'finalizado' 
         ? 'Partido Finalizado' 
         : isRunning 
@@ -477,9 +478,15 @@ export default function MatchStatsModal({
     };
   }, [isChronoRunning]);
 
-  // Función unificada para registrar eventos con el minuto del partido (ej: "45+2'")
+  const durationConfig = useMemo(() => {
+    return getCategoryMatchDuration(teamName || match.team_id || match.team_name);
+  }, [teamName, match.team_id, match.team_name]);
+
+  const { totalMinutes: catTotalMins, halfMinutes: catHalfMins } = durationConfig;
+
+  // Función unificada para registrar eventos con el minuto del partido (ej: "35+2'", "40+1'", "45+2'")
   const addEventLog = (text: string, type: string, forcedTime?: string) => {
-    const timeToUse = forcedTime || formatMatchMinute(chronoSeconds, chronoPhase);
+    const timeToUse = forcedTime || formatMatchMinute(chronoSeconds, chronoPhase, catTotalMins, catHalfMins);
     setEventLogs(logs => [
       {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -491,41 +498,42 @@ export default function MatchStatsModal({
     ]);
   };
 
-  // Controles del cronómetro de partido:
-  // 1. Inicio de partido / 1ª parte: corre de 0 a 45 más descuento
+  // Controles del cronómetro de partido adaptados por categoría:
+  // Infantil: 70 min (2x35) | Cadete: 80 min (2x40) | Juvenil/Senior: 90 min (2x45)
+  // 1. Inicio de partido / 1ª parte: corre de 0 a medio tiempo más descuento
   const handleStartFirstHalf = () => {
     setChronoPhase('1t');
-    if (chronoPhase === 'pre' || chronoSeconds >= 45 * 60) {
+    if (chronoPhase === 'pre' || chronoSeconds >= catHalfMins * 60) {
       setChronoSeconds(0);
     }
     setIsChronoRunning(true);
     addEventLog('⏱️ Inicio de Partido / 1ª Parte (00:00)', 'cronometro', "0'");
-    toast.success('¡1ª Parte iniciada!');
+    toast.success(`¡1ª Parte iniciada! Duración: ${catHalfMins} min`);
   };
 
   // 2. Fin 1ª parte / Descanso
   const handleEndFirstHalf = () => {
     setIsChronoRunning(false);
     setChronoPhase('descanso');
-    const minStr = formatMatchMinute(chronoSeconds, '1t');
+    const minStr = formatMatchMinute(chronoSeconds, '1t', catTotalMins, catHalfMins);
     addEventLog(`⏱️ Fin 1ª Parte - Descanso (${minStr})`, 'cronometro', minStr);
     toast.info(`Fin de la 1ª Parte (${minStr})`);
   };
 
-  // 3. Inicio 2ª parte: "que la segunda parte empieza en minuto 45"
+  // 3. Inicio 2ª parte: arranca en el minuto exacto del medio tiempo de la categoría (35' Infantil, 40' Cadete, 45' Juvenil/Senior)
   const handleStartSecondHalf = () => {
     setChronoPhase('2t');
-    setChronoSeconds(45 * 60); // Inicia exactamente en 45:00
+    setChronoSeconds(catHalfMins * 60); // Inicia exactamente en catHalfMins:00
     setIsChronoRunning(true);
-    addEventLog("⏱️ Inicio de 2ª Parte (Minuto 45')", 'cronometro', "45'");
-    toast.success('¡2ª Parte iniciada en el minuto 45!');
+    addEventLog(`⏱️ Inicio de 2ª Parte (Minuto ${catHalfMins}')`, 'cronometro', `${catHalfMins}'`);
+    toast.success(`¡2ª Parte iniciada en el minuto ${catHalfMins}!`);
   };
 
   // 4. Final del partido (Fin 2ª parte)
   const handleEndMatch = () => {
     setIsChronoRunning(false);
     setChronoPhase('finalizado');
-    const minStr = formatMatchMinute(chronoSeconds, '2t');
+    const minStr = formatMatchMinute(chronoSeconds, '2t', catTotalMins, catHalfMins);
     addEventLog(`⏱️ Final del Partido (${minStr})`, 'cronometro', minStr);
     toast.success(`¡Partido Finalizado (${minStr})!`);
   };
@@ -534,18 +542,18 @@ export default function MatchStatsModal({
   const handleTogglePause = () => {
     if (isChronoRunning) {
       setIsChronoRunning(false);
-      const minStr = formatMatchMinute(chronoSeconds, chronoPhase);
+      const minStr = formatMatchMinute(chronoSeconds, chronoPhase, catTotalMins, catHalfMins);
       addEventLog(`⏸️ Tiempo detenido (${minStr})`, 'cronometro', minStr);
       toast.info(`Cronómetro pausado (${minStr})`);
     } else {
       setIsChronoRunning(true);
-      const minStr = formatMatchMinute(chronoSeconds, chronoPhase);
+      const minStr = formatMatchMinute(chronoSeconds, chronoPhase, catTotalMins, catHalfMins);
       addEventLog(`▶️ Tiempo reanudado (${minStr})`, 'cronometro', minStr);
       toast.success(`Cronómetro en marcha (${minStr})`);
     }
   };
 
-  // Determinar si estamos en la 2ª parte para el reinicio contextual (1T -> 0' / 2T -> 45')
+  // Determinar si estamos en la 2ª parte para el reinicio contextual (1T -> 0' / 2T -> catHalfMins')
   const isSecondHalf = chronoPhase === '2t' || chronoPhase === 'finalizado';
 
   // Estado para modal de confirmación de reinicio del cronómetro
@@ -562,8 +570,8 @@ export default function MatchStatsModal({
       toast.info('El cronómetro de la 1ª parte ya se encuentra en 00:00 (Pre-partido)');
       return;
     }
-    if (isSecondHalf && chronoSeconds === 45 * 60 && !isChronoRunning) {
-      toast.info('El cronómetro de la 2ª parte ya se encuentra en el minuto 45:00');
+    if (isSecondHalf && chronoSeconds === catHalfMins * 60 && !isChronoRunning) {
+      toast.info(`El cronómetro de la 2ª parte ya se encuentra en el minuto ${catHalfMins}:00`);
       return;
     }
     setShowResetConfirm(true);
@@ -571,7 +579,7 @@ export default function MatchStatsModal({
 
   // Ejecutar reinicio del cronómetro:
   // - 1ª parte: vuelve a 00:00 (Pre-partido)
-  // - 2ª parte: vuelve a 45:00 (segundo tiempo listo para iniciar)
+  // - 2ª parte: vuelve a catHalfMins:00 (segundo tiempo listo para iniciar)
   const executeResetChrono = (targetPhase?: '1t' | '2t') => {
     const target = targetPhase || (isSecondHalf ? '2t' : '1t');
     setIsChronoRunning(false);
@@ -579,9 +587,9 @@ export default function MatchStatsModal({
 
     if (target === '2t') {
       setChronoPhase('2t');
-      setChronoSeconds(45 * 60);
-      addEventLog("🔄 2ª Parte reiniciada al minuto 45:00", 'cronometro', "45'");
-      toast.success('2ª Parte reiniciada al minuto 45 (45:00)');
+      setChronoSeconds(catHalfMins * 60);
+      addEventLog(`🔄 2ª Parte reiniciada al minuto ${catHalfMins}:00`, 'cronometro', `${catHalfMins}'`);
+      toast.success(`2ª Parte reiniciada al minuto ${catHalfMins} (${catHalfMins}:00)`);
     } else {
       setChronoPhase('pre');
       setChronoSeconds(0);
@@ -684,10 +692,10 @@ export default function MatchStatsModal({
     toast.success('¡Partido restablecido a cero! Todo preparado para empezar el partido de nuevo.');
   };
 
-  // Valores calculados de tiempo para renderizado
+  // Valores calculados de tiempo para renderizado adaptado a la categoría
   const chronoDisplay = useMemo(() => {
-    return getChronoDisplay(chronoSeconds, chronoPhase, isChronoRunning);
-  }, [chronoSeconds, chronoPhase, isChronoRunning]);
+    return getChronoDisplay(chronoSeconds, chronoPhase, isChronoRunning, catTotalMins, catHalfMins);
+  }, [chronoSeconds, chronoPhase, isChronoRunning, catTotalMins, catHalfMins]);
 
   // Initialize data on match open - ALWAYS includes ALL players from team roster
   useEffect(() => {
@@ -1008,7 +1016,7 @@ export default function MatchStatsModal({
       } else {
         statsPorPosicion = {
           [activeTacticalPos]: {
-            minutos: existing?.minutos ?? (match.estado === 'Finalizado' ? 80 : 0),
+            minutos: existing?.minutos ?? (match.estado === 'Finalizado' ? catTotalMins : 0),
             goles_metidos: existing?.goles_metidos ?? 0,
             goles_encajados: existing?.goles_encajados ?? 0,
             asistencias: existing?.asistencias ?? 0,
@@ -1034,7 +1042,7 @@ export default function MatchStatsModal({
         stats_por_posicion: statsPorPosicion,
         titular: existing ? !!existing.titular : false,
         suplente: existing ? !!existing.suplente : false,
-        minutos: existing?.minutos ?? (match.estado === 'Finalizado' ? 80 : 0),
+        minutos: existing?.minutos ?? (match.estado === 'Finalizado' ? catTotalMins : 0),
         goles_metidos: existing?.goles_metidos ?? 0,
         goles_encajados: existing?.goles_encajados ?? 0,
         asistencias: existing?.asistencias ?? 0,
@@ -1177,7 +1185,7 @@ export default function MatchStatsModal({
   const handleExecuteSubstitution = (newSub: MatchSubstitution) => {
     setSubstitutions(prev => [...prev, newSub]);
 
-    const estimatedTotalMins = 80;
+    const estimatedTotalMins = catTotalMins;
     const subMin = Math.max(1, newSub.minuto);
 
     setPlayerStats(prev => prev.map(p => {
@@ -1409,8 +1417,8 @@ export default function MatchStatsModal({
 
     let assignedMinutos = targetPlayer.minutos ?? 0;
     if (newTitular && (!targetPlayer.minutos || targetPlayer.minutos === 0)) {
-      assignedMinutos = 80;
-      currentPosData.minutos = 80;
+      assignedMinutos = catTotalMins;
+      currentPosData.minutos = catTotalMins;
       posMap[activePos] = currentPosData;
     }
 
@@ -1441,8 +1449,8 @@ export default function MatchStatsModal({
       const currentPosData = { ...(posMap[activePos] || {}) };
       let assignedMins = p.minutos ?? 0;
       if (isTit && (!p.minutos || p.minutos === 0)) {
-        assignedMins = 80;
-        currentPosData.minutos = 80;
+        assignedMins = catTotalMins;
+        currentPosData.minutos = catTotalMins;
         posMap[activePos] = currentPosData;
       }
       return {
@@ -1726,6 +1734,9 @@ export default function MatchStatsModal({
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-[9px] font-black uppercase tracking-widest text-cyan-400 bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-800">
                   Estadísticas en Vivo
+                </span>
+                <span className="text-[9px] font-bold uppercase tracking-wider text-amber-300 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-600/40" title={`Categoría ${durationConfig.categoryName}: ${durationConfig.partsLabel}`}>
+                  {durationConfig.categoryName}: {durationConfig.totalMinutes}' ({durationConfig.partsLabel})
                 </span>
                 <span className="text-[10px] text-slate-400 font-semibold">
                   {match.fecha} • {match.hora}

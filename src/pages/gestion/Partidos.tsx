@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { CLUB_TEAMS } from '@/types';
+import { getCategoryMatchDuration } from '@/lib/matchDuration';
 import UDLaPovedaLogo from '@/components/layout/UDLaPovedaLogo';
 import { 
   Trophy, 
@@ -144,6 +145,7 @@ export const calculateDefaultCitacionHora = (matchHora: string): string => {
 
 export default function Partidos() {
   const [selectedTeam, setSelectedTeam] = useState<string>(CLUB_TEAMS[0]);
+  const matchDuration = getCategoryMatchDuration(selectedTeam);
   const [matches, setMatches] = useState<Match[]>([]);
   const [players, setPlayers] = useState<any[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -154,7 +156,7 @@ export default function Partidos() {
   // Interactive statistics editor inside closure modal
   const [matchPlayerStats, setMatchPlayerStats] = useState<MatchPlayerStat[]>([]);
   const [substitutions, setSubstitutions] = useState<Substitution[]>([]);
-  const [newSub, setNewSub] = useState({ saleId: '', entraId: '', minuto: 45 });
+  const [newSub, setNewSub] = useState({ saleId: '', entraId: '', minuto: matchDuration.halfMinutes });
 
   // New match form state
   const [formData, setFormData] = useState({
@@ -1814,9 +1816,9 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                         <input
                           type="number"
                           min="1"
-                          max="120"
+                          max={matchDuration.totalMinutes + 30}
                           value={newSub.minuto}
-                          onChange={(e) => setNewSub({...newSub, minuto: parseInt(e.target.value) || 45})}
+                          onChange={(e) => setNewSub({...newSub, minuto: parseInt(e.target.value) || matchDuration.halfMinutes})}
                           className="w-full bg-slate-950 border border-slate-850 rounded-lg p-1.5 mt-1 text-[11px] text-white focus:outline-none"
                         />
                       </div>
@@ -1832,18 +1834,18 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                             return;
                           }
                           setSubstitutions([...substitutions, { ...newSub }]);
-                          // Auto set minutes: player who left gets 'minuto', player who entered gets '90 - minuto' or similar
+                          // Auto set minutes based on category duration: player who left gets 'minuto', player who entered gets 'totalMinutes - minuto'
                           setMatchPlayerStats(stats => stats.map(st => {
                             if (st.playerId === newSub.saleId) {
                               return { ...st, titular: true, minutos: newSub.minuto };
                             }
                             if (st.playerId === newSub.entraId) {
-                              return { ...st, titular: false, minutos: Math.max(0, 90 - newSub.minuto) };
+                              return { ...st, titular: false, minutos: Math.max(0, matchDuration.totalMinutes - newSub.minuto) };
                             }
                             return st;
                           }));
                           toast.success('Cambio registrado e incorporado a la distribución de minutos.');
-                          setNewSub({ saleId: '', entraId: '', minuto: 45 });
+                          setNewSub({ saleId: '', entraId: '', minuto: matchDuration.halfMinutes });
                         }}
                         className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-lg text-[10px] uppercase h-[30px]"
                       >
