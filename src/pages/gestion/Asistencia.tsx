@@ -156,7 +156,7 @@ export const loadCompleteTeamRoster = (teamName: string): TeamPlayer[] => {
     const cleanA = (p.apellidos || '').trim();
     if (!cleanN) return false;
     if (cleanN.toUpperCase() === 'JUGADORA' && (!cleanA || cleanA.toUpperCase() === 'JUGADORA')) return false;
-    const isDemo = cleanN === 'Carlos' || cleanN === 'Marcos' || cleanN === 'Sofía';
+    const isDemo = (teamName || '').toUpperCase().includes('FEMENINO') && (cleanN === 'Carlos' || cleanN === 'Marcos');
     if (isDemo) return false;
     return !isDeletedPlayer(p.id, cleanN, cleanA);
   });

@@ -683,7 +683,7 @@ export default function Campograma() {
       const cleanA = (p.apellidos || '').trim();
       if (!cleanN) return false;
       if (cleanN.toUpperCase() === 'JUGADORA' && (!cleanA || cleanA.toUpperCase() === 'JUGADORA')) return false;
-      const isDemo = cleanN === 'Carlos' || cleanN === 'Marcos' || cleanN === 'Sofía' || (cleanN === 'Marina' && cleanA === 'Sierra Garcia');
+      const isDemo = (teamName || '').toUpperCase().includes('FEMENINO') && (cleanN === 'Carlos' || cleanN === 'Marcos' || (cleanN === 'Marina' && cleanA === 'Sierra Garcia'));
       if (isDemo) return false;
       return !isDeletedPlayer(p.id, cleanN, cleanA);
     });

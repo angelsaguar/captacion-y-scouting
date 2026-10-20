@@ -763,7 +763,7 @@ export default function MatchStatsModal({
       const cleanApellidos = (p.apellidos || '').trim() === 'Marta Pulido' ? 'Pulido' : (p.apellidos || '').trim();
       if (!cleanNombre) return;
       if (cleanNombre.toUpperCase() === 'JUGADORA' && (!cleanApellidos || cleanApellidos.toUpperCase() === 'JUGADORA')) return;
-      const isDemo = cleanNombre === 'Carlos' || cleanNombre === 'Marcos' || cleanNombre === 'Sofía' || (cleanNombre === 'Marina' && cleanApellidos === 'Sierra Garcia');
+      const isDemo = (teamName || '').toUpperCase().includes('FEMENINO') && (cleanNombre === 'Carlos' || cleanNombre === 'Marcos' || (cleanNombre === 'Marina' && cleanApellidos === 'Sierra Garcia'));
       if (isDemo) return;
       if (isDeletedPlayer(String(p.id), cleanNombre, cleanApellidos)) return;
 
@@ -791,7 +791,7 @@ export default function MatchStatsModal({
               const cleanApellidos = (p.apellidos || '').trim() === 'Marta Pulido' ? 'Pulido' : (p.apellidos || '').trim();
               if (!cleanNombre) return;
               if (cleanNombre.toUpperCase() === 'JUGADORA' && (!cleanApellidos || cleanApellidos.toUpperCase() === 'JUGADORA')) return;
-              const isDemo = cleanNombre === 'Carlos' || cleanNombre === 'Marcos' || cleanNombre === 'Sofía' || (cleanNombre === 'Marina' && cleanApellidos === 'Sierra Garcia');
+              const isDemo = (teamName || '').toUpperCase().includes('FEMENINO') && (cleanNombre === 'Carlos' || cleanNombre === 'Marcos' || (cleanNombre === 'Marina' && cleanApellidos === 'Sierra Garcia'));
               if (isDemo) return;
               if (isDeletedPlayer(String(p.id), cleanNombre, cleanApellidos)) return;
 

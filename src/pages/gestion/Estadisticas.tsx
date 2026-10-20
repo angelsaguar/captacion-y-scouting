@@ -15,7 +15,8 @@ import {
   Line,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  LabelList
 } from 'recharts';
 import { 
   BarChart3, 
@@ -46,6 +47,8 @@ interface TeamPlayer {
   apellidos: string;
   dorsal: string;
   posicion: string;
+  foto_url?: string;
+  estado_fisico?: string;
 }
 
 interface MatchPlayerStat {
@@ -136,10 +139,12 @@ export default function Estadisticas() {
   const [sessionTrendData, setSessionTrendData] = useState<any[]>([]);
   const [playerAttendanceRank, setPlayerAttendanceRank] = useState<any[]>([]);
   const [playerMatchParticipationRank, setPlayerMatchParticipationRank] = useState<any[]>([]);
+  const [finishedMatchesCount, setFinishedMatchesCount] = useState<number>(0);
   const matchDuration = getCategoryMatchDuration(selectedTeam);
   
   // Custom derived states for full player stats
   const [playerMinutesData, setPlayerMinutesData] = useState<any[]>([]);
+  const [minutesFilterMode, setMinutesFilterMode] = useState<'all' | 'con_minutos' | 'top10'>('all');
   const [goalscorers, setGoalscorers] = useState<AggregatedPlayerStat[]>([]);
   const [topAssists, setTopAssists] = useState<AggregatedPlayerStat[]>([]);
   const [topRecuperadoras, setTopRecuperadoras] = useState<AggregatedPlayerStat[]>([]);
@@ -177,7 +182,37 @@ export default function Estadisticas() {
     // 1. Fetch Players
     const rosterKey = `team_roster_${selectedTeam}`;
     const savedRoster = localStorage.getItem(rosterKey);
-    const playersList: TeamPlayer[] = savedRoster ? JSON.parse(savedRoster) : [];
+    let playersList: TeamPlayer[] = savedRoster ? JSON.parse(savedRoster) : [];
+
+    // Reconcile with signed players from scouting assigned to this team
+    try {
+      const localScoutingSaved = localStorage.getItem('scouting_local_players');
+      if (localScoutingSaved) {
+        const scList: any[] = JSON.parse(localScoutingSaved);
+        scList.forEach((sp: any) => {
+          const matchTeam = sp.equipo_asignado ? sp.equipo_asignado.toUpperCase() === selectedTeam.toUpperCase() : false;
+          if (matchTeam) {
+            const alreadyInRoster = playersList.some(p => 
+              p.id === sp.id || 
+              (p.nombre?.trim().toLowerCase() === sp.nombre?.trim().toLowerCase() && 
+               (p.apellidos || '').trim().toLowerCase() === (sp.apellidos || '').trim().toLowerCase())
+            );
+            if (!alreadyInRoster) {
+              playersList.push({
+                id: sp.id || `p-${Date.now()}-${Math.random()}`,
+                nombre: sp.nombre,
+                apellidos: sp.apellidos || '',
+                dorsal: sp.dorsal || '',
+                posicion: sp.posicion || 'Campo',
+                foto_url: sp.foto_url || '',
+                estado_fisico: 'Disponible'
+              });
+            }
+          }
+        });
+      }
+    } catch {}
+
     setTotalPlayers(playersList.length);
 
     // Derive position distribution
@@ -210,6 +245,7 @@ export default function Estadisticas() {
       (m.estadisticas?.jugadoras_stats && m.estadisticas.jugadoras_stats.length > 0) ||
       (m.estadisticas?.totales_equipo && (m.estadisticas.totales_equipo.recuperaciones_balon || 0) > 0)
     );
+    setFinishedMatchesCount(gamesWithData.length);
 
     const goalsChartData = gamesWithData.map((m, i) => ({
       name: `P${i + 1} (${m.rival.substring(0, 6)})`,
@@ -304,32 +340,50 @@ export default function Estadisticas() {
       const stats = m.estadisticas?.jugadoras_stats;
       if (stats && Array.isArray(stats)) {
         stats.forEach((st: MatchPlayerStat) => {
-          if (!accumulatedStats[st.playerId]) {
-            accumulatedStats[st.playerId] = {
-              id: st.playerId,
-              nombre: st.nombre || 'Jugadora',
-              apellidos: st.apellidos || '',
-              dorsal: st.dorsal || '',
-              posicion: st.posicion || 'Campo',
-              partidosJugados: 0,
-              titularidades: 0,
-              minutos: 0,
-              goles: 0,
-              asistencias: 0,
-              goles_encajados: 0,
-              recuperaciones: 0,
-              perdidas: 0,
-              balanceBalon: 0,
-              amarillas: 0,
-              rojas: 0,
-              corners_favor: 0,
-              corners_contra: 0,
-              faltas_favor: 0,
-              faltas_contra: 0
-            };
+          let targetKey = st.playerId;
+          if (!accumulatedStats[targetKey]) {
+            const cleanStNombre = (st.nombre || '').trim().toLowerCase();
+            const cleanStApellidos = (st.apellidos || '').trim().toLowerCase();
+            const foundKey = Object.keys(accumulatedStats).find(k => {
+              const p = accumulatedStats[k];
+              const pNombre = (p.nombre || '').trim().toLowerCase();
+              const pApellidos = (p.apellidos || '').trim().toLowerCase();
+              if (pNombre && cleanStNombre && pNombre === cleanStNombre) {
+                if (!cleanStApellidos || !pApellidos || pApellidos === cleanStApellidos) return true;
+              }
+              if (p.dorsal && st.dorsal && String(p.dorsal) === String(st.dorsal)) return true;
+              return false;
+            });
+
+            if (foundKey) {
+              targetKey = foundKey;
+            } else {
+              accumulatedStats[targetKey] = {
+                id: st.playerId,
+                nombre: st.nombre || 'Jugador',
+                apellidos: st.apellidos || '',
+                dorsal: st.dorsal || '',
+                posicion: st.posicion || 'Campo',
+                partidosJugados: 0,
+                titularidades: 0,
+                minutos: 0,
+                goles: 0,
+                asistencias: 0,
+                goles_encajados: 0,
+                recuperaciones: 0,
+                perdidas: 0,
+                balanceBalon: 0,
+                amarillas: 0,
+                rojas: 0,
+                corners_favor: 0,
+                corners_contra: 0,
+                faltas_favor: 0,
+                faltas_contra: 0
+              };
+            }
           }
 
-          const pStat = accumulatedStats[st.playerId];
+          const pStat = accumulatedStats[targetKey];
           if ((st.minutos && st.minutos > 0) || st.titular || st.suplente) {
             pStat.partidosJugados += 1;
           }
@@ -362,13 +416,28 @@ export default function Estadisticas() {
     const accumulatedList = Object.values(accumulatedStats);
     setMasterPlayerStats(accumulatedList);
 
-    // Filter, sort and map for minutes played chart
+    // Filter, sort and map for minutes played chart - includes full squad details
     const minChartData = accumulatedList
-      .map(p => ({
-        name: p.nombre,
-        Minutos: p.minutos
-      }))
-      .sort((a, b) => b.Minutos - a.Minutos);
+      .map(p => {
+        const cleanNombre = (p.nombre || '').trim();
+        const cleanApellidos = (p.apellidos || '').trim();
+        const dorsalPrefix = p.dorsal ? `#${p.dorsal} ` : '';
+        const shortName = cleanApellidos ? `${cleanNombre} ${cleanApellidos.charAt(0)}.` : cleanNombre;
+        const displayName = `${dorsalPrefix}${shortName || cleanNombre}`;
+        return {
+          id: p.id,
+          name: displayName,
+          nombre: cleanNombre,
+          apellidos: cleanApellidos,
+          fullName: `${cleanNombre} ${cleanApellidos}`.trim() || cleanNombre,
+          dorsal: p.dorsal || '',
+          posicion: p.posicion || 'Campo',
+          partidosJugados: p.partidosJugados,
+          titularidades: p.titularidades,
+          Minutos: p.minutos
+        };
+      })
+      .sort((a, b) => b.Minutos - a.Minutos || (parseInt(a.dorsal) || 99) - (parseInt(b.dorsal) || 99));
     setPlayerMinutesData(minChartData);
 
     // Rankings
@@ -770,36 +839,136 @@ export default function Estadisticas() {
 
           {/* Chart: Minutos Jugados */}
           <div className="bg-slate-900/30 border border-slate-900 p-5 rounded-3xl space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <h5 className="font-extrabold text-xs text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                <Clock className="w-4 h-4 text-emerald-500" />
-                <span>Minutos Jugados por Jugadora</span>
-              </h5>
-              <div className="flex items-center gap-1.5 bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-xs">
-                <span>{matchDuration.categoryName}: {matchDuration.totalMinutes}' por partido ({matchDuration.partsLabel})</span>
-              </div>
-            </div>
+            {(() => {
+              let displayed = [...playerMinutesData];
+              if (minutesFilterMode === 'con_minutos') {
+                displayed = displayed.filter(p => p.Minutos > 0);
+              } else if (minutesFilterMode === 'top10') {
+                displayed = displayed.slice(0, 10);
+              }
+              const hasData = displayed.length > 0;
+              // Dynamic width so all squad members have at least 60px of breathing room without clipping
+              const chartWidth = Math.max(680, displayed.length * 60);
 
-            <div className="h-72 w-full text-xs">
-              {playerMinutesData.some(p => p.Minutos > 0) ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={playerMinutesData.filter(p => p.Minutos > 0).slice(0, 10)} margin={{ top: 10, right: 10, left: -25, bottom: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                    <XAxis dataKey="name" stroke="#64748b" angle={-15} textAnchor="end" interval={0} />
-                    <YAxis stroke="#64748b" allowDecimals={false} />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b' }} 
-                      formatter={(val: any) => [`${val} minutos`, 'Minutos Jugados']}
-                    />
-                    <Bar dataKey="Minutos" fill="#10b981" radius={[8, 8, 0, 0]} name="Minutos" />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-slate-600 font-semibold uppercase text-center p-4">
-                  No hay registros de minutos jugados aún
-                </div>
-              )}
-            </div>
+              return (
+                <>
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-emerald-500" />
+                      <h5 className="font-extrabold text-xs text-slate-300 uppercase tracking-widest">
+                        {selectedTeam.toUpperCase().includes('FEMENINO') ? 'Minutos Jugados por Jugadora' : 'Minutos Jugados por Jugador'}
+                      </h5>
+                      <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-bold">
+                        {displayed.length} {displayed.length === 1 ? 'jugador' : 'jugadores'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center bg-slate-950 p-0.5 rounded-xl border border-slate-800 text-[10px] font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setMinutesFilterMode('all')}
+                          className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                            minutesFilterMode === 'all'
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Toda la plantilla ({playerMinutesData.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMinutesFilterMode('con_minutos')}
+                          className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                            minutesFilterMode === 'con_minutos'
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Con minutos ({playerMinutesData.filter(p => p.Minutos > 0).length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMinutesFilterMode('top10')}
+                          className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                            minutesFilterMode === 'top10'
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Top 10
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-xs">
+                        <span>
+                          {matchDuration.categoryName}: {matchDuration.totalMinutes}'/partido ({matchDuration.partsLabel})
+                          {finishedMatchesCount > 0 ? ` • Total máx. (${finishedMatchesCount} partidos): ${finishedMatchesCount * matchDuration.totalMinutes}'` : ''}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="w-full text-xs">
+                    {hasData ? (
+                      <div className="overflow-x-auto pb-3 scrollbar-thin scrollbar-thumb-slate-700">
+                        <div style={{ width: `${chartWidth}px`, minWidth: '100%', height: '360px' }}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={displayed} margin={{ top: 25, right: 20, left: -10, bottom: 65 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                              <XAxis 
+                                dataKey="name" 
+                                stroke="#94a3b8" 
+                                angle={-40} 
+                                textAnchor="end" 
+                                interval={0} 
+                                height={65}
+                                tick={{ fontSize: 10, fontWeight: 700 }}
+                              />
+                              <YAxis 
+                                stroke="#94a3b8" 
+                                allowDecimals={false} 
+                                tick={{ fontSize: 10 }}
+                                domain={[0, (dataMax: number) => {
+                                  const maxExpected = finishedMatchesCount > 0 ? finishedMatchesCount * matchDuration.totalMinutes : matchDuration.totalMinutes;
+                                  return Math.max(dataMax, maxExpected);
+                                }]}
+                              />
+                              <Tooltip 
+                                contentStyle={{ 
+                                  backgroundColor: '#0f172a', 
+                                  borderColor: '#1e293b', 
+                                  borderRadius: '12px',
+                                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)'
+                                }} 
+                                formatter={(val: any, _name: any, item: any) => [
+                                  `${val} minutos jugados (${item?.payload?.partidosJugados || 0} partidos disputados, ${item?.payload?.titularidades || 0} de titular)`,
+                                  item?.payload?.fullName || 'Jugador'
+                                ]}
+                              />
+                              <Bar dataKey="Minutos" fill="#10b981" radius={[6, 6, 0, 0]} name="Minutos" minPointSize={6}>
+                                <LabelList 
+                                  dataKey="Minutos" 
+                                  position="top" 
+                                  fill="#6ee7b7" 
+                                  fontSize={9} 
+                                  fontWeight={800} 
+                                  formatter={(val: any) => `${val}'`} 
+                                />
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="h-48 flex items-center justify-center text-slate-600 font-semibold uppercase text-center p-4 border border-dashed border-slate-800 rounded-2xl">
+                        No hay registros de plantilla o minutos jugados aún
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
 
           {/* Ranking Goleadoras */}
