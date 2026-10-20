@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
 import { Player, CLUB_TEAMS, POSITION_STRUCTURED_ATTRIBUTES, COMMON_ATTRIBUTES } from '@/types';
+import { getCategoryMatchDuration } from '@/lib/matchDuration';
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 import { 
   Users, 
@@ -78,6 +79,9 @@ interface TeamPlayer {
   estado_fisico: 'Disponible' | 'Lesionado' | 'Duda';
   origen?: 'plantilla' | 'scouting';
   es_plantilla?: boolean;
+  team?: string;
+  equipo_asignado?: string;
+  equipo_origen?: string;
   // Extra stats
   partidos_jugados?: number;
   minutos_jugados?: number;
@@ -186,7 +190,13 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
                   goles_favor: m.goles_favor ?? (m.estadisticas?.totales_equipo?.goles_favor ?? 0),
                   goles_contra: m.goles_contra ?? (m.estadisticas?.totales_equipo?.goles_contra ?? 0),
                   pStat: pStat || {},
-                  minutos: pStat?.minutos ?? (played ? 75 : 0),
+                  minutos: (() => {
+                    const dur = getCategoryMatchDuration(m.team_id || m.team_name || key.replace('team_matches_', '') || player.team || player.equipo_asignado);
+                    if (pStat?.minutos !== undefined && pStat?.minutos !== null) {
+                      return Math.min(dur.totalMinutes, pStat.minutos);
+                    }
+                    return played ? dur.totalMinutes : 0;
+                  })(),
                   titular: !!pStat?.titular,
                   suplente: !!pStat?.suplente,
                   convocado: true,
@@ -264,7 +274,8 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
           totCornWon += m.corners_favor || 0;
           totCornCon += m.corners_contra || 0;
           totGolesEnc += m.goles_encajados || 0;
-          if (m.goles_contra === 0 && m.minutos >= 45) {
+          const matchDur = getCategoryMatchDuration(m.team_id || m.team_name || player.team || player.equipo_asignado);
+          if (m.goles_contra === 0 && m.minutos >= matchDur.halfMinutes) {
             csCount += 1;
           }
         }
@@ -1383,7 +1394,12 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
           <div className="md:col-span-4 bg-slate-900/40 border border-blue-950/40 p-3 rounded-xl flex flex-col justify-center text-center">
             <span className="text-[7.5px] font-black text-blue-400 uppercase tracking-widest">MINUTOS SOBRE EL TOTAL</span>
             <div className="text-base font-black text-white mt-0.5">
-              {matchStatsSummary.matchesPlayed > 0 ? Math.round((matchStatsSummary.totalMinutes / (matchStatsSummary.matchesPlayed * 90)) * 100) : 0}%
+              {(() => {
+                const teamDur = getCategoryMatchDuration(player.team || player.equipo_asignado);
+                return matchStatsSummary.matchesPlayed > 0 
+                  ? Math.min(100, Math.round((matchStatsSummary.totalMinutes / (matchStatsSummary.matchesPlayed * teamDur.totalMinutes)) * 100)) 
+                  : 0;
+              })()}%
             </div>
             <span className="text-[7px] text-slate-400">Participación activa en competición</span>
           </div>
@@ -2801,7 +2817,8 @@ export default function Plantilla() {
             totalCornWon += pStat.corners_favor || 0;
             totalCornCon += pStat.corners_contra || 0;
             totalGolesEnc += pStat.goles_encajados || 0;
-            if (m.goles_contra === 0 && (pStat.minutos || 0) >= 45) {
+            const catDur = getCategoryMatchDuration(m.team_id || m.team_name || selectedTeam);
+            if (m.goles_contra === 0 && (pStat.minutos || 0) >= catDur.halfMinutes) {
               csCount += 1;
             }
           }

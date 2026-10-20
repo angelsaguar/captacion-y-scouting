@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CLUB_TEAMS } from '@/types';
+import { getCategoryMatchDuration, normalizeMatchMinutesForTeam, migrateAllStoredMatches } from '@/lib/matchDuration';
 import { toast } from 'sonner';
 import { 
   BarChart, 
@@ -135,6 +136,7 @@ export default function Estadisticas() {
   const [sessionTrendData, setSessionTrendData] = useState<any[]>([]);
   const [playerAttendanceRank, setPlayerAttendanceRank] = useState<any[]>([]);
   const [playerMatchParticipationRank, setPlayerMatchParticipationRank] = useState<any[]>([]);
+  const matchDuration = getCategoryMatchDuration(selectedTeam);
   
   // Custom derived states for full player stats
   const [playerMinutesData, setPlayerMinutesData] = useState<any[]>([]);
@@ -186,10 +188,21 @@ export default function Estadisticas() {
     const posChartData = Object.entries(positions).map(([name, value]) => ({ name, value }));
     setPositionData(posChartData);
 
-    // 2. Fetch Matches
+    // 2. Fetch Matches & Normalize Minutes according to official Category Duration (Infantil: 70', Cadete: 80', Juvenil/Senior: 90')
+    const matchDuration = getCategoryMatchDuration(selectedTeam);
     const matchesKey = `team_matches_${selectedTeam}`;
     const savedMatches = localStorage.getItem(matchesKey);
-    const matchesList: Match[] = savedMatches ? JSON.parse(savedMatches) : [];
+    let matchesList: Match[] = savedMatches ? JSON.parse(savedMatches) : [];
+    
+    let matchesUpdated = false;
+    matchesList = matchesList.map(m => {
+      const norm = normalizeMatchMinutesForTeam(m, selectedTeam);
+      if (norm !== m) matchesUpdated = true;
+      return norm;
+    });
+    if (matchesUpdated) {
+      localStorage.setItem(matchesKey, JSON.stringify(matchesList));
+    }
     
     // Consider games that are Finalized or have stats recorded
     const gamesWithData = matchesList.filter(m => 
@@ -323,7 +336,13 @@ export default function Estadisticas() {
           if (st.titular) {
             pStat.titularidades += 1;
           }
-          pStat.minutos += st.minutos || 0;
+          let effectiveMins = st.minutos || 0;
+          if (effectiveMins > matchDuration.totalMinutes) {
+            effectiveMins = matchDuration.totalMinutes;
+          } else if (st.titular && !st.suplente && (effectiveMins === 80 || effectiveMins === 90) && matchDuration.totalMinutes < effectiveMins) {
+            effectiveMins = matchDuration.totalMinutes;
+          }
+          pStat.minutos += effectiveMins;
           pStat.goles += st.goles_metidos || 0;
           pStat.asistencias += st.asistencias || 0;
           pStat.goles_encajados += st.goles_encajados || 0;
@@ -481,6 +500,7 @@ export default function Estadisticas() {
   };
 
   useEffect(() => {
+    migrateAllStoredMatches();
     loadAllData();
 
     const handleUpdate = () => {
@@ -750,10 +770,15 @@ export default function Estadisticas() {
 
           {/* Chart: Minutos Jugados */}
           <div className="bg-slate-900/30 border border-slate-900 p-5 rounded-3xl space-y-4">
-            <h5 className="font-extrabold text-xs text-slate-400 uppercase tracking-widest flex items-center gap-2">
-              <Clock className="w-4 h-4 text-emerald-500" />
-              <span>Minutos Jugados por Jugadora</span>
-            </h5>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <h5 className="font-extrabold text-xs text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                <Clock className="w-4 h-4 text-emerald-500" />
+                <span>Minutos Jugados por Jugadora</span>
+              </h5>
+              <div className="flex items-center gap-1.5 bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-xs">
+                <span>{matchDuration.categoryName}: {matchDuration.totalMinutes}' por partido ({matchDuration.partsLabel})</span>
+              </div>
+            </div>
 
             <div className="h-72 w-full text-xs">
               {playerMinutesData.some(p => p.Minutos > 0) ? (
@@ -762,7 +787,10 @@ export default function Estadisticas() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                     <XAxis dataKey="name" stroke="#64748b" angle={-15} textAnchor="end" interval={0} />
                     <YAxis stroke="#64748b" allowDecimals={false} />
-                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b' }} />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b' }} 
+                      formatter={(val: any) => [`${val} minutos`, 'Minutos Jugados']}
+                    />
                     <Bar dataKey="Minutos" fill="#10b981" radius={[8, 8, 0, 0]} name="Minutos" />
                   </BarChart>
                 </ResponsiveContainer>

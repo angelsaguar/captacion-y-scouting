@@ -5,6 +5,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { useAuthStore } from '@/store/useAuthStore';
 import { supabase } from '@/lib/supabase';
 import { syncJugadorasToDatabaseAndLocalStorage } from '@/lib/seedJugadoras';
+import { migrateAllStoredMatches } from '@/lib/matchDuration';
 import Layout from '@/components/layout/Layout';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
@@ -45,6 +46,7 @@ export default function App() {
 
     checkInitialSession();
     syncJugadorasToDatabaseAndLocalStorage();
+    migrateAllStoredMatches();
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
