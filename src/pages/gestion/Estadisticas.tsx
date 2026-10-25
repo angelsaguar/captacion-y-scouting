@@ -145,6 +145,7 @@ export default function Estadisticas() {
   // Custom derived states for full player stats
   const [playerMinutesData, setPlayerMinutesData] = useState<any[]>([]);
   const [minutesFilterMode, setMinutesFilterMode] = useState<'all' | 'con_minutos' | 'top10'>('all');
+  const [minutesChartLayout, setMinutesChartLayout] = useState<'vertical' | 'horizontal'>('vertical');
   const [goalscorers, setGoalscorers] = useState<AggregatedPlayerStat[]>([]);
   const [topAssists, setTopAssists] = useState<AggregatedPlayerStat[]>([]);
   const [topRecuperadoras, setTopRecuperadoras] = useState<AggregatedPlayerStat[]>([]);
@@ -807,38 +808,10 @@ export default function Estadisticas() {
 
       {/* TAB 1: RESUMEN GENERAL & KPIS */}
       {activeTab === 'resumen' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="space-y-6">
           
-          {/* Chart 1: Performance Timeline Goals */}
-          <div className="bg-slate-900/30 border border-slate-900 p-5 rounded-3xl space-y-4">
-            <h5 className="font-extrabold text-xs text-slate-400 uppercase tracking-widest flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-blue-500" />
-              <span>Goles a Favor vs Contra (Evolución)</span>
-            </h5>
-
-            <div className="h-72 w-full text-xs">
-              {matchData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={matchData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                    <XAxis dataKey="name" stroke="#64748b" />
-                    <YAxis stroke="#64748b" allowDecimals={false} />
-                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b' }} />
-                    <Legend />
-                    <Line type="monotone" dataKey="GolesFavor" stroke="#10b981" activeDot={{ r: 8 }} name="Goles Favor" strokeWidth={3} />
-                    <Line type="monotone" dataKey="GolesContra" stroke="#ef4444" name="Goles Contra" strokeWidth={2} />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-slate-600 font-semibold uppercase">
-                  Registra estadísticas de partidos para ver la evolución
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Chart: Minutos Jugados */}
-          <div className="bg-slate-900/30 border border-slate-900 p-5 rounded-3xl space-y-4">
+          {/* Chart Destacado Full-Width: Minutos Jugados (Todos los jugadores visibles sin scroll) */}
+          <div className="bg-slate-900/40 border border-slate-800/80 p-5 rounded-3xl space-y-4 shadow-xl">
             {(() => {
               let displayed = [...playerMinutesData];
               if (minutesFilterMode === 'con_minutos') {
@@ -847,28 +820,36 @@ export default function Estadisticas() {
                 displayed = displayed.slice(0, 10);
               }
               const hasData = displayed.length > 0;
-              // Dynamic width so all squad members have at least 60px of breathing room without clipping
-              const chartWidth = Math.max(680, displayed.length * 60);
 
               return (
                 <>
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-emerald-500" />
-                      <h5 className="font-extrabold text-xs text-slate-300 uppercase tracking-widest">
-                        {selectedTeam.toUpperCase().includes('FEMENINO') ? 'Minutos Jugados por Jugadora' : 'Minutos Jugados por Jugador'}
-                      </h5>
-                      <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full font-bold">
-                        {displayed.length} {displayed.length === 1 ? 'jugador' : 'jugadores'}
-                      </span>
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+                        <Clock className="w-5 h-5 text-emerald-400" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h5 className="font-extrabold text-sm text-white uppercase tracking-wider">
+                            {selectedTeam.toUpperCase().includes('FEMENINO') ? 'Minutos Jugados por Jugadora' : 'Minutos Jugados por Jugador'}
+                          </h5>
+                          <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-bold">
+                            Toda la plantilla ({displayed.length} jugadores)
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-medium">
+                          Visualización completa sin scroll • Distribución oficial de minutos
+                        </p>
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap">
+                      {/* Filtros de jugadores */}
                       <div className="flex items-center bg-slate-950 p-0.5 rounded-xl border border-slate-800 text-[10px] font-bold">
                         <button
                           type="button"
                           onClick={() => setMinutesFilterMode('all')}
-                          className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                          className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                             minutesFilterMode === 'all'
                               ? 'bg-emerald-600 text-white shadow-xs'
                               : 'text-slate-400 hover:text-white'
@@ -879,7 +860,7 @@ export default function Estadisticas() {
                         <button
                           type="button"
                           onClick={() => setMinutesFilterMode('con_minutos')}
-                          className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                          className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                             minutesFilterMode === 'con_minutos'
                               ? 'bg-emerald-600 text-white shadow-xs'
                               : 'text-slate-400 hover:text-white'
@@ -890,7 +871,7 @@ export default function Estadisticas() {
                         <button
                           type="button"
                           onClick={() => setMinutesFilterMode('top10')}
-                          className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                          className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                             minutesFilterMode === 'top10'
                               ? 'bg-emerald-600 text-white shadow-xs'
                               : 'text-slate-400 hover:text-white'
@@ -900,65 +881,168 @@ export default function Estadisticas() {
                         </button>
                       </div>
 
-                      <div className="flex items-center gap-1.5 bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-xs">
+                      {/* Selector de orientación: Columnas vs Barras */}
+                      <div className="flex items-center bg-slate-950 p-0.5 rounded-xl border border-slate-800 text-[10px] font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setMinutesChartLayout('vertical')}
+                          className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                            minutesChartLayout === 'vertical'
+                              ? 'bg-blue-600 text-white shadow-xs'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                          title="Gráfico de columnas verticales sin scroll"
+                        >
+                          <BarChart3 className="w-3.5 h-3.5" />
+                          <span>Columnas</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMinutesChartLayout('horizontal')}
+                          className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                            minutesChartLayout === 'horizontal'
+                              ? 'bg-blue-600 text-white shadow-xs'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                          title="Gráfico de barras horizontales detalladas"
+                        >
+                          <TableIcon className="w-3.5 h-3.5" />
+                          <span>Barras</span>
+                        </button>
+                      </div>
+
+                      {/* Badge duración oficial */}
+                      <div className="flex items-center gap-1.5 bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold px-3 py-1.5 rounded-xl shadow-xs">
                         <span>
                           {matchDuration.categoryName}: {matchDuration.totalMinutes}'/partido ({matchDuration.partsLabel})
-                          {finishedMatchesCount > 0 ? ` • Total máx. (${finishedMatchesCount} partidos): ${finishedMatchesCount * matchDuration.totalMinutes}'` : ''}
+                          {finishedMatchesCount > 0 ? ` • Máx. (${finishedMatchesCount} partidos): ${finishedMatchesCount * matchDuration.totalMinutes}'` : ''}
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="w-full text-xs">
+                  <div className="w-full text-xs pt-2">
                     {hasData ? (
-                      <div className="overflow-x-auto pb-3 scrollbar-thin scrollbar-thumb-slate-700">
-                        <div style={{ width: `${chartWidth}px`, minWidth: '100%', height: '360px' }}>
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={displayed} margin={{ top: 25, right: 20, left: -10, bottom: 65 }}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                              <XAxis 
-                                dataKey="name" 
-                                stroke="#94a3b8" 
-                                angle={-40} 
-                                textAnchor="end" 
-                                interval={0} 
-                                height={65}
-                                tick={{ fontSize: 10, fontWeight: 700 }}
-                              />
-                              <YAxis 
-                                stroke="#94a3b8" 
-                                allowDecimals={false} 
-                                tick={{ fontSize: 10 }}
-                                domain={[0, (dataMax: number) => {
-                                  const maxExpected = finishedMatchesCount > 0 ? finishedMatchesCount * matchDuration.totalMinutes : matchDuration.totalMinutes;
-                                  return Math.max(dataMax, maxExpected);
-                                }]}
-                              />
-                              <Tooltip 
-                                contentStyle={{ 
-                                  backgroundColor: '#0f172a', 
-                                  borderColor: '#1e293b', 
-                                  borderRadius: '12px',
-                                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)'
-                                }} 
-                                formatter={(val: any, _name: any, item: any) => [
-                                  `${val} minutos jugados (${item?.payload?.partidosJugados || 0} partidos disputados, ${item?.payload?.titularidades || 0} de titular)`,
-                                  item?.payload?.fullName || 'Jugador'
-                                ]}
-                              />
-                              <Bar dataKey="Minutos" fill="#10b981" radius={[6, 6, 0, 0]} name="Minutos" minPointSize={6}>
-                                <LabelList 
-                                  dataKey="Minutos" 
-                                  position="top" 
-                                  fill="#6ee7b7" 
-                                  fontSize={9} 
-                                  fontWeight={800} 
-                                  formatter={(val: any) => `${val}'`} 
+                      <div className="w-full">
+                        {minutesChartLayout === 'vertical' ? (
+                          <div className="w-full h-[400px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart 
+                                data={displayed} 
+                                margin={{ top: 25, right: 15, left: -10, bottom: 65 }}
+                                barCategoryGap="12%"
+                              >
+                                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                                <XAxis 
+                                  dataKey="name" 
+                                  stroke="#94a3b8" 
+                                  angle={displayed.length > 10 ? -45 : 0} 
+                                  textAnchor={displayed.length > 10 ? "end" : "middle"} 
+                                  interval={0} 
+                                  height={displayed.length > 10 ? 65 : 30}
+                                  tick={{ fontSize: displayed.length > 18 ? 8.5 : 9.5, fontWeight: 700 }}
                                 />
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
+                                <YAxis 
+                                  stroke="#94a3b8" 
+                                  allowDecimals={false} 
+                                  tick={{ fontSize: 10 }}
+                                  domain={[0, (dataMax: number) => {
+                                    const maxExpected = finishedMatchesCount > 0 ? finishedMatchesCount * matchDuration.totalMinutes : matchDuration.totalMinutes;
+                                    return Math.max(dataMax, maxExpected);
+                                  }]}
+                                />
+                                <Tooltip 
+                                  contentStyle={{ 
+                                    backgroundColor: '#0f172a', 
+                                    borderColor: '#1e293b', 
+                                    borderRadius: '12px',
+                                    boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)'
+                                  }} 
+                                  formatter={(val: any, _name: any, item: any) => [
+                                    `${val} minutos jugados (${item?.payload?.partidosJugados || 0} partidos, ${item?.payload?.titularidades || 0} de titular)`,
+                                    item?.payload?.fullName || 'Jugador'
+                                  ]}
+                                />
+                                <Bar 
+                                  dataKey="Minutos" 
+                                  fill="#10b981" 
+                                  radius={[6, 6, 0, 0]} 
+                                  name="Minutos" 
+                                  minPointSize={6}
+                                  maxBarSize={45}
+                                >
+                                  <LabelList 
+                                    dataKey="Minutos" 
+                                    position="top" 
+                                    fill="#6ee7b7" 
+                                    fontSize={displayed.length > 18 ? 8 : 9} 
+                                    fontWeight={800} 
+                                    formatter={(val: any) => `${val}'`} 
+                                  />
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        ) : (
+                          <div style={{ height: `${Math.max(380, displayed.length * 30)}px` }} className="w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart 
+                                layout="vertical"
+                                data={displayed} 
+                                margin={{ top: 15, right: 45, left: 20, bottom: 15 }}
+                                barCategoryGap="16%"
+                              >
+                                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
+                                <XAxis 
+                                  type="number"
+                                  stroke="#94a3b8" 
+                                  allowDecimals={false} 
+                                  tick={{ fontSize: 10 }}
+                                  domain={[0, (dataMax: number) => {
+                                    const maxExpected = finishedMatchesCount > 0 ? finishedMatchesCount * matchDuration.totalMinutes : matchDuration.totalMinutes;
+                                    return Math.max(dataMax, maxExpected);
+                                  }]}
+                                />
+                                <YAxis 
+                                  type="category"
+                                  dataKey="name" 
+                                  stroke="#94a3b8" 
+                                  width={130}
+                                  tick={{ fontSize: 10, fontWeight: 700 }}
+                                />
+                                <Tooltip 
+                                  contentStyle={{ 
+                                    backgroundColor: '#0f172a', 
+                                    borderColor: '#1e293b', 
+                                    borderRadius: '12px',
+                                    boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)'
+                                  }} 
+                                  formatter={(val: any, _name: any, item: any) => [
+                                    `${val} minutos jugados (${item?.payload?.partidosJugados || 0} partidos, ${item?.payload?.titularidades || 0} de titular)`,
+                                    item?.payload?.fullName || 'Jugador'
+                                  ]}
+                                />
+                                <Bar 
+                                  dataKey="Minutos" 
+                                  fill="#10b981" 
+                                  radius={[0, 6, 6, 0]} 
+                                  name="Minutos" 
+                                  minPointSize={6}
+                                  maxBarSize={22}
+                                >
+                                  <LabelList 
+                                    dataKey="Minutos" 
+                                    position="right" 
+                                    fill="#6ee7b7" 
+                                    fontSize={10} 
+                                    fontWeight={800} 
+                                    formatter={(val: any) => `${val}'`} 
+                                  />
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="h-48 flex items-center justify-center text-slate-600 font-semibold uppercase text-center p-4 border border-dashed border-slate-800 rounded-2xl">
@@ -970,6 +1054,37 @@ export default function Estadisticas() {
               );
             })()}
           </div>
+
+          {/* Grid de 2 columnas para el resto de métricas y rankings */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            {/* Chart 1: Performance Timeline Goals */}
+            <div className="bg-slate-900/30 border border-slate-900 p-5 rounded-3xl space-y-4">
+              <h5 className="font-extrabold text-xs text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-blue-500" />
+                <span>Goles a Favor vs Contra (Evolución)</span>
+              </h5>
+
+              <div className="h-72 w-full text-xs">
+                {matchData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={matchData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis dataKey="name" stroke="#64748b" />
+                      <YAxis stroke="#64748b" allowDecimals={false} />
+                      <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b' }} />
+                      <Legend />
+                      <Line type="monotone" dataKey="GolesFavor" stroke="#10b981" activeDot={{ r: 8 }} name="Goles Favor" strokeWidth={3} />
+                      <Line type="monotone" dataKey="GolesContra" stroke="#ef4444" name="Goles Contra" strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-slate-600 font-semibold uppercase">
+                    Registra estadísticas de partidos para ver la evolución
+                  </div>
+                )}
+              </div>
+            </div>
 
           {/* Ranking Goleadoras */}
           <div className="bg-slate-900/30 border border-slate-900 p-5 rounded-3xl space-y-4">
@@ -1089,6 +1204,7 @@ export default function Estadisticas() {
             </div>
           </div>
 
+          </div>
         </div>
       )}
 
