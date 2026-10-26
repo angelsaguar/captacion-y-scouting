@@ -17,12 +17,15 @@ import {
   UserCheck,
   Zap,
   Volume2,
-  MessageCircle
+  MessageCircle,
+  Shield
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { createPortal } from 'react-dom';
 import { generateLocalTacticalAdvice, getTacticalAdvice } from '@/lib/tacticalAdvisor';
+import RivalBadge from '@/components/partidos/RivalBadge';
+import RivalCrestsManagerModal from '@/components/partidos/RivalCrestsManagerModal';
 
 interface Match {
   id: string;
@@ -67,6 +70,10 @@ export default function PlanPartido() {
   const [printMode, setPrintMode] = useState<'full' | 'convocatoria' | null>(null);
   const [showWhatsappConvModal, setShowWhatsappConvModal] = useState(false);
   const [whatsappConvMessage, setWhatsappConvMessage] = useState('');
+
+  // Rival crests manager modal
+  const [showRivalManager, setShowRivalManager] = useState(false);
+  const [selectedRivalForManager, setSelectedRivalForManager] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const handleAfterPrint = () => {
@@ -456,13 +463,28 @@ export default function PlanPartido() {
           </select>
         </div>
 
-        <Button 
-          onClick={() => setShowAddForm(!showAddForm)}
-          className="w-full sm:w-auto text-xs font-bold uppercase tracking-wider bg-orange-600 hover:bg-orange-500 flex items-center justify-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Elaborar Plan de Partido</span>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <Button 
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setSelectedRivalForManager(activePlan?.rivalName || formData.rivalName || undefined);
+              setShowRivalManager(true);
+            }}
+            className="w-full sm:w-auto text-xs font-bold uppercase tracking-wider border-slate-800 bg-slate-950/80 hover:bg-slate-800 text-slate-200 flex items-center justify-center gap-2 rounded-xl"
+          >
+            <Shield className="w-4 h-4 text-amber-400" />
+            <span>Escudos Rivales</span>
+          </Button>
+
+          <Button 
+            onClick={() => setShowAddForm(!showAddForm)}
+            className="w-full sm:w-auto text-xs font-bold uppercase tracking-wider bg-orange-600 hover:bg-orange-500 flex items-center justify-center gap-2 rounded-xl shadow-md"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Elaborar Plan de Partido</span>
+          </Button>
+        </div>
       </div>
 
       {/* Add Plan Form */}
@@ -485,15 +507,41 @@ export default function PlanPartido() {
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Equipo Rival *</label>
-              <input
-                type="text"
-                required
-                placeholder="Ej. F.C. Arganda"
-                value={formData.rivalName}
-                onChange={(e) => setFormData({...formData, rivalName: e.target.value})}
-                className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 mt-1 text-xs text-white focus:outline-none focus:border-blue-500 transition-all font-bold"
-              />
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Equipo Rival *</label>
+                {formData.rivalName.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedRivalForManager(formData.rivalName);
+                      setShowRivalManager(true);
+                    }}
+                    className="text-[10px] text-amber-400 hover:text-amber-300 font-extrabold uppercase hover:underline cursor-pointer"
+                  >
+                    Escudo
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-2 mt-1">
+                {formData.rivalName.trim() && (
+                  <RivalBadge 
+                    rivalName={formData.rivalName} 
+                    size="sm" 
+                    onUploadClick={() => {
+                      setSelectedRivalForManager(formData.rivalName);
+                      setShowRivalManager(true);
+                    }}
+                  />
+                )}
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej. F.C. Arganda"
+                  value={formData.rivalName}
+                  onChange={(e) => setFormData({...formData, rivalName: e.target.value})}
+                  className="flex-1 bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all font-bold"
+                />
+              </div>
             </div>
 
             <div>
@@ -676,7 +724,10 @@ export default function PlanPartido() {
                           VS {pl.sistemaRival}
                         </span>
                       </div>
-                      <h6 className="font-bold text-white text-xs truncate max-w-[180px]">VS {pl.rivalName}</h6>
+                      <div className="flex items-center gap-2 mt-1">
+                        <RivalBadge rivalName={pl.rivalName} size="xs" className="shrink-0" />
+                        <h6 className="font-bold text-white text-xs truncate max-w-[170px]">VS {pl.rivalName}</h6>
+                      </div>
                       <p className="text-[10px] text-slate-500 font-bold mt-1">Fecha partido: {pl.fechaPartido}</p>
                     </div>
 
@@ -711,14 +762,25 @@ export default function PlanPartido() {
               {/* Dossier Header details */}
               <div className="border-b border-slate-900 pb-5 space-y-4">
                 <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h4 className="font-extrabold text-white text-base uppercase tracking-tight flex items-center gap-2">
-                      <span className="w-2.5 h-6 bg-orange-500 rounded-sm inline-block shrink-0" />
-                      <span>DOSSIER TÁCTICO: VS {activePlan.rivalName}</span>
-                    </h4>
-                    <p className="text-[11px] text-slate-400 font-bold uppercase mt-1">
-                      FECHA ENCUENTRO: {activePlan.fechaPartido} • SISTEMA: {activePlan.sistema} (POVEDA) VS {activePlan.sistemaRival} (RIVAL)
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <RivalBadge 
+                      rivalName={activePlan.rivalName} 
+                      size="lg" 
+                      className="shrink-0"
+                      onUploadClick={() => {
+                        setSelectedRivalForManager(activePlan.rivalName);
+                        setShowRivalManager(true);
+                      }}
+                    />
+                    <div>
+                      <h4 className="font-extrabold text-white text-base uppercase tracking-tight flex items-center gap-2">
+                        <span className="w-2.5 h-6 bg-orange-500 rounded-sm inline-block shrink-0" />
+                        <span>DOSSIER TÁCTICO: VS {activePlan.rivalName}</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-400 font-bold uppercase mt-1">
+                        FECHA ENCUENTRO: {activePlan.fechaPartido} • SISTEMA: {activePlan.sistema} (POVEDA) VS {activePlan.sistemaRival} (RIVAL)
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -1013,9 +1075,12 @@ export default function PlanPartido() {
             </div>
 
             <div className="grid grid-cols-2 gap-4 bg-slate-100 p-4 rounded-xl border border-slate-300 my-6">
-              <div>
-                <p className="text-[10px] font-bold text-slate-500 uppercase">Rival del Encuentro</p>
-                <p className="text-sm font-extrabold text-slate-900">VS {activePlan.rivalName}</p>
+              <div className="flex items-center gap-3">
+                <RivalBadge rivalName={activePlan.rivalName} size="md" className="shrink-0 shadow-sm" />
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">Rival del Encuentro</p>
+                  <p className="text-sm font-extrabold text-slate-900">VS {activePlan.rivalName}</p>
+                </div>
               </div>
               <div>
                 <p className="text-[10px] font-bold text-slate-500 uppercase">Fecha del Partido</p>
@@ -1069,10 +1134,13 @@ export default function PlanPartido() {
             </div>
 
             <div className="bg-slate-100 p-6 rounded-2xl border border-slate-300 my-6 max-w-2xl mx-auto">
-              <div className="grid grid-cols-2 gap-4 text-center">
-                <div className="border-r border-slate-300 py-1">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Rival</p>
-                  <p className="text-lg font-black text-slate-900 uppercase mt-0.5">VS {activePlan.rivalName}</p>
+              <div className="grid grid-cols-2 gap-4 text-center items-center">
+                <div className="border-r border-slate-300 py-1 flex items-center justify-center gap-3">
+                  <RivalBadge rivalName={activePlan.rivalName} size="md" className="shrink-0 shadow-sm" />
+                  <div className="text-left">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Rival</p>
+                    <p className="text-base font-black text-slate-900 uppercase mt-0.5">VS {activePlan.rivalName}</p>
+                  </div>
                 </div>
                 <div className="py-1">
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Fecha Encuentro</p>
@@ -1164,6 +1232,15 @@ export default function PlanPartido() {
         }
       `}</style>
 
+      {/* Modal for managing rival team crests */}
+      <RivalCrestsManagerModal
+        isOpen={showRivalManager}
+        onClose={() => {
+          setShowRivalManager(false);
+          setSelectedRivalForManager(undefined);
+        }}
+        preselectedRival={selectedRivalForManager}
+      />
     </div>
   );
 }

@@ -49,6 +49,8 @@ import { isPlayerMatch, normalizePlayerNameKey, cleanPhotoUrl } from '@/lib/util
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 import { getCategoryMatchDuration } from '@/lib/matchDuration';
 import MatchTacticalPitch, { MatchSubstitution } from './MatchTacticalPitch';
+import UDLaPovedaLogo from '@/components/layout/UDLaPovedaLogo';
+import RivalBadge from '@/components/partidos/RivalBadge';
 
 export const POSICIONES_CAMPO = [
   'Portero',
@@ -1743,9 +1745,18 @@ export default function MatchStatsModal({
                 </span>
               </div>
               <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap mt-0.5">
-                <span className="text-xs sm:text-sm md:text-base font-black text-white uppercase tracking-tight truncate max-w-[120px] sm:max-w-[180px]">
-                  {match.tipo === 'Local' ? teamName : match.rival}
-                </span>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {match.tipo === 'Local' ? (
+                    <div className="w-5 h-5 bg-white p-0.5 rounded-lg shrink-0 shadow-xs border border-slate-700 flex items-center justify-center">
+                      <UDLaPovedaLogo className="w-full h-full" />
+                    </div>
+                  ) : (
+                    <RivalBadge rivalName={match.rival} size="xs" className="w-5 h-5" />
+                  )}
+                  <span className="text-xs sm:text-sm md:text-base font-black text-white uppercase tracking-tight truncate max-w-[120px] sm:max-w-[180px]">
+                    {match.tipo === 'Local' ? teamName : match.rival}
+                  </span>
+                </div>
 
                 {/* Marcador interactivo en cabecera con ajuste directo */}
                 <div className="flex items-center gap-0.5 bg-slate-950/90 border border-slate-800 px-1 py-0.5 rounded-lg shadow-inner">
@@ -1790,9 +1801,18 @@ export default function MatchStatsModal({
                   </button>
                 </div>
 
-                <span className="text-xs sm:text-sm md:text-base font-black text-white uppercase tracking-tight truncate max-w-[120px] sm:max-w-[180px]">
-                  {match.tipo === 'Local' ? match.rival : teamName}
-                </span>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-xs sm:text-sm md:text-base font-black text-white uppercase tracking-tight truncate max-w-[120px] sm:max-w-[180px]">
+                    {match.tipo === 'Local' ? match.rival : teamName}
+                  </span>
+                  {match.tipo === 'Local' ? (
+                    <RivalBadge rivalName={match.rival} size="xs" className="w-5 h-5" />
+                  ) : (
+                    <div className="w-5 h-5 bg-white p-0.5 rounded-lg shrink-0 shadow-xs border border-slate-700 flex items-center justify-center">
+                      <UDLaPovedaLogo className="w-full h-full" />
+                    </div>
+                  )}
+                </div>
 
                 {(teamTotals.goles_favor > 0 || teamTotals.goles_contra > 0) && (
                   <button

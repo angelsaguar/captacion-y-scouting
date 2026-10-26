@@ -55,6 +55,9 @@ import MatchStatsModal from '@/components/partidos/MatchStatsModal';
 import MatchdayPosterModal from '@/components/partidos/MatchdayPosterModal';
 import { cleanPhotoUrl, isPlayerMatch, normalizePlayerNameKey } from '@/lib/utils';
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
+import RivalBadge from '@/components/partidos/RivalBadge';
+import RivalCrestsManagerModal from '@/components/partidos/RivalCrestsManagerModal';
+import { Shield, Upload } from 'lucide-react';
 
 interface MatchPlayerStat {
   playerId: string;
@@ -206,6 +209,10 @@ export default function Partidos() {
   } | null>(null);
   const [isAnalyzingTactics, setIsAnalyzingTactics] = useState<boolean>(false);
   const [savedMatchPlanId, setSavedMatchPlanId] = useState<string | null>(null);
+
+  // Rival crests management modal state
+  const [showRivalCrestsModal, setShowRivalCrestsModal] = useState<boolean>(false);
+  const [crestModalTargetRival, setCrestModalTargetRival] = useState<string>('');
 
   const handleOpenPlanPartidoModal = async (match: Match | null) => {
     const targetMatch = match || ({
@@ -1293,6 +1300,18 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <Button 
             onClick={() => {
+              setCrestModalTargetRival('');
+              setShowRivalCrestsModal(true);
+            }}
+            className="text-xs font-black uppercase tracking-wider bg-gradient-to-r from-cyan-900/60 to-blue-900/60 hover:from-cyan-800/80 hover:to-blue-800/80 border border-cyan-500/40 text-cyan-300 flex items-center justify-center gap-2 h-10 px-4 rounded-xl cursor-pointer shadow-md"
+            title="Administrar o subir escudos de los equipos rivales"
+          >
+            <Shield className="w-4 h-4 text-cyan-400" />
+            <span>Escudos Rivales</span>
+          </Button>
+
+          <Button 
+            onClick={() => {
               const nextMatch = matches.find(m => m.estado === 'Programado') || matches[0] || null;
               setShowMatchdayPosterModal(nextMatch);
             }}
@@ -1331,15 +1350,40 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="text-xs font-bold text-slate-200 uppercase tracking-wider">Equipo Rival *</label>
-              <input 
-                type="text" 
-                required
-                value={formData.rival}
-                onChange={(e) => setFormData({...formData, rival: e.target.value})}
-                className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1"
-                placeholder="Ej. A.D. Arganda"
-              />
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-200 uppercase tracking-wider">Equipo Rival *</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCrestModalTargetRival(formData.rival);
+                    setShowRivalCrestsModal(true);
+                  }}
+                  className="text-[10px] text-cyan-400 hover:text-cyan-300 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <Upload className="w-3 h-3" />
+                  <span>Subir/Cambiar Escudo</span>
+                </button>
+              </div>
+              <div className="flex items-center gap-2 mt-1">
+                {formData.rival && (
+                  <RivalBadge 
+                    rivalName={formData.rival} 
+                    size="sm" 
+                    onUploadClick={() => {
+                      setCrestModalTargetRival(formData.rival);
+                      setShowRivalCrestsModal(true);
+                    }}
+                  />
+                )}
+                <input 
+                  type="text" 
+                  required
+                  value={formData.rival}
+                  onChange={(e) => setFormData({...formData, rival: e.target.value})}
+                  className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all font-semibold"
+                  placeholder="Ej. A.D. Arganda"
+                />
+              </div>
             </div>
 
             <div>
@@ -1518,9 +1562,14 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                         <UDLaPovedaLogo className="w-full h-full" />
                       </div>
                     ) : (
-                      <div className="w-10 h-10 bg-slate-950 border border-slate-850 rounded-xl flex items-center justify-center shadow-md">
-                        <Trophy className="w-5 h-5 text-slate-400" />
-                      </div>
+                      <RivalBadge 
+                        rivalName={match.rival} 
+                        size="md" 
+                        onUploadClick={() => {
+                          setCrestModalTargetRival(match.rival);
+                          setShowRivalCrestsModal(true);
+                        }}
+                      />
                     )}
                     <span className="font-extrabold text-white text-xs uppercase truncate max-w-full">
                       {match.tipo === 'Local' ? 'CLUB' : match.rival}
@@ -1553,9 +1602,14 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                   {/* Away Team */}
                   <div className="flex flex-col items-center gap-1.5 w-1/3 text-center">
                     {match.tipo === 'Local' ? (
-                      <div className="w-10 h-10 bg-slate-950 border border-slate-850 rounded-xl flex items-center justify-center shadow-md">
-                        <Trophy className="w-5 h-5 text-slate-500" />
-                      </div>
+                      <RivalBadge 
+                        rivalName={match.rival} 
+                        size="md" 
+                        onUploadClick={() => {
+                          setCrestModalTargetRival(match.rival);
+                          setShowRivalCrestsModal(true);
+                        }}
+                      />
                     ) : (
                       <div className="w-10 h-10 bg-white p-1 rounded-xl flex items-center justify-center shadow-lg">
                         <UDLaPovedaLogo className="w-full h-full" />
@@ -2339,7 +2393,23 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                         {/* Matchup Banner */}
                         <div className="relative z-10 bg-gradient-to-b from-blue-900/50 via-slate-900/90 to-blue-950/60 border border-slate-300/40 rounded-2xl p-3.5 shadow-xl space-y-3">
                           <div className="flex items-center justify-between text-center gap-2">
-                            <div className="flex-1">
+                            <div className="flex-1 flex flex-col items-center">
+                              <div className="w-10 h-10 mb-1 flex items-center justify-center">
+                                {showConvocatoriaModal.tipo === 'Local' ? (
+                                  <div className="w-10 h-10 bg-white p-1 rounded-xl shadow-md border border-slate-700">
+                                    <UDLaPovedaLogo className="w-full h-full" />
+                                  </div>
+                                ) : (
+                                  <RivalBadge 
+                                    rivalName={showConvocatoriaModal.rival} 
+                                    size="md" 
+                                    onUploadClick={() => {
+                                      setCrestModalTargetRival(showConvocatoriaModal.rival);
+                                      setShowRivalCrestsModal(true);
+                                    }}
+                                  />
+                                )}
+                              </div>
                               <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">LOCAL</p>
                               <p className="text-sm font-black text-white uppercase tracking-tight leading-tight mt-0.5">
                                 {showConvocatoriaModal.tipo === 'Local' ? 'CLUB' : showConvocatoriaModal.rival}
@@ -2350,7 +2420,23 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                               VS
                             </div>
 
-                            <div className="flex-1">
+                            <div className="flex-1 flex flex-col items-center">
+                              <div className="w-10 h-10 mb-1 flex items-center justify-center">
+                                {showConvocatoriaModal.tipo === 'Local' ? (
+                                  <RivalBadge 
+                                    rivalName={showConvocatoriaModal.rival} 
+                                    size="md" 
+                                    onUploadClick={() => {
+                                      setCrestModalTargetRival(showConvocatoriaModal.rival);
+                                      setShowRivalCrestsModal(true);
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="w-10 h-10 bg-white p-1 rounded-xl shadow-md border border-slate-700">
+                                    <UDLaPovedaLogo className="w-full h-full" />
+                                  </div>
+                                )}
+                              </div>
                               <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">VISITANTE</p>
                               <p className="text-sm font-black text-white uppercase tracking-tight leading-tight mt-0.5">
                                 {showConvocatoriaModal.tipo === 'Local' ? showConvocatoriaModal.rival : 'CLUB'}
@@ -3115,17 +3201,42 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Equipo Rival *
-                  </label>
-                  <input 
-                    type="text" 
-                    required
-                    value={editingMatch.rival}
-                    onChange={(e) => setEditingMatch({ ...editingMatch, rival: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all font-semibold"
-                    placeholder="Ej. A.D. Arganda"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+                      Equipo Rival *
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCrestModalTargetRival(editingMatch.rival);
+                        setShowRivalCrestsModal(true);
+                      }}
+                      className="text-[10px] text-cyan-400 hover:text-cyan-300 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Upload className="w-3 h-3" />
+                      <span>Subir/Cambiar Escudo</span>
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {editingMatch.rival && (
+                      <RivalBadge 
+                        rivalName={editingMatch.rival} 
+                        size="sm" 
+                        onUploadClick={() => {
+                          setCrestModalTargetRival(editingMatch.rival);
+                          setShowRivalCrestsModal(true);
+                        }}
+                      />
+                    )}
+                    <input 
+                      type="text" 
+                      required
+                      value={editingMatch.rival}
+                      onChange={(e) => setEditingMatch({ ...editingMatch, rival: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all font-semibold"
+                      placeholder="Ej. A.D. Arganda"
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -3383,14 +3494,39 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <label className="text-[11px] font-bold text-slate-400 uppercase">Equipo Rival</label>
-                    <input 
-                      type="text"
-                      value={planRivalName}
-                      onChange={(e) => setPlanRivalName(e.target.value)}
-                      placeholder="Ej. A.D. Arganda"
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-amber-500 mt-1 font-bold"
-                    />
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[11px] font-bold text-slate-400 uppercase">Equipo Rival</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCrestModalTargetRival(planRivalName);
+                          setShowRivalCrestsModal(true);
+                        }}
+                        className="text-[10px] text-cyan-400 hover:text-cyan-300 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Upload className="w-3 h-3" />
+                        <span>Escudo</span>
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {planRivalName && (
+                        <RivalBadge 
+                          rivalName={planRivalName} 
+                          size="sm" 
+                          onUploadClick={() => {
+                            setCrestModalTargetRival(planRivalName);
+                            setShowRivalCrestsModal(true);
+                          }}
+                        />
+                      )}
+                      <input 
+                        type="text"
+                        value={planRivalName}
+                        onChange={(e) => setPlanRivalName(e.target.value)}
+                        placeholder="Ej. A.D. Arganda"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-amber-500 font-bold"
+                      />
+                    </div>
                   </div>
 
                   <div>
@@ -3678,6 +3814,14 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
           players={players}
         />
       )}
+
+      {/* Rival Crests Manager Modal */}
+      <RivalCrestsManagerModal
+        isOpen={showRivalCrestsModal}
+        onClose={() => setShowRivalCrestsModal(false)}
+        initialRivalName={crestModalTargetRival}
+        existingRivalNames={Array.from(new Set(matches.map(m => m.rival).filter(Boolean)))}
+      />
     </div>
   );
 }

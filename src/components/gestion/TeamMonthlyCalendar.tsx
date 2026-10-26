@@ -32,7 +32,8 @@ import {
   Plane,
   Moon,
   Award,
-  Activity
+  Activity,
+  Shield
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -41,6 +42,8 @@ import { supabase } from '@/lib/supabase';
 import html2canvas from 'html2canvas';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
+import RivalBadge from '@/components/partidos/RivalBadge';
+import RivalCrestsManagerModal from '@/components/partidos/RivalCrestsManagerModal';
 
 export type CalendarEventType = 'Entrenamiento' | 'Descanso' | 'Partido' | 'Inicio Liga' | 'Torneo' | 'Personalizado';
 
@@ -130,6 +133,8 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [showWhatsAppModal, setShowWhatsAppModal] = useState<boolean>(false);
   const [whatsappMsg, setWhatsappMsg] = useState<string>('');
+  const [showRivalManager, setShowRivalManager] = useState<boolean>(false);
+  const [selectedRivalForManager, setSelectedRivalForManager] = useState<string | undefined>(undefined);
   const printRef = useRef<HTMLDivElement>(null);
 
   // Storage key based on team
@@ -1050,6 +1055,19 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           </Button>
 
           <Button
+            onClick={() => {
+              setSelectedRivalForManager(undefined);
+              setShowRivalManager(true);
+            }}
+            variant="outline"
+            className="text-xs font-bold uppercase border-amber-500/40 text-amber-300 hover:bg-amber-950/40 gap-1.5 rounded-xl h-9 px-3 cursor-pointer"
+            title="Gestionar escudos de equipos rivales"
+          >
+            <Shield className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden xl:inline">Escudos Rivales</span>
+          </Button>
+
+          <Button
             onClick={handleOpenWhatsAppModal}
             className="text-xs font-extrabold uppercase bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/30 gap-2 rounded-xl h-9 px-4 cursor-pointer"
           >
@@ -1201,6 +1219,16 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
                                 </div>
                               )}
                             </div>
+
+                            {event.type === 'Partido' && (() => {
+                              const rName = event.rival || event.title.replace(/^partido\s*(vs\.?|contra)?\s*/i, '').replace(/^vs\.?\s*/i, '').trim();
+                              if (!rName) return null;
+                              return (
+                                <div className="my-1 shrink-0 flex items-center justify-center">
+                                  <RivalBadge rivalName={rName} size="xs" className="shadow-md" />
+                                </div>
+                              );
+                            })()}
 
                             <span className="leading-snug font-extrabold text-[11px] sm:text-xs w-full break-words my-auto px-0.5">
                               {event.type === 'Entrenamiento' 
@@ -1538,16 +1566,42 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
                   </div>
 
                   <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                      Nombre del Rival / Equipo
-                    </label>
-                    <input 
-                      type="text"
-                      value={eventForm.rival || ''}
-                      onChange={(e) => setEventForm({ ...eventForm, rival: e.target.value, title: `vs ${e.target.value}` })}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500 transition-all"
-                      placeholder="Ej. AD PARLA"
-                    />
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+                        Nombre del Rival / Equipo
+                      </label>
+                      {eventForm.rival?.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedRivalForManager(eventForm.rival);
+                            setShowRivalManager(true);
+                          }}
+                          className="text-[10px] text-amber-400 hover:text-amber-300 font-extrabold uppercase hover:underline cursor-pointer"
+                        >
+                          Gestionar Escudo
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {eventForm.rival?.trim() && (
+                        <RivalBadge 
+                          rivalName={eventForm.rival} 
+                          size="sm" 
+                          onUploadClick={() => {
+                            setSelectedRivalForManager(eventForm.rival);
+                            setShowRivalManager(true);
+                          }}
+                        />
+                      )}
+                      <input 
+                        type="text"
+                        value={eventForm.rival || ''}
+                        onChange={(e) => setEventForm({ ...eventForm, rival: e.target.value, title: `vs ${e.target.value}` })}
+                        className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500 transition-all font-bold"
+                        placeholder="Ej. AD PARLA"
+                      />
+                    </div>
                   </div>
                 </div>
               )}
@@ -1613,6 +1667,15 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         </div>
       )}
 
+      {/* Modal for managing rival team crests */}
+      <RivalCrestsManagerModal
+        isOpen={showRivalManager}
+        onClose={() => {
+          setShowRivalManager(false);
+          setSelectedRivalForManager(undefined);
+        }}
+        preselectedRival={selectedRivalForManager}
+      />
     </div>
   );
 }

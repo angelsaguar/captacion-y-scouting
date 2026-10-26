@@ -35,7 +35,11 @@ import { toPng } from 'html-to-image';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import UDLaPovedaLogo from '@/components/layout/UDLaPovedaLogo';
+import RivalBadge from '@/components/partidos/RivalBadge';
+import RivalCrestsManagerModal from '@/components/partidos/RivalCrestsManagerModal';
+import { Upload } from 'lucide-react';
 import { cleanPhotoUrl } from '@/lib/utils';
+import { getRivalCrestSync } from '@/lib/rivalCrests';
 import povedaPlayerBrushImg from '@/assets/images/poveda_player_brush_1788964313566.jpg';
 import playerBrushActionImg from '@/assets/images/player_brush_action_1788963018733.jpg';
 import femalePlayerBrushImg from '@/assets/images/female_player_brush_1788963036471.jpg';
@@ -134,6 +138,7 @@ export default function MatchdayPosterModal({
 
   // Poster theme: defaulting to 1960s authentic vintage football match poster
   const [posterTheme, setPosterTheme] = useState<PosterTheme>('vintage_60s');
+  const [showRivalManager, setShowRivalManager] = useState<boolean>(false);
 
   // Quick Preset Mode for Match announcement: 'vintage_60s' | 'convocatoria_modern' | 'dia_de_partido' | 'matchday' | 'aficion' | 'custom'
   const [posterPreset, setPosterPreset] = useState<'vintage_60s' | 'convocatoria_modern' | 'dia_de_partido' | 'matchday' | 'aficion' | 'custom'>('vintage_60s');
@@ -1120,6 +1125,39 @@ export default function MatchdayPosterModal({
                     {matchLugar}
                   </span>
                 </div>
+              </div>
+
+              {/* Rival Crest Widget & Quick Uploader */}
+              <div className="bg-gradient-to-r from-slate-950 via-[#071328] to-slate-950 border border-blue-500/30 p-3 rounded-xl flex items-center justify-between gap-3 shadow-md">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <RivalBadge 
+                    rivalName={rivalName} 
+                    size="md" 
+                    onUploadClick={() => setShowRivalManager(true)}
+                  />
+                  <div className="min-w-0">
+                    <span className="text-[10px] text-cyan-300 uppercase font-black tracking-wide block">
+                      Escudo del Rival
+                    </span>
+                    <span className="text-xs text-white font-extrabold truncate block">
+                      {rivalName}
+                    </span>
+                    <span className="text-[9.5px] text-slate-400 block mt-0.5">
+                      {getRivalCrestSync(rivalName) ? '✓ Escudo cargado en el cartel' : 'Usando silueta estándar'}
+                    </span>
+                  </div>
+                </div>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setShowRivalManager(true)}
+                  className="h-8 text-[10px] font-black uppercase bg-blue-600 hover:bg-blue-500 text-white rounded-xl gap-1 shrink-0 cursor-pointer shadow-sm"
+                  title="Subir o cambiar el escudo del equipo rival"
+                >
+                  <Upload className="w-3 h-3" />
+                  <span>{getRivalCrestSync(rivalName) ? 'Cambiar' : 'Subir'}</span>
+                </Button>
               </div>
             </div>
 
@@ -2205,13 +2243,20 @@ export default function MatchdayPosterModal({
                       <div className="relative z-10 flex items-center justify-between text-center gap-2">
                         {/* Team Local */}
                         <div className="flex-1 min-w-0 flex flex-col items-center">
-                          <div className={`w-11 h-11 sm:w-13 sm:h-13 rounded-full ${isLocal ? 'bg-white p-1 border-2 border-cyan-400/80' : 'bg-[#071736] border-2 border-cyan-400/80 p-1.5'} shadow-lg flex items-center justify-center mb-1 ring-2 ring-cyan-500/20`}>
+                          <div className={`w-11 h-11 sm:w-13 sm:h-13 rounded-full flex items-center justify-center mb-1 ${
+                            isLocal 
+                              ? 'bg-white p-1 border-2 border-cyan-400/80 shadow-lg ring-2 ring-cyan-500/20' 
+                              : ''
+                          }`}>
                             {isLocal ? (
                               <UDLaPovedaLogo className="w-full h-full drop-shadow-xs" />
                             ) : (
-                              <div className="flex flex-col items-center justify-center text-amber-300">
-                                <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-amber-400" />
-                              </div>
+                              <RivalBadge 
+                                rivalName={rivalName} 
+                                size="custom" 
+                                className="w-11 h-11 sm:w-13 sm:h-13 ring-2 ring-cyan-500/20 shadow-lg"
+                                onUploadClick={() => setShowRivalManager(true)}
+                              />
                             )}
                           </div>
                           <span className="text-[7.5px] sm:text-[8px] font-black text-cyan-300 uppercase tracking-widest block">
@@ -2234,11 +2279,18 @@ export default function MatchdayPosterModal({
 
                         {/* Team Visitante */}
                         <div className="flex-1 min-w-0 flex flex-col items-center">
-                          <div className={`w-11 h-11 sm:w-13 sm:h-13 rounded-full ${!isLocal ? 'bg-white p-1 border-2 border-amber-400/80' : 'bg-[#071736] border-2 border-amber-400/80 p-1.5'} shadow-lg flex items-center justify-center mb-1 ring-2 ring-amber-500/20`}>
+                          <div className={`w-11 h-11 sm:w-13 sm:h-13 rounded-full flex items-center justify-center mb-1 ${
+                            !isLocal 
+                              ? 'bg-white p-1 border-2 border-amber-400/80 shadow-lg ring-2 ring-amber-500/20' 
+                              : ''
+                          }`}>
                             {isLocal ? (
-                              <div className="flex flex-col items-center justify-center text-amber-300">
-                                <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-amber-400" />
-                              </div>
+                              <RivalBadge 
+                                rivalName={rivalName} 
+                                size="custom" 
+                                className="w-11 h-11 sm:w-13 sm:h-13 ring-2 ring-amber-500/20 shadow-lg"
+                                onUploadClick={() => setShowRivalManager(true)}
+                              />
                             ) : (
                               <UDLaPovedaLogo className="w-full h-full drop-shadow-xs" />
                             )}
@@ -2673,9 +2725,12 @@ export default function MatchdayPosterModal({
 
                         {/* Club 2: Rival */}
                         <div className="flex flex-col items-center text-center max-w-[120px]">
-                          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-slate-900 border-2 border-slate-700 shadow-lg flex items-center justify-center text-amber-400">
-                            <Shield className="w-8 h-8 fill-current text-amber-400/80" />
-                          </div>
+                          <RivalBadge 
+                            rivalName={rivalName} 
+                            size="custom" 
+                            className="w-14 h-14 sm:w-16 sm:h-16 rounded-full ring-2 ring-amber-400/50 shadow-lg shadow-amber-500/20"
+                            onUploadClick={() => setShowRivalManager(true)}
+                          />
                           <span className="mt-1.5 text-xs sm:text-sm font-black text-amber-300 uppercase tracking-tight leading-tight truncate max-w-[110px]">
                             {rivalName}
                           </span>
@@ -2963,14 +3018,23 @@ export default function MatchdayPosterModal({
 
                     {/* Big Clash Box */}
                     <div className="my-2 bg-black/40 backdrop-blur-md border border-white/20 rounded-2xl p-3 sm:p-3.5 shadow-2xl flex items-center justify-around">
-                      <div className="text-center">
+                      <div className="text-center flex flex-col items-center">
+                        <div className="w-8 h-8 rounded-full bg-white p-0.5 mb-1 shadow">
+                          <UDLaPovedaLogo className="w-full h-full" />
+                        </div>
                         <span className="block text-base sm:text-lg font-black text-white uppercase">CLUB</span>
                         <span className="text-[9px] font-bold text-cyan-300 uppercase">{isLocal ? 'LOCAL' : 'VISITANTE'}</span>
                       </div>
                       <div className="w-9 h-9 rounded-xl bg-amber-400 text-slate-950 font-black text-sm flex items-center justify-center shadow">
                         VS
                       </div>
-                      <div className="text-center">
+                      <div className="text-center flex flex-col items-center">
+                        <RivalBadge 
+                          rivalName={rivalName} 
+                          size="sm" 
+                          className="mb-1"
+                          onUploadClick={() => setShowRivalManager(true)}
+                        />
                         <span className="block text-base sm:text-lg font-black text-amber-300 uppercase truncate max-w-[130px]">{rivalName}</span>
                         <span className="text-[9px] font-bold text-slate-400 uppercase">{isLocal ? 'VISITANTE' : 'LOCAL'}</span>
                       </div>
@@ -3027,6 +3091,14 @@ export default function MatchdayPosterModal({
         </div>
 
       </div>
+
+      {/* Rival Crests Manager Modal */}
+      <RivalCrestsManagerModal
+        isOpen={showRivalManager}
+        onClose={() => setShowRivalManager(false)}
+        initialRivalName={rivalName}
+        existingRivalNames={allMatches.map(m => m.rival).filter(Boolean)}
+      />
     </div>
   );
 }
