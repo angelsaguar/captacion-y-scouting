@@ -441,7 +441,7 @@ const SAMPLE_PLAYERS: Record<string, PlayerRoster[]> = {
     { id: 'p10', nombre: 'Hugo Ortega', dorsal: 7, posicionOriginal: 'Extremo Derecho' },
     { id: 'p11', nombre: 'Alejandro Ramos', dorsal: 9, posicionOriginal: 'Delantero' },
     { id: 'p12', nombre: 'Roberto Torres', dorsal: 13, posicionOriginal: 'Portero' },
-    { id: 'p13', nombre: 'Sandro Poveda', dorsal: 14, posicionOriginal: 'Defensa' },
+    { id: 'p13', nombre: 'Sandro Navarro', dorsal: 14, posicionOriginal: 'Defensa' },
     { id: 'p14', nombre: 'Marcos Alonso', dorsal: 15, posicionOriginal: 'Centrocampista' },
     { id: 'p15', nombre: 'Víctor Soler', dorsal: 16, posicionOriginal: 'Delantero' }
   ],
@@ -2086,7 +2086,7 @@ export default function Campograma() {
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(14);
       doc.setTextColor(255, 255, 255);
-      doc.text('CLUB', 15, 19);
+      doc.text('FUNDACIÓN AFE', 15, 19);
 
       doc.setFontSize(8.5);
       doc.setFont('Helvetica', 'bold');
@@ -2665,7 +2665,7 @@ export default function Campograma() {
                       <div 
                         className={`w-10 h-10 rounded-full flex flex-col items-center justify-center font-bold text-xs shadow-lg relative border-2 ${
                           players.length > 0
-                            ? 'bg-gradient-to-br from-blue-600 to-blue-800 text-white border-white scale-105 group-hover:scale-110' 
+                            ? 'bg-white text-emerald-900 border-emerald-500 scale-105 group-hover:scale-110 shadow-emerald-950/40' 
                             : 'bg-red-950/20 text-red-400/80 border-dashed border-red-500/40 hover:border-red-400 hover:text-red-350 hover:bg-red-900/10'
                         } ${isSlotActive ? ' ring-4 ring-yellow-400 border-yellow-400 scale-110' : ''} ${
                           isDraggingThis ? ' ring-4 ring-cyan-400 border-cyan-300 shadow-cyan-500/50 shadow-2xl' : ''

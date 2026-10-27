@@ -43,7 +43,7 @@ export default function PizarraTactica() {
   const [selectedTeam, setSelectedTeam] = useState<string>(CLUB_TEAMS[0]);
   
   // Tactical Systems selectors
-  const [povedaSystem, setPovedaSystem] = useState<string>('1-4-3-3');
+  const [afeSystem, setAfeSystem] = useState<string>('1-4-3-3');
   const [rivalSystem, setRivalSystem] = useState<string>('1-4-4-2');
 
   // Drawing state
@@ -115,10 +115,10 @@ export default function PizarraTactica() {
       };
     };
 
-    // Coordinate templates for CLUB (Left Side, 50 to 380)
+    // Coordinate templates for FUNDACIÓN AFE (Left Side, 50 to 380)
     let redCoords: { label: string; x: number; y: number; posType: string; slotIdx: number }[] = [];
 
-    if (povedaSystem === '1-4-3-3') {
+    if (afeSystem === '1-4-3-3') {
       redCoords = [
         { label: 'GK', x: 50, y: 200, posType: 'PORTERO', slotIdx: 0 },
         { label: 'LI', x: 120, y: 60, posType: 'DEFENSA', slotIdx: 0 },
@@ -132,7 +132,7 @@ export default function PizarraTactica() {
         { label: 'ED', x: 360, y: 320, posType: 'DELANTERO', slotIdx: 1 },
         { label: 'DC', x: 380, y: 200, posType: 'DELANTERO', slotIdx: 2 }
       ];
-    } else if (povedaSystem === '1-4-4-2') {
+    } else if (afeSystem === '1-4-4-2') {
       redCoords = [
         { label: 'GK', x: 50, y: 200, posType: 'PORTERO', slotIdx: 0 },
         { label: 'LI', x: 120, y: 60, posType: 'DEFENSA', slotIdx: 0 },
@@ -146,7 +146,7 @@ export default function PizarraTactica() {
         { label: 'DCI', x: 380, y: 140, posType: 'DELANTERO', slotIdx: 0 },
         { label: 'DCD', x: 380, y: 260, posType: 'DELANTERO', slotIdx: 1 }
       ];
-    } else if (povedaSystem === '1-3-4-3') {
+    } else if (afeSystem === '1-3-4-3') {
       redCoords = [
         { label: 'GK', x: 50, y: 200, posType: 'PORTERO', slotIdx: 0 },
         { label: 'CI', x: 140, y: 100, posType: 'DEFENSA', slotIdx: 0 },
@@ -184,7 +184,7 @@ export default function PizarraTactica() {
         fullName: pInfo.fullName,
         x: coord.x,
         y: coord.y,
-        color: '#ef4444', // Red (Club)
+        color: '#ffffff', // Camiseta Blanca Oficial (Fundación AFE)
         posType: coord.posType
       });
     });
@@ -272,7 +272,7 @@ export default function PizarraTactica() {
     });
 
     setTokens(initialTokens);
-    toast.success(`Alineaciones tácticas y plantilla asignada para ${povedaSystem} contra ${rivalSystem}`);
+    toast.success(`Alineaciones tácticas y plantilla asignada para ${afeSystem} contra ${rivalSystem}`);
   };
 
   // Generate AI Suggestions based on systems
@@ -293,7 +293,7 @@ export default function PizarraTactica() {
   // Recalculate tokens on changes
   useEffect(() => {
     initializeTokens();
-  }, [selectedTeam, povedaSystem, rivalSystem]);
+  }, [selectedTeam, afeSystem, rivalSystem]);
 
   // Drawing static lines on canvas
   const drawPitch = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
@@ -499,17 +499,17 @@ export default function PizarraTactica() {
 
         <div className="flex flex-col gap-1.5">
           <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider flex items-center gap-1.5">
-            <Trophy className="w-3.5 h-3.5 text-red-500" />
-            <span>Formación CLUB (Rojas)</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-white border border-emerald-500 inline-block" />
+            <span className="text-emerald-400">Formación FUNDACIÓN AFE (Blanco/Verde)</span>
           </label>
           <select 
-            value={povedaSystem} 
-            onChange={(e) => setPovedaSystem(e.target.value)}
-            className="bg-slate-950 text-red-400 font-bold text-xs border border-slate-800 rounded-xl px-3 py-2 focus:outline-none focus:border-red-500 transition-all cursor-pointer"
+            value={afeSystem} 
+            onChange={(e) => setAfeSystem(e.target.value)}
+            className="bg-slate-950 text-emerald-400 font-bold text-xs border border-emerald-700/60 rounded-xl px-3 py-2 focus:outline-none focus:border-emerald-500 transition-all cursor-pointer"
           >
             <option value="1-4-3-3">1-4-3-3</option>
             <option value="1-4-4-2">1-4-4-2</option>
-            <option value="1-3-5-2">1-3</option>
+            <option value="1-3-5-2">1-3-5-2</option>
           </select>
         </div>
 
@@ -634,10 +634,10 @@ export default function PizarraTactica() {
       </div>
 
       {/* Info Banner */}
-      <div className="bg-blue-950/20 border border-blue-500/10 rounded-2xl p-3 flex items-start gap-2.5 text-[11px] text-blue-400 font-semibold leading-relaxed">
-        <Info className="w-4 h-4 shrink-0 mt-0.5" />
+      <div className="bg-emerald-950/20 border border-emerald-500/20 rounded-2xl p-3 flex items-start gap-2.5 text-[11px] text-emerald-300 font-semibold leading-relaxed">
+        <Info className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
         <p>
-          Los jugadores de <strong className="text-white">CLUB (Rojo)</strong> se han cargado automáticamente desde la plantilla real según sus posiciones correspondientes. Coloca el cursor encima de las fichas rojas para ver los nombres completos de las jugadoras asignadas. Arrastra cualquier ficha libremente.
+          Los jugadores de <strong className="text-white">FUNDACIÓN AFE (Camiseta Blanca / Detalles Verdes)</strong> se han cargado automáticamente desde la plantilla real según sus posiciones correspondientes. Coloca el cursor encima de las fichas para ver los nombres completos de las jugadoras asignadas. Arrastra cualquier ficha libremente.
         </p>
       </div>
 
@@ -676,12 +676,12 @@ export default function PizarraTactica() {
             title={tok.fullName}
             className={`absolute flex flex-col items-center justify-center font-black select-none transition-shadow ${
               tool === 'move' ? 'cursor-grab active:cursor-grabbing hover:shadow-xl hover:scale-110' : 'pointer-events-none'
-            } ${tok.id === 'ball' ? 'w-6 h-6 rounded-full text-xs shadow-md border border-slate-950 bg-yellow-500' : 'w-8 h-8 rounded-full text-[10px] border-2 border-white/95 text-white shadow-lg'}`}
+            } ${tok.id === 'ball' ? 'w-6 h-6 rounded-full text-xs shadow-md border border-slate-950 bg-yellow-500' : tok.id.startsWith('red') ? 'w-8 h-8 rounded-full text-[10px] border-2 border-emerald-500 text-emerald-900 bg-white font-black shadow-lg' : 'w-8 h-8 rounded-full text-[10px] border-2 border-white/95 text-white shadow-lg'}`}
             style={{
               left: `${(tok.x / 800) * 100}%`,
               top: `${(tok.y / 400) * 100}%`,
               transform: 'translate(-50%, -50%)',
-              backgroundColor: tok.color,
+              backgroundColor: tok.id.startsWith('red') ? '#ffffff' : tok.color,
               zIndex: tok.id === 'ball' ? 15 : 10
             }}
           >

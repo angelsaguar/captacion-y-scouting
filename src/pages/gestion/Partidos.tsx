@@ -119,7 +119,7 @@ interface Match {
 }
 
 const MOTIVATIONAL_PHRASES = [
-  "¡VAMOS CLUB! ¡A POR LA VICTORIA!",
+  "¡VAMOS FUNDACIÓN AFE! ¡A POR LA VICTORIA!",
   "¡Orgullo, pasión y corazón en cada balón!",
   "¡Unidas y fuertes, hoy luchamos por nuestro escudo!",
   "¡La fuerza del equipo está en cada una de vosotras!",
@@ -171,7 +171,7 @@ export default function Partidos() {
     competicion: 'Liga' as 'Liga' | 'Copa' | 'Amistoso',
     estado: 'Programado' as 'Programado' | 'Finalizado',
     lugar: '',
-    equipacion: '1ª Equipación Oficial + Chándal',
+    equipacion: '1ª Equipación Oficial (Camiseta Blanca, Pantalón Verde, Medias Verdes) + Chándal',
     goles_favor: 0,
     goles_contra: 0,
     acta: ''
@@ -379,7 +379,7 @@ export default function Partidos() {
       }
     }
 
-    msg += `💪 ¡Vamos CLUB! ¡A ganar! ⚽`;
+    msg += `💪 ¡Vamos FUNDACIÓN AFE! ¡A ganar! ⚽🟢⚪`;
 
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
   };
@@ -398,8 +398,8 @@ export default function Partidos() {
   ) => {
     const isLocal = match.tipo === 'Local';
     const matchTitle = isLocal 
-      ? `CLUB 🆚 ${match.rival.toUpperCase()}`
-      : `${match.rival.toUpperCase()} 🆚 CLUB`;
+      ? `FUNDACIÓN AFE 🆚 ${match.rival.toUpperCase()}`
+      : `${match.rival.toUpperCase()} 🆚 FUNDACIÓN AFE`;
 
     const convokedPlayers = allPlayers.filter(p => convocadasIds.includes(p.id));
 
@@ -456,7 +456,7 @@ export default function Partidos() {
       }
     }
 
-    return `🔵⚪ *CLUB* ⚪🔵
+    return `🟢⚪ *FUNDACIÓN AFE* ⚪🟢
 📋 *CONVOCATORIA OFICIAL DE PARTIDO*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -466,7 +466,7 @@ export default function Partidos() {
 ⏰ *HORA DE PARTIDO:* ${match.hora} h
 📍 *LUGAR / CAMPO:* ${citLugar || (isLocal ? 'Campo Municipal (Principal)' : match.rival)}
 ⏱️ *HORA DE CITACIÓN:* ${citHora || '1 hora antes del encuentro'}
-👕 *INDUMENTARIA:* ${citEquip || '1ª Equipación Oficial + Chándal'}
+👕 *INDUMENTARIA:* ${citEquip || '1ª Equipación Oficial (Camiseta Blanca, Pantalón Verde, Medias Verdes) + Chándal'}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 👥 *JUGADORAS CONVOCADAS (${sortedList.length})*:
@@ -478,7 +478,7 @@ ${playersListText}
 ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔵⚪ *${citMotivacional || '¡VAMOS CLUB! ¡A POR LA VICTORIA!'}* ⚽🔥
+🟢⚪ *${citMotivacional || '¡VAMOS FUNDACIÓN AFE! ¡A POR LA VICTORIA!'}* ⚽🔥
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
   };
 
@@ -601,7 +601,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       (match.tipo === 'Local' ? 'Campo Municipal (Principal)' : `Campo Municipal del Rival (${match.rival})`);
     setCitacionLugar(defaultLugar);
 
-    const defaultEquip = match.estadisticas?.equipacion || match.equipacion || '1ª Equipación Oficial + Chándal';
+    const defaultEquip = match.estadisticas?.equipacion || match.equipacion || '1ª Equipación Oficial (Camiseta Blanca, Pantalón Verde, Medias Verdes) + Chándal';
     setCitacionEquipacion(defaultEquip);
 
     const defaultNotas = match.estadisticas?.observaciones || match.observaciones || 
@@ -964,7 +964,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
             estado: 'Programado',
             lugar: 'Campo Municipal (Principal)',
             hora_citacion: '12:00 h (1h 15m antes)',
-            equipacion: '1ª Equipación Oficial + Chándal',
+            equipacion: '1ª Equipación Oficial (Camiseta Blanca, Pantalón Verde, Medias Verdes) + Chándal',
             observaciones: '• Acudir con puntualidad a la hora fijada.\n• Confirmar recepción del mensaje en el grupo de WhatsApp.'
           },
           { id: 'm1', rival: 'A.D. Arganda', fecha: new Date().toISOString().split('T')[0], hora: '12:00', tipo: 'Local', competicion: 'Liga', estado: 'Programado' },
@@ -1119,7 +1119,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
     const calculatedCitacion = formData.hora_citacion?.trim() || calculateDefaultCitacionHora(formData.hora);
     const defaultLugar = formData.lugar?.trim() || (formData.tipo === 'Local' ? 'Campo Municipal (Principal)' : `Campo Municipal del Rival (${formData.rival})`);
-    const defaultEquip = formData.equipacion?.trim() || '1ª Equipación Oficial + Chándal';
+    const defaultEquip = formData.equipacion?.trim() || '1ª Equipación Oficial (Camiseta Blanca, Pantalón Verde, Medias Verdes) + Chándal';
 
     const newMatch: Match = {
       id: crypto.randomUUID(),
@@ -1156,7 +1156,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       competicion: 'Liga',
       estado: 'Programado',
       lugar: '',
-      equipacion: '1ª Equipación Oficial + Chándal',
+      equipacion: '1ª Equipación Oficial (Camiseta Blanca, Pantalón Verde, Medias Verdes) + Chándal',
       goles_favor: 0,
       goles_contra: 0,
       acta: ''
@@ -1438,7 +1438,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                 onChange={(e) => setFormData({...formData, tipo: e.target.value as any})}
                 className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1 font-semibold cursor-pointer"
               >
-                <option value="Local">Local (CLUB)</option>
+                <option value="Local">Local (FUNDACIÓN AFE)</option>
                 <option value="Visitante">Visitante (Fuera)</option>
               </select>
             </div>
@@ -1572,7 +1572,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                       />
                     )}
                     <span className="font-extrabold text-white text-xs uppercase truncate max-w-full">
-                      {match.tipo === 'Local' ? 'CLUB' : match.rival}
+                      {match.tipo === 'Local' ? 'FUNDACIÓN AFE' : match.rival}
                     </span>
                   </div>
 
@@ -1616,7 +1616,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                       </div>
                     )}
                     <span className="font-extrabold text-white text-xs uppercase truncate max-w-full">
-                      {match.tipo === 'Local' ? match.rival : 'CLUB'}
+                      {match.tipo === 'Local' ? match.rival : 'FUNDACIÓN AFE'}
                     </span>
                   </div>
                 </div>
@@ -2227,7 +2227,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                       <span>Convocatoria Oficial EA FC & Cartel FIFA</span>
                     </h3>
                     <p className="text-xs text-slate-400 font-medium">
-                      {selectedTeam} • {showConvocatoriaModal.tipo === 'Local' ? 'CLUB vs ' + showConvocatoriaModal.rival : showConvocatoriaModal.rival + ' vs CLUB'}
+                      {selectedTeam} • {showConvocatoriaModal.tipo === 'Local' ? 'FUNDACIÓN AFE vs ' + showConvocatoriaModal.rival : showConvocatoriaModal.rival + ' vs FUNDACIÓN AFE'}
                     </p>
                   </div>
                 </div>
@@ -2370,7 +2370,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                           </div>
 
                           <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-100 uppercase italic leading-none mb-1 drop-shadow-sm">
-                            CLUB
+                            FUNDACIÓN AFE
                           </h2>
                           
                           <p className="text-xs font-black text-slate-300 uppercase tracking-wide mb-2">
@@ -2412,7 +2412,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                               </div>
                               <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">LOCAL</p>
                               <p className="text-sm font-black text-white uppercase tracking-tight leading-tight mt-0.5">
-                                {showConvocatoriaModal.tipo === 'Local' ? 'CLUB' : showConvocatoriaModal.rival}
+                                {showConvocatoriaModal.tipo === 'Local' ? 'FUNDACIÓN AFE' : showConvocatoriaModal.rival}
                               </p>
                             </div>
                             
@@ -2439,7 +2439,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                               </div>
                               <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">VISITANTE</p>
                               <p className="text-sm font-black text-white uppercase tracking-tight leading-tight mt-0.5">
-                                {showConvocatoriaModal.tipo === 'Local' ? showConvocatoriaModal.rival : 'CLUB'}
+                                {showConvocatoriaModal.tipo === 'Local' ? showConvocatoriaModal.rival : 'FUNDACIÓN AFE'}
                               </p>
                             </div>
                           </div>
@@ -2557,7 +2557,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                                     {/* Bottom Footer Bar */}
                                     <div className="flex items-center justify-between border-t border-slate-300/20 pt-1 mt-1 relative z-10">
                                       <span className="text-[8px] font-extrabold text-slate-300 uppercase tracking-widest truncate">
-                                        CLUB
+                                        FUNDACIÓN AFE
                                       </span>
                                       <span className="text-[9px]">⚽</span>
                                     </div>
@@ -2580,9 +2580,9 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
                         {/* Poster Footer */}
                         <div className="relative z-10 border-t-2 border-slate-300/40 pt-3 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                          <p className="text-blue-200 flex items-center justify-center gap-1.5 flex-wrap px-2">
-                            <span>🔵⚪</span>
-                            <span className="italic">{citacionMensajeMotivacional || '¡VAMOS CLUB! ¡A POR LA VICTORIA!'}</span>
+                          <p className="text-emerald-300 flex items-center justify-center gap-1.5 flex-wrap px-2">
+                            <span>🟢⚪</span>
+                            <span className="italic">{citacionMensajeMotivacional || '¡VAMOS FUNDACIÓN AFE! ¡A POR LA VICTORIA!'}</span>
                             <span>⚽🔥</span>
                           </p>
                         </div>
@@ -2637,7 +2637,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                               <UDLaPovedaLogo className="w-12 h-12 shrink-0" />
                               <div>
                                 <h1 className="text-xl font-black tracking-tight text-blue-950 uppercase leading-none">
-                                  CLUB
+                                  FUNDACIÓN AFE
                                 </h1>
                                 <p className="text-xs font-bold text-slate-600 uppercase tracking-widest mt-1">
                                   HOJA OFICIAL DE CONVOCATORIA DE PARTIDO
@@ -2663,7 +2663,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                             <div>
                               <span className="text-[9px] font-black text-slate-500 uppercase block">ENCUENTRO:</span>
                               <p className="font-extrabold text-blue-950 text-sm truncate">
-                                {showConvocatoriaModal.tipo === 'Local' ? `CLUB vs ${showConvocatoriaModal.rival}` : `${showConvocatoriaModal.rival} vs CLUB`}
+                                {showConvocatoriaModal.tipo === 'Local' ? `FUNDACIÓN AFE vs ${showConvocatoriaModal.rival}` : `${showConvocatoriaModal.rival} vs FUNDACIÓN AFE`}
                               </p>
                               <p className="text-[10px] text-slate-600 font-semibold mt-0.5">
                                 Condición: <strong className="text-blue-900 font-bold">{showConvocatoriaModal.tipo || 'Oficial'}</strong>
@@ -2792,8 +2792,8 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                           </div>
 
                           <div className="flex items-center justify-between text-[8px] text-slate-500 font-semibold uppercase tracking-wider pt-2 border-t border-slate-200">
-                            <span>CLUB • FÚTBOL BASE Y SENIOR</span>
-                            <span>DOCUMENTO OFICIAL DE CLUB</span>
+                            <span>FUNDACIÓN AFE • FÚTBOL BASE Y SENIOR</span>
+                            <span>DOCUMENTO OFICIAL FUNDACIÓN AFE</span>
                             <span>{new Date().toLocaleDateString('es-ES')}</span>
                           </div>
                         </div>
@@ -3077,7 +3077,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                       <span className="text-xs font-extrabold text-white uppercase tracking-wider">Plantilla WhatsApp Corporativa</span>
                     </div>
                     <span className="text-[9px] bg-green-500/20 text-green-300 font-black px-2 py-0.5 rounded-full border border-green-500/30">
-                      CLUB
+                      FUNDACIÓN AFE
                     </span>
                   </div>
 
@@ -3281,7 +3281,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                     onChange={(e) => setEditingMatch({ ...editingMatch, tipo: e.target.value as any })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all font-semibold cursor-pointer"
                   >
-                    <option value="Local">Local (CLUB)</option>
+                    <option value="Local">Local (FUNDACIÓN AFE)</option>
                     <option value="Visitante">Visitante (Fuera)</option>
                   </select>
                 </div>

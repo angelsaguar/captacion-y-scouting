@@ -385,7 +385,7 @@ export default function PlayerDetail() {
     if (!player) return;
 
     // Load Physical Tests
-    const savedPhys = localStorage.getItem('ud_poveda_physical_test_history');
+    const savedPhys = localStorage.getItem('afe_physical_test_history') || localStorage.getItem('ud_poveda_physical_test_history');
     if (savedPhys) {
       try {
         const parsedPhys = JSON.parse(savedPhys);
@@ -400,7 +400,7 @@ export default function PlayerDetail() {
     }
 
     // Load Anthropometrics
-    const savedAntropo = localStorage.getItem('ud_poveda_anthropometric_history');
+    const savedAntropo = localStorage.getItem('afe_anthropometric_history') || localStorage.getItem('ud_poveda_anthropometric_history');
     if (savedAntropo) {
       try {
         const parsedAntropo = JSON.parse(savedAntropo);
@@ -419,20 +419,20 @@ export default function PlayerDetail() {
     if (!player) return;
     const doc = new jsPDF();
     
-    // Header banner styling
-    doc.setFillColor(15, 23, 42); // slate-900
+    // Header banner styling with corporate emerald green
+    doc.setFillColor(4, 120, 87); // emerald-700
     doc.rect(0, 0, 210, 40, 'F');
     doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
+    doc.setFontSize(21);
     doc.setFont('Helvetica', 'bold');
-    doc.text('CLUB • DOSSIER TÉCNICO', 15, 18);
-    doc.setFontSize(10);
+    doc.text('FUNDACIÓN AFE • DOSSIER TÉCNICO', 15, 17);
+    doc.setFontSize(9.5);
     doc.setFont('Helvetica', 'normal');
-    doc.setTextColor(200, 200, 200);
-    doc.text(`Informe de Scouting generado el: ${format(new Date(), "d 'de' MMMM, yyyy", { locale: es })}`, 15, 28);
+    doc.setTextColor(209, 250, 229);
+    doc.text(`Informe Oficial • Generado el: ${format(new Date(), "d 'de' MMMM, yyyy", { locale: es })} • 1ª Equipación: Camiseta Blanca, Pantalón Verde, Medias Verdes`, 15, 27);
     
-    // Amber decorative border line
-    doc.setFillColor(245, 158, 11); // amber-500
+    // Emerald / White decorative border line
+    doc.setFillColor(16, 185, 129); // emerald-500
     doc.rect(0, 40, 210, 3, 'F');
     
     // Left Column Info (General Data)
@@ -651,7 +651,7 @@ export default function PlayerDetail() {
       XLSX.utils.book_append_sheet(wb, wsPhy, "Pruebas Físicas");
     }
 
-    XLSX.writeFile(wb, `Dossier_UD_Poveda_${player.nombre}_${player.apellidos}.xlsx`);
+    XLSX.writeFile(wb, `Dossier_Fundacion_AFE_${player.nombre}_${player.apellidos}.xlsx`);
     toast.success('Excel multi-pestaña generado con éxito');
   };
 
@@ -748,8 +748,11 @@ export default function PlayerDetail() {
                 )}
                 <span className="flex items-center gap-1"><Trophy className="w-3 h-3" /> {player.equipo_actual || 'Sin club'}</span>
                 {player.equipo_asignado && (
-                  <span className="flex items-center gap-1 text-emerald-400 bg-emerald-950/20 border border-emerald-500/10 px-1.5 py-0.5 rounded-md text-[9px] font-bold">
-                    UD Poveda: {player.equipo_asignado}
+                  <span className="flex items-center gap-1.5 text-emerald-300 bg-emerald-950/50 border border-emerald-500/40 px-2 py-0.5 rounded-md text-[9px] font-bold">
+                    <span className="w-2 h-2 rounded-full bg-white border border-emerald-500 inline-block shadow-xs" title="Camiseta Blanca" />
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block shadow-xs" title="Pantalón Verde" />
+                    <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block shadow-xs" title="Medias Verdes" />
+                    <span>Fundación AFE: {player.equipo_asignado}</span>
                   </span>
                 )}
                 {player.fecha_nacimiento ? (
@@ -1492,7 +1495,7 @@ export default function PlayerDetail() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1">Asignación UD Poveda</label>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Asignación Fundación AFE</label>
                   <input 
                     type="text" 
                     value={editPersonalData.equipo_asignado || ''}

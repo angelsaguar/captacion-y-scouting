@@ -86,7 +86,7 @@ export async function syncJugadorasToDatabaseAndLocalStorage() {
       fecha_nacimiento: j.fecha_nacimiento,
       lateralidad: j.lateralidad || 'Derecho',
       estado_fisico: 'Disponible',
-      email: `${j.nombre.toLowerCase().replace(/\s+/g, '')}@povedafemenino.es`
+      email: `${j.nombre.toLowerCase().replace(/\s+/g, '')}@fundacionafe.es`
     }));
 
     // Team keys to sync in localStorage

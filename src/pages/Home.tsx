@@ -108,7 +108,7 @@ export default function Home() {
           </div>
           <div>
             <h1 className="font-extrabold text-base md:text-lg tracking-tight text-white uppercase leading-tight flex items-center gap-2">
-              CLUB <span className="text-xs bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/20 font-normal normal-case">Portal Oficial</span>
+              FUNDACION. AFE <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20 font-bold">Portal Oficial</span>
             </h1>
             <p className="text-xs text-slate-400 font-semibold tracking-wide">ÁREA DEPORTIVA Y TÉCNICA</p>
           </div>
@@ -150,19 +150,21 @@ export default function Home() {
         <div className="relative rounded-3xl overflow-hidden border border-slate-900 shadow-2xl bg-slate-900/40 aspect-[21/9] min-h-[220px] md:min-h-[350px] group flex flex-col justify-end" id="team-photo-container">
           <img 
             src={teamPhoto} 
-            alt="CLUB Team Photo" 
+            alt="FUNDACION. AFE Team Photo" 
             className="absolute inset-0 w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-700 ease-out"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
           
           <div className="relative p-6 md:p-8 flex flex-col md:flex-row items-start md:items-end justify-between gap-4">
             <div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded-full border border-blue-500/30 mb-2 uppercase tracking-wide">
-                <Sparkles className="w-3.5 h-3.5 animate-pulse" />
-                <span>Nuestra Plantilla</span>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/20 text-emerald-300 text-xs font-bold rounded-full border border-emerald-500/30 mb-2 uppercase tracking-wide">
+                <span className="w-2 h-2 rounded-full bg-white border border-emerald-500 inline-block shadow-xs" title="Camiseta Blanca" />
+                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block shadow-xs" title="Pantalón Verde" />
+                <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block shadow-xs" title="Medias Verdes" />
+                <span>Nuestra Plantilla • Blanco y Verde</span>
               </div>
-              <h3 className="text-xl md:text-3xl font-extrabold text-white uppercase tracking-tight shadow-sm">CLUB</h3>
-              <p className="text-xs md:text-sm text-slate-300 font-medium">Fútbol Base y Profesional</p>
+              <h3 className="text-xl md:text-3xl font-extrabold text-white uppercase tracking-tight shadow-sm">FUNDACION. AFE</h3>
+              <p className="text-xs md:text-sm text-slate-300 font-medium">1ª Equipación Oficial: Camiseta Blanca • Pantalón Verde • Medias Verdes</p>
             </div>
 
             <Button

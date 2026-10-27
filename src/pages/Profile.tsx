@@ -10,7 +10,7 @@ export default function Profile() {
 
   if (!user) return null;
 
-  const registrationKey = import.meta.env.VITE_REGISTRATION_KEY || 'lapoveda_secret_2026';
+  const registrationKey = import.meta.env.VITE_REGISTRATION_KEY || 'afe_secret_2026';
 
   return (
     <div className="max-w-2xl mx-auto space-y-8">

@@ -158,12 +158,12 @@ export default function MatchdayPosterModal({
   const [topHeadline, setTopHeadline] = useState<string>('¡GRAN ENCUENTRO DE FÚTBOL!');
   const [ribbonLine1, setRibbonLine1] = useState<string>('CAMPEONATO OFICIAL DE LIGA');
   const [ribbonLine2, setRibbonLine2] = useState<string>('FEDERACIÓN REGIONAL • JORNADA OFICIAL');
-  const [impactLine1, setImpactLine1] = useState<string>('CLUB');
+  const [impactLine1, setImpactLine1] = useState<string>('FUNDACION. AFE');
   const [impactLine2, setImpactLine2] = useState<string>('CONTRA RIVAL');
-  const [bodyMessage, setBodyMessage] = useState<string>('EMOCIONANTE DISPUTA DE LOS DOS PUNTOS EN JUEGO. ¡ACUDE A ANIMAR AL EQUIPO DE TU PUEBLO!');
+  const [bodyMessage, setBodyMessage] = useState<string>('EMOCIONANTE DISPUTA DE LOS DOS PUNTOS EN JUEGO. ¡ACUDE A ANIMAR AL EQUIPO!');
   const [actionBannerText, setActionBannerText] = useState<string>('¡ENTRADA GENERAL LIBRE!');
   const [iconBarMode, setIconBarMode] = useState<'partido' | 'valores'>('partido');
-  const [sloganLine1, setSloganLine1] = useState<string>('CAMPO MUNICIPAL DE DEPORTES "CLUB"');
+  const [sloganLine1, setSloganLine1] = useState<string>('CAMPO DE DEPORTES "FUNDACION. AFE"');
   const [sloganLine2, setSloganLine2] = useState<string>('SE RUEGA LA MAYOR PUNTUALIDAD AL RESPETABLE PÚBLICO');
   const [contactEmail, setContactEmail] = useState<string>('COLEGIO OFICIAL DE ÁRBITROS');
   const [contactPhone, setContactPhone] = useState<string>('PRECIOS POPULARES');
@@ -172,7 +172,7 @@ export default function MatchdayPosterModal({
   const [mainHeadline, setMainHeadline] = useState<string>('DÍA DE PARTIDO');
   const [subHeadline, setSubHeadline] = useState<string>('TU EQUIPO. NUESTRA PASIÓN.');
   const [grandstandCallout, setGrandstandCallout] = useState<string>('¡TE ESPERAMOS EN LA GRADA! FORMA PARTE DE ALGO GRANDE');
-  const [mottoScript, setMottoScript] = useState<string>('ENTRENA. LUCHA. SUPÉRATE. VIVE EL CLUB.');
+  const [mottoScript, setMottoScript] = useState<string>('ENTRENA. LUCHA. SUPÉRATE. VIVE FUNDACION. AFE.');
   const [isExporting, setIsExporting] = useState(false);
 
   // Initialize selected player
@@ -274,16 +274,16 @@ export default function MatchdayPosterModal({
 
     setRibbonLine1(`${comp} • ${isLoc ? 'JUGAMOS EN CASA' : 'A DOMICILIO'}`);
     setRibbonLine2(`${fDate.bannerDate} • ${hora} H`);
-    setImpactLine1(isLoc ? 'CLUB' : riv.toUpperCase());
-    setImpactLine2(isLoc ? `VS ${riv.toUpperCase()}` : 'VS CLUB');
+    setImpactLine1(isLoc ? 'FUNDACION. AFE' : riv.toUpperCase());
+    setImpactLine2(isLoc ? `VS ${riv.toUpperCase()}` : 'VS FUNDACION. AFE');
     setBodyMessage(
       isLoc
         ? 'DEFENDEMOS NUESTROS COLORES EN CASA. ¡A POR LOS TRES PUNTOS!'
         : `VISITAMOS AL ${riv.toUpperCase()} CON TODA LA ENTREGA. ¡A POR LA VICTORIA!`
     );
     setSloganLine1(lug.toUpperCase());
-    setSloganLine2('¡JUNTOS SOMOS EL CLUB!');
-    setContactEmail(isLoc ? 'CAMPO MUNICIPAL PRINCIPAL' : lug.toUpperCase());
+    setSloganLine2('¡JUNTOS SOMOS FUNDACION. AFE!');
+    setContactEmail(isLoc ? 'CAMPO PRINCIPAL FUNDACIÓN AFE' : lug.toUpperCase());
     setContactPhone('ENTRADA LIBRE');
   }, []);
 
@@ -338,17 +338,17 @@ export default function MatchdayPosterModal({
       isDark: false
     },
     azul_poveda: {
-      name: 'Azul Poveda',
-      sub: 'Oficial Club',
-      swatchGrad: 'from-blue-600 via-blue-800 to-indigo-950',
-      stadiumOverlayGrad: 'from-[#010c22] via-[#002878]/85 to-[#00174a]/90',
-      brushBg: 'bg-slate-50',
-      editorialSplit: 'from-blue-600 via-blue-800 to-indigo-950',
-      accentGlow: 'bg-blue-400/25',
-      accentBadge: 'bg-amber-400 text-slate-950',
-      accentBorder: 'border-blue-400/40',
+      name: 'Verde & Blanco AFE',
+      sub: 'Oficial Fundación AFE',
+      swatchGrad: 'from-emerald-600 via-green-800 to-emerald-950',
+      stadiumOverlayGrad: 'from-[#022c22] via-[#064e3b]/85 to-[#022c22]/90',
+      brushBg: 'bg-emerald-50',
+      editorialSplit: 'from-emerald-600 via-green-800 to-emerald-950',
+      accentGlow: 'bg-emerald-400/25',
+      accentBadge: 'bg-emerald-400 text-slate-950',
+      accentBorder: 'border-emerald-400/40',
       primaryText: 'text-white',
-      subText: 'text-cyan-300',
+      subText: 'text-emerald-300',
       isDark: true
     },
     noche_estadio: {
@@ -490,11 +490,11 @@ export default function MatchdayPosterModal({
       setTopHeadline('¡GRAN ENCUENTRO DE FÚTBOL!');
       setRibbonLine1('CAMPEONATO OFICIAL DE LIGA');
       setRibbonLine2(`FEDERACIÓN REGIONAL • JORNADA ${formattedDate.dayNum} DE ${formattedDate.monthName}`);
-      setImpactLine1(isLocal ? 'CLUB' : rivalName.toUpperCase());
-      setImpactLine2(isLocal ? `CONTRA ${rivalName.toUpperCase()}` : 'CONTRA CLUB');
-      setBodyMessage('EMOCIONANTE DISPUTA DE LOS DOS PUNTOS EN JUEGO. ¡ACUDE A ANIMAR AL EQUIPO DE TU PUEBLO!');
+      setImpactLine1(isLocal ? 'FUNDACION. AFE' : rivalName.toUpperCase());
+      setImpactLine2(isLocal ? `CONTRA ${rivalName.toUpperCase()}` : 'CONTRA FUNDACION. AFE');
+      setBodyMessage('EMOCIONANTE DISPUTA DE LOS DOS PUNTOS EN JUEGO. ¡ACUDE A ANIMAR AL EQUIPO!');
       setActionBannerText('¡ENTRADA GENERAL LIBRE!');
-      setSloganLine1(isLocal ? 'CAMPO MUNICIPAL DE DEPORTES "CLUB"' : matchLugar.toUpperCase());
+      setSloganLine1(isLocal ? 'CAMPO DE DEPORTES "FUNDACION. AFE"' : matchLugar.toUpperCase());
       setSloganLine2('SE RUEGA LA MAYOR PUNTUALIDAD AL RESPETABLE PÚBLICO');
       setContactEmail('COLEGIO OFICIAL DE ÁRBITROS');
       setContactPhone('PRECIOS POPULARES');
@@ -510,13 +510,13 @@ export default function MatchdayPosterModal({
       setTopHeadline('¡DÍA DE PARTIDO!');
       setRibbonLine1(`${(teamName || 'SENIOR FEMENINO').toUpperCase()} • ${(matchCompeticion || 'AMISTOSO').toUpperCase()}`);
       setRibbonLine2(`${formattedDate.bannerDate} • ${matchHora} H`);
-      setImpactLine1(isLocal ? 'CLUB' : rivalName.toUpperCase());
-      setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS CLUB');
+      setImpactLine1(isLocal ? 'FUNDACION. AFE' : rivalName.toUpperCase());
+      setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS FUNDACION. AFE');
       setBodyMessage('¡Ven al campo a animar a nuestro equipo! Tu aliento desde la grada es fundamental para conseguir la victoria.');
       setActionBannerText('¡ENTRADA GENERAL LIBRE!');
       setSloganLine1(matchLugar.toUpperCase());
       setSloganLine2('¡CONFIANZA, ENTREGA Y VICTORIA! ¡A POR TODAS!');
-      setContactEmail(isLocal ? 'CAMPO MUNICIPAL PRINCIPAL' : matchLugar.toUpperCase());
+      setContactEmail(isLocal ? 'CAMPO PRINCIPAL FUNDACIÓN AFE' : matchLugar.toUpperCase());
       setContactPhone('ENTRADA GRATUITA');
       toast.success('Cartel: Anuncio de Partido (Estilo Convocatoria)');
       return;
@@ -531,39 +531,39 @@ export default function MatchdayPosterModal({
       setTopHeadline('DÍA DE PARTIDO');
       setRibbonLine1(`${matchCompeticion.toUpperCase()} • ${isLocal ? 'JUGAMOS EN CASA' : 'A DOMICILIO'}`);
       setRibbonLine2(`${formattedDate.bannerDate} • ${matchHora} H`);
-      setImpactLine1(isLocal ? 'CLUB' : rivalName.toUpperCase());
-      setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS CLUB');
+      setImpactLine1(isLocal ? 'FUNDACION. AFE' : rivalName.toUpperCase());
+      setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS FUNDACION. AFE');
       setBodyMessage(isLocal ? 'DEFENDEMOS NUESTROS COLORES EN CASA. ¡A POR LOS TRES PUNTOS!' : `VISITAMOS AL ${rivalName.toUpperCase()} CON TODA LA ENTREGA. ¡A POR LA VICTORIA!`);
       setActionBannerText('¡TE ESPERAMOS EN LA GRADA!');
       setSloganLine1(matchLugar.toUpperCase());
-      setSloganLine2('¡JUNTOS SOMOS EL CLUB!');
-      setContactEmail(isLocal ? 'CAMPO MUNICIPAL PRINCIPAL' : matchLugar.toUpperCase());
+      setSloganLine2('¡JUNTOS SOMOS FUNDACION. AFE!');
+      setContactEmail(isLocal ? 'CAMPO PRINCIPAL FUNDACIÓN AFE' : matchLugar.toUpperCase());
       setContactPhone('ENTRADA LIBRE');
       toast.success('Cartel: Día de Partido Oficial');
     } else if (preset === 'matchday') {
       setTopHeadline('MATCHDAY');
       setRibbonLine1(`${matchCompeticion.toUpperCase()} • JORNADA OFICIAL`);
       setRibbonLine2(`${formattedDate.bannerDate} • ${matchHora} H`);
-      setImpactLine1(isLocal ? 'CLUB' : rivalName.toUpperCase());
-      setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS CLUB');
+      setImpactLine1(isLocal ? 'FUNDACION. AFE' : rivalName.toUpperCase());
+      setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS FUNDACION. AFE');
       setBodyMessage('CON TODO NUESTRO EQUIPO Y NUESTRA AFICIÓN. ¡A POR EL TRIUNFO!');
       setActionBannerText('¡A POR LA VICTORIA!');
       setSloganLine1(matchLugar.toUpperCase());
       setSloganLine2('¡JUNTOS A POR LOS 3 PUNTOS!');
-      setContactEmail(isLocal ? 'CAMPO MUNICIPAL PRINCIPAL' : matchLugar.toUpperCase());
-      setContactPhone('CLUB');
+      setContactEmail(isLocal ? 'CAMPO PRINCIPAL FUNDACIÓN AFE' : matchLugar.toUpperCase());
+      setContactPhone('FUNDACION. AFE');
       toast.success('Cartel: Matchday Épico');
     } else if (preset === 'aficion') {
       setTopHeadline('¡HOY JUGAMOS!');
       setRibbonLine1(`TU ALIENTO EN LA GRADA NOS HACE FUERTES`);
       setRibbonLine2(`${formattedDate.bannerDate} • ${matchHora} H`);
-      setImpactLine1('CLUB');
+      setImpactLine1('FUNDACION. AFE');
       setImpactLine2(`VS ${rivalName.toUpperCase()}`);
       setBodyMessage('TU APOYO ES NUESTRO JUGADOR NÚMERO 12. ¡TODOS CON EL EQUIPO!');
       setActionBannerText('¡LLENEMOS EL POLIDEPORTIVO!');
       setSloganLine1('ENTRADA LIBRE PARA TODA LA AFICIÓN');
-      setSloganLine2('¡MÁS QUE UN CLUB, UNA FAMILIA!');
-      setContactEmail(isLocal ? 'CAMPO MUNICIPAL PRINCIPAL' : matchLugar.toUpperCase());
+      setSloganLine2('¡FUNDACION. AFE: PASIÓN, TALENTO Y VALORES!');
+      setContactEmail(isLocal ? 'CAMPO PRINCIPAL FUNDACIÓN AFE' : matchLugar.toUpperCase());
       setContactPhone('ENTRADA GRATUITA');
       toast.success('Cartel: Llamada a la Afición');
     }
@@ -571,18 +571,18 @@ export default function MatchdayPosterModal({
 
   // Generate WhatsApp announcement text
   const generateWhatsappAnnouncement = () => {
-    return `📢⚽ *${topHeadline} | CLUB* ⚽📢\n` +
-      `🔵⚪ *${isLocal ? 'CLUB vs ' + rivalName.toUpperCase() : rivalName.toUpperCase() + ' vs CLUB'}* ⚪🔵\n\n` +
+    return `📢⚽ *${topHeadline} | FUNDACION. AFE* ⚽📢\n` +
+      `🟢⚪ *${isLocal ? 'FUNDACION. AFE vs ' + rivalName.toUpperCase() : rivalName.toUpperCase() + ' vs FUNDACION. AFE'}* ⚪🟢\n\n` +
       `🏆 *Competición:* ${matchCompeticion.toUpperCase()} (${teamName})\n` +
-      `📍 *Condición:* ${isLocal ? 'Local (Campo Municipal)' : 'Visitante (Fuera)'}\n\n` +
+      `📍 *Condición:* ${isLocal ? 'Local (Campo Fundación AFE)' : 'Visitante (Fuera)'}\n\n` +
       `📅 *Fecha:* ${formattedDate.fullDate}\n` +
       `⏰ *Hora del Partido:* ${matchHora} h (Citación: ${horaCitacion})\n` +
       `🏟️ *Campo de Juego:* ${matchLugar}\n` +
-      `👕 *Indumentaria:* ${equipacion}\n\n` +
+      `👕 *Indumentaria Oficial:* Camiseta Blanca • Pantalón Verde • Medias Verdes (${equipacion})\n\n` +
       `🔥 *${actionBannerText}*\n` +
       `✨ _"${bodyMessage}"_\n\n` +
-      `❤️ *${sloganLine2}*\n` +
-      `_#Club #AúpaClub #DíaDePartido #FútbolArganda_`;
+      `💚 *${sloganLine2}*\n` +
+      `_#FundacionAFE #AúpaAFE #DíaDePartido #FútbolFemenino_`;
   };
 
   // Helper to reliably render the poster element to a high-quality data URL
@@ -653,7 +653,7 @@ export default function MatchdayPosterModal({
     try {
       const dataUrl = await getPosterDataUrl(el);
       const cleanRival = (rivalName || 'Rival').replace(/[^a-zA-Z0-9_-]/g, '_');
-      const filename = `CARTEL_PARTIDO_CLUB_VS_${cleanRival}.png`;
+      const filename = `CARTEL_PARTIDO_FUNDACION_AFE_VS_${cleanRival}.png`;
 
       const link = document.createElement('a');
       link.download = filename;
@@ -741,7 +741,7 @@ export default function MatchdayPosterModal({
       pdf.addImage(imgData, 'PNG', x, y, finalW, finalH, undefined, 'FAST');
 
       const cleanRival = (rivalName || 'Rival').replace(/[^a-zA-Z0-9_-]/g, '_');
-      const filename = `Cartel_Partido_CLUB_VS_${cleanRival}.pdf`;
+      const filename = `Cartel_Partido_FUNDACION_AFE_VS_${cleanRival}.pdf`;
 
       try {
         pdf.save(filename);
@@ -941,8 +941,8 @@ export default function MatchdayPosterModal({
               <div className="flex items-center gap-2">
                 <h3 className="font-black text-white text-base sm:text-lg uppercase tracking-tight flex items-center gap-2">
                   <span>Cartel Oficial de Partido (Matchday)</span>
-                  <span className="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/40 px-2 py-0.5 rounded-full font-extrabold">
-                    CLUB
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full font-extrabold">
+                    FUNDACION. AFE
                   </span>
                 </h3>
               </div>
@@ -1098,7 +1098,7 @@ export default function MatchdayPosterModal({
               >
                 {allMatches.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.fecha} • {m.tipo === 'Local' ? `CLUB vs ${m.rival}` : `${m.rival} vs CLUB`} ({m.competicion})
+                    {m.fecha} • {m.tipo === 'Local' ? `FUNDACION. AFE vs ${m.rival}` : `${m.rival} vs FUNDACION. AFE`} ({m.competicion})
                   </option>
                 ))}
               </select>
@@ -1115,8 +1115,8 @@ export default function MatchdayPosterModal({
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Condición:</span>
-                  <span className={`font-bold px-2 py-0.5 rounded text-[10px] uppercase ${isLocal ? 'bg-blue-600/30 text-blue-300 border border-blue-500/40' : 'bg-amber-600/30 text-amber-300 border border-amber-500/40'}`}>
-                    {isLocal ? '🏠 Local (Club)' : '🚌 Visitante (Fuera)'}
+                  <span className={`font-bold px-2 py-0.5 rounded text-[10px] uppercase ${isLocal ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40' : 'bg-amber-600/30 text-amber-300 border border-amber-500/40'}`}>
+                    {isLocal ? '🏠 Local (Fundación AFE)' : '🚌 Visitante (Fuera)'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -1225,8 +1225,8 @@ export default function MatchdayPosterModal({
                     setTopHeadline('¡DÍA DE PARTIDO!');
                     setRibbonLine1(`${(teamName || 'SENIOR FEMENINO').toUpperCase()} • ${(matchCompeticion || 'AMISTOSO').toUpperCase()}`);
                     setRibbonLine2(`${formattedDate.bannerDate} • ${matchHora} H`);
-                    setImpactLine1(isLocal ? 'CLUB' : rivalName.toUpperCase());
-                    setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS CLUB');
+                    setImpactLine1(isLocal ? 'FUNDACION. AFE' : rivalName.toUpperCase());
+                    setImpactLine2(isLocal ? `VS ${rivalName.toUpperCase()}` : 'VS FUNDACION. AFE');
                     setBodyMessage('¡Ven al campo a animar a nuestro equipo! Tu aliento desde la grada es fundamental para conseguir la victoria.');
                     setActionBannerText('¡ENTRADA GENERAL LIBRE!');
                     setSloganLine2('¡CONFIANZA, ENTREGA Y VICTORIA! ¡A POR TODAS!');
@@ -1290,8 +1290,8 @@ export default function MatchdayPosterModal({
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="block leading-tight font-black text-white">Oficial Club</span>
-                    <span className="text-[9px] bg-cyan-400/20 text-cyan-300 px-1.5 py-0.5 rounded font-bold">Moderno</span>
+                    <span className="block leading-tight font-black text-white">Fundación AFE Oficial</span>
+                    <span className="text-[9px] bg-emerald-400/20 text-emerald-300 px-1.5 py-0.5 rounded font-bold">Moderno</span>
                   </div>
                   <span className="text-[9px] text-slate-400 font-normal normal-case block mt-0.5">salpicaduras & cielo</span>
                 </button>
@@ -1320,7 +1320,7 @@ export default function MatchdayPosterModal({
                       : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
                   }`}
                 >
-                  <span className="block leading-tight">Pincelada Club</span>
+                  <span className="block leading-tight">Pincelada AFE</span>
                   <span className="text-[9px] text-slate-400 font-normal normal-case block mt-0.5">valores & arte</span>
                 </button>
 
@@ -1660,7 +1660,7 @@ export default function MatchdayPosterModal({
                         value={impactLine1}
                         onChange={(e) => setImpactLine1(e.target.value.toUpperCase())}
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white font-black italic focus:outline-none focus:border-cyan-500"
-                        placeholder="CLUB"
+                        placeholder="FUNDACION. AFE"
                       />
                     </div>
                     <div>
@@ -2105,7 +2105,7 @@ export default function MatchdayPosterModal({
                           {/* Halftone & duotone vintage ink wash */}
                           <div className="absolute inset-0 bg-gradient-to-t from-[#14234b]/30 via-transparent to-transparent pointer-events-none" />
                           <div className="absolute bottom-0 inset-x-0 bg-[#14234b]/90 text-white text-[7px] sm:text-[8px] font-black uppercase text-center py-0.5 tracking-wider">
-                            CLUB
+                            FUNDACION. AFE
                           </div>
                         </div>
                       </div>
@@ -2119,7 +2119,7 @@ export default function MatchdayPosterModal({
                           {isLocal ? 'CAMPO DE DEPORTES' : 'CAMPO MUNICIPAL'}
                         </span>
                         <span className="text-xs sm:text-sm font-black text-[#8b1e1e] leading-tight my-0.5">
-                          {isLocal ? '"CLUB"' : rivalName.toUpperCase()}
+                          {isLocal ? '"FUNDACION. AFE"' : rivalName.toUpperCase()}
                         </span>
                         <span className="text-[7.5px] sm:text-[8px] font-bold uppercase text-stone-600 leading-none">
                           {isLocal ? 'ARGANDA DEL REY' : 'MADRID'}
@@ -2202,7 +2202,7 @@ export default function MatchdayPosterModal({
 
                       {/* Club Title */}
                       <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white uppercase italic leading-none drop-shadow-md">
-                        CLUB
+                        FUNDACION. AFE
                       </h1>
 
                       {/* Category & Competition */}
@@ -2218,7 +2218,7 @@ export default function MatchdayPosterModal({
                         </span>
                         <span className={`inline-flex items-center gap-1 text-[9.5px] sm:text-[10.5px] font-black px-2.5 py-0.5 rounded-lg uppercase shadow-sm border ${
                           isLocal 
-                            ? 'bg-blue-600 text-white border-blue-400' 
+                            ? 'bg-emerald-600 text-white border-emerald-400' 
                             : 'bg-indigo-700 text-white border-indigo-400'
                         }`}>
                           <span>{isLocal ? '🏠' : '🚌'}</span>
@@ -2229,7 +2229,7 @@ export default function MatchdayPosterModal({
 
                     {/* 2. MATCHDAY ANNOUNCEMENT BANNER */}
                     <div className="text-center">
-                      <div className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 via-cyan-500 to-blue-600 text-slate-950 font-black uppercase italic tracking-wider text-[11px] sm:text-xs py-1 px-4 sm:px-5 rounded-full shadow-lg border border-cyan-300">
+                      <div className="inline-flex items-center gap-2 bg-gradient-to-r from-emerald-600 via-green-500 to-emerald-600 text-slate-950 font-black uppercase italic tracking-wider text-[11px] sm:text-xs py-1 px-4 sm:px-5 rounded-full shadow-lg border border-emerald-300">
                         <span>⚡</span>
                         <span>{topHeadline || '¡DÍA DE PARTIDO!'}</span>
                         <span>⚽</span>
@@ -2245,7 +2245,7 @@ export default function MatchdayPosterModal({
                         <div className="flex-1 min-w-0 flex flex-col items-center">
                           <div className={`w-11 h-11 sm:w-13 sm:h-13 rounded-full flex items-center justify-center mb-1 ${
                             isLocal 
-                              ? 'bg-white p-1 border-2 border-cyan-400/80 shadow-lg ring-2 ring-cyan-500/20' 
+                              ? 'bg-white p-1 border-2 border-emerald-400/80 shadow-lg ring-2 ring-emerald-500/20' 
                               : ''
                           }`}>
                             {isLocal ? (
@@ -2259,11 +2259,11 @@ export default function MatchdayPosterModal({
                               />
                             )}
                           </div>
-                          <span className="text-[7.5px] sm:text-[8px] font-black text-cyan-300 uppercase tracking-widest block">
+                          <span className="text-[7.5px] sm:text-[8px] font-black text-emerald-300 uppercase tracking-widest block">
                             LOCAL
                           </span>
                           <p className="text-[11px] sm:text-xs md:text-sm font-black text-white uppercase tracking-tight leading-tight mt-0.5 line-clamp-2">
-                            {isLocal ? 'CLUB' : rivalName.toUpperCase()}
+                            {isLocal ? 'FUNDACION. AFE' : rivalName.toUpperCase()}
                           </p>
                         </div>
 
@@ -2299,7 +2299,7 @@ export default function MatchdayPosterModal({
                             VISITANTE
                           </span>
                           <p className="text-[11px] sm:text-xs md:text-sm font-black text-white uppercase tracking-tight leading-tight mt-0.5 line-clamp-2">
-                            {isLocal ? rivalName.toUpperCase() : 'CLUB'}
+                            {isLocal ? rivalName.toUpperCase() : 'FUNDACION. AFE'}
                           </p>
                         </div>
                       </div>
@@ -2308,11 +2308,11 @@ export default function MatchdayPosterModal({
                     {/* 4. PLAYER HERO / DYNAMIC ACTION VISUAL */}
                     {activePhotoSrc && characterMode !== 'duel_badges' ? (
                       <div className="relative h-24 sm:h-28 flex items-center justify-center overflow-hidden my-0.5">
-                        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-cyan-500/15 to-blue-600/10 rounded-2xl blur-lg pointer-events-none" />
+                        <div className="absolute inset-0 bg-gradient-to-r from-emerald-600/10 via-green-500/15 to-emerald-600/10 rounded-2xl blur-lg pointer-events-none" />
                         <img 
                           src={activePhotoSrc} 
                           alt="Jugador del Partido" 
-                          className="h-full max-h-[105px] sm:max-h-[120px] object-contain drop-shadow-[0_10px_20px_rgba(6,182,212,0.3)] relative z-10"
+                          className="h-full max-h-[105px] sm:max-h-[120px] object-contain drop-shadow-[0_10px_20px_rgba(16,185,129,0.3)] relative z-10"
                           crossOrigin="anonymous"
                         />
                         <div className="absolute bottom-1 right-2 bg-[#06142e]/90 border border-cyan-400/40 px-2 py-0.5 rounded-lg text-[8px] font-black text-cyan-200 uppercase tracking-wider shadow">
@@ -2321,11 +2321,11 @@ export default function MatchdayPosterModal({
                       </div>
                     ) : (
                       <div className="relative h-20 sm:h-24 flex items-center justify-center overflow-hidden my-0.5">
-                        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-cyan-500/15 to-blue-600/10 rounded-2xl blur-lg pointer-events-none" />
+                        <div className="absolute inset-0 bg-gradient-to-r from-emerald-600/10 via-green-500/15 to-emerald-600/10 rounded-2xl blur-lg pointer-events-none" />
                         <img 
                           src={povedaPlayerBrushImg} 
-                          alt="Jugador CLUB" 
-                          className="h-full max-h-[95px] sm:max-h-[110px] object-contain drop-shadow-[0_10px_20px_rgba(6,182,212,0.3)] relative z-10 transform -scale-x-100"
+                          alt="Jugador FUNDACION. AFE" 
+                          className="h-full max-h-[95px] sm:max-h-[110px] object-contain drop-shadow-[0_10px_20px_rgba(16,185,129,0.3)] relative z-10 transform -scale-x-100"
                           crossOrigin="anonymous"
                         />
                       </div>
@@ -2363,6 +2363,23 @@ export default function MatchdayPosterModal({
                         </div>
                       </div>
 
+                      {/* Kit Indicator Fundación AFE */}
+                      <div className="col-span-2 bg-[#051024]/90 p-1.5 sm:p-2 rounded-xl border border-emerald-500/30 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1">
+                            <span className="w-2.5 h-2.5 rounded-full bg-white border border-slate-300 shadow-xs" title="Camiseta Blanca" />
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 shadow-xs" title="Pantalón Verde" />
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-700 shadow-xs" title="Medias Verdes" />
+                          </div>
+                          <span className="text-[7.5px] sm:text-[8px] text-emerald-300 font-extrabold uppercase">
+                            INDUMENTARIA OFICIAL
+                          </span>
+                        </div>
+                        <span className="text-[8px] sm:text-[8.5px] font-black text-slate-200 uppercase tracking-tight">
+                          Camiseta Blanca • Pantalón Verde • Medias Verdes
+                        </span>
+                      </div>
+
                       <div className="col-span-2 bg-gradient-to-r from-[#07193b] to-[#0a275e] p-1.5 sm:p-2 rounded-xl border border-cyan-400/30 flex items-center justify-between text-cyan-200">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <Award className="w-3.5 h-3.5 text-amber-300 shrink-0" />
@@ -2392,7 +2409,7 @@ export default function MatchdayPosterModal({
                     {/* 7. MOTIVATIONAL FOOTER (Firma Oficial de la Convocatoria) */}
                     <div className="border-t border-blue-400/30 pt-1 text-center">
                       <p className="text-slate-100 flex items-center justify-center gap-1 text-[8.5px] sm:text-[10px] font-black uppercase tracking-wider italic">
-                        <span className="not-italic">🔵⚪</span>
+                        <span className="not-italic">🟢⚪</span>
                         <span>{sloganLine2 || '¡CONFIANZA, ENTREGA Y VICTORIA! ¡A POR TODAS!'}</span>
                         <span className="not-italic">⚽🔥</span>
                       </p>
@@ -2427,10 +2444,10 @@ export default function MatchdayPosterModal({
                         </div>
                         <div>
                           <span className="block text-[11px] font-black uppercase text-white tracking-widest leading-none drop-shadow">
-                            CLUB
+                            FUNDACION. AFE
                           </span>
-                          <span className="block text-[8px] font-bold uppercase text-cyan-200 tracking-wider">
-                            Arganda del Rey • Madrid
+                          <span className="block text-[8px] font-bold uppercase text-emerald-200 tracking-wider">
+                            Madrid • Oficial
                           </span>
                         </div>
                       </div>
@@ -2480,7 +2497,7 @@ export default function MatchdayPosterModal({
 
                       <img
                         src={activePhotoSrc || povedaPlayerBrushImg}
-                        alt="Jugador CLUB"
+                        alt="Jugador FUNDACION. AFE"
                         className="relative z-10 w-full max-h-[260px] object-contain drop-shadow-[0_12px_24px_rgba(4,24,72,0.35)] transform -scale-x-100 hover:scale-105 transition-transform"
                         crossOrigin="anonymous"
                       />
@@ -2582,11 +2599,15 @@ export default function MatchdayPosterModal({
                             </span>
                           </div>
 
-                          {/* 3. Equipación */}
+                          {/* 3. Equipación Oficial */}
                           <div className="flex flex-col items-center justify-center px-1">
-                            <Shield className="w-4 h-4 text-[#0c44b8] mb-0.5" />
-                            <span className="text-[8px] sm:text-[9px] font-black uppercase text-[#051d4d] tracking-tight truncate w-full">
-                              {equipacion || 'OFICIAL'}
+                            <div className="flex items-center gap-1 mb-0.5">
+                              <span className="w-2 h-2 rounded-full bg-white border border-slate-400 shadow-xs" title="Camiseta Blanca" />
+                              <span className="w-2 h-2 rounded-full bg-emerald-600 shadow-xs" title="Pantalón Verde" />
+                              <span className="w-2 h-2 rounded-full bg-emerald-700 shadow-xs" title="Medias Verdes" />
+                            </div>
+                            <span className="text-[7.5px] sm:text-[8.5px] font-black uppercase text-[#047857] tracking-tight truncate w-full text-center">
+                              BLANCO/VERDE
                             </span>
                           </div>
 
@@ -2661,7 +2682,7 @@ export default function MatchdayPosterModal({
                         </div>
                         <div>
                           <span className={`block font-black text-xs tracking-wider uppercase leading-tight ${currentBg.primaryText}`}>
-                            CLUB
+                            FUNDACION. AFE
                           </span>
                           <span className={`block font-bold text-[9px] uppercase tracking-widest leading-none ${currentBg.subText}`}>
                             {teamName}
@@ -2700,15 +2721,15 @@ export default function MatchdayPosterModal({
                     <div className="w-full max-w-sm bg-gradient-to-r from-slate-950/85 via-blue-950/90 to-slate-950/85 border border-blue-500/40 rounded-2xl p-3 shadow-2xl backdrop-blur-md">
                       <div className="flex items-center justify-around">
                         
-                        {/* Club 1: CLUB */}
+                        {/* Club 1: FUNDACION. AFE */}
                         <div className="flex flex-col items-center text-center max-w-[120px]">
-                          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white p-1 shadow-lg shadow-blue-500/30 border-2 border-blue-600 flex items-center justify-center">
+                          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white p-1 shadow-lg shadow-blue-500/30 border-2 border-emerald-600 flex items-center justify-center">
                             <UDLaPovedaLogo className="w-full h-full" />
                           </div>
                           <span className="mt-1.5 text-xs sm:text-sm font-black text-white uppercase tracking-tight leading-tight">
-                            CLUB
+                            FUNDACION. AFE
                           </span>
-                          <span className="text-[9px] font-extrabold text-blue-300 uppercase">
+                          <span className="text-[9px] font-extrabold text-emerald-300 uppercase">
                             {isLocal ? 'LOCAL' : 'VISITANTE'}
                           </span>
                         </div>
@@ -2779,6 +2800,18 @@ export default function MatchdayPosterModal({
                         <span className="truncate font-bold text-[11px] sm:text-xs">{matchLugar}</span>
                       </div>
 
+                      {/* Corporate Kit Indicator */}
+                      <div className="bg-slate-950/85 border border-emerald-500/30 rounded-xl py-1 px-3 flex items-center justify-center gap-2 text-slate-200 text-xs shadow">
+                        <div className="flex items-center gap-1">
+                          <span className="w-2.5 h-2.5 rounded-full bg-white border border-slate-300 shadow-xs" title="Camiseta Blanca" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 shadow-xs" title="Pantalón Verde" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-700 shadow-xs" title="Medias Verdes" />
+                        </div>
+                        <span className="text-[8.5px] font-black text-emerald-300 uppercase tracking-tight">
+                          1ª Equipación: Camiseta Blanca • Pantalón y Medias Verdes
+                        </span>
+                      </div>
+
                       {/* Grandstand callout stamp */}
                       <div className={`font-black text-[10px] sm:text-[11px] py-1 px-3 rounded-lg uppercase tracking-wide shadow-md ${currentBg.accentBadge}`}>
                         {grandstandCallout}
@@ -2794,7 +2827,7 @@ export default function MatchdayPosterModal({
                         <UDLaPovedaLogo className="w-full h-full" />
                       </div>
                       <span className="font-extrabold uppercase tracking-wide text-slate-200 truncate">
-                        CLUB • MÁS QUE UN CLUB, UNA FAMILIA.
+                        FUNDACION. AFE • PASIÓN, TALENTO Y VALORES.
                       </span>
                     </div>
 
@@ -2818,14 +2851,14 @@ export default function MatchdayPosterModal({
                   <div className="absolute inset-0 pointer-events-none opacity-90">
                     <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
                       <defs>
-                        <linearGradient id="poveda-brush-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                          <stop offset="0%" stopColor="#0047b3" stopOpacity="0.22" />
-                          <stop offset="100%" stopColor="#061b40" stopOpacity="0.3" />
+                        <linearGradient id="afe-brush-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#047857" stopOpacity="0.22" />
+                          <stop offset="100%" stopColor="#022c22" stopOpacity="0.3" />
                         </linearGradient>
                       </defs>
-                      <path d="M -50,150 Q 80,60 220,120 T 480,40 L 520,320 Q 300,280 180,380 Z" fill="url(#poveda-brush-grad)" />
-                      <circle cx="90%" cy="15%" r="140" fill="#0047b3" fillOpacity="0.08" />
-                      <circle cx="10%" cy="80%" r="160" fill="#00358e" fillOpacity="0.06" />
+                      <path d="M -50,150 Q 80,60 220,120 T 480,40 L 520,320 Q 300,280 180,380 Z" fill="url(#afe-brush-grad)" />
+                      <circle cx="90%" cy="15%" r="140" fill="#047857" fillOpacity="0.08" />
+                      <circle cx="10%" cy="80%" r="160" fill="#065f46" fillOpacity="0.06" />
                     </svg>
                   </div>
 
@@ -2844,8 +2877,8 @@ export default function MatchdayPosterModal({
                           <UDLaPovedaLogo className="w-full h-full" />
                         </div>
                         <div>
-                          <span className="block text-blue-950 font-black text-xs uppercase tracking-wider leading-none">
-                            CLUB
+                          <span className="block text-emerald-950 font-black text-xs uppercase tracking-wider leading-none">
+                            FUNDACION. AFE
                           </span>
                           <span className="block text-blue-700 font-bold text-[9px] uppercase tracking-widest leading-none mt-0.5">
                             {teamName}
@@ -2891,7 +2924,7 @@ export default function MatchdayPosterModal({
                         {isLocal ? 'PARTIDO EN NUESTRO FEUDO' : 'PARTIDO A DOMICILIO'}
                       </div>
                       <div className="text-base sm:text-lg font-black uppercase tracking-tight text-white flex items-center justify-center gap-2">
-                        <span>CLUB</span>
+                        <span>FUNDACION. AFE</span>
                         <span className="text-amber-400 font-black text-sm">VS</span>
                         <span className="text-yellow-200">{rivalName}</span>
                       </div>
@@ -2903,6 +2936,18 @@ export default function MatchdayPosterModal({
 
                     {/* Central Visual with Selected Frame Design */}
                     {renderPlayerFigure()}
+
+                    {/* Kit Indicator */}
+                    <div className="flex items-center justify-center gap-2 my-1 bg-white/90 backdrop-blur-xs border border-emerald-500/40 rounded-full py-0.5 px-3 shadow-xs">
+                      <div className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-white border border-slate-400 shadow-xs" title="Camiseta Blanca" />
+                        <span className="w-2 h-2 rounded-full bg-emerald-600 shadow-xs" title="Pantalón Verde" />
+                        <span className="w-2 h-2 rounded-full bg-emerald-700 shadow-xs" title="Medias Verdes" />
+                      </div>
+                      <span className="text-[8px] font-black text-emerald-900 uppercase tracking-tight">
+                        1ª Equipación Oficial: Camiseta Blanca • Pantalón Verde • Medias Verdes
+                      </span>
+                    </div>
 
                     {/* The 4 Iconic Club Value Badges */}
                     <div className="grid grid-cols-4 gap-2 w-full max-w-xs my-1">
@@ -2955,7 +3000,7 @@ export default function MatchdayPosterModal({
                         <UDLaPovedaLogo className="w-full h-full" />
                       </div>
                       <span className="font-extrabold uppercase tracking-wide text-slate-200 truncate">
-                        CLUB • MÁS QUE UN CLUB, UNA FAMILIA.
+                        FUNDACION. AFE • PASIÓN, TALENTO Y VALORES.
                       </span>
                     </div>
 
@@ -2990,7 +3035,7 @@ export default function MatchdayPosterModal({
                       </div>
                       <div>
                         <span className="text-white font-black text-sm uppercase tracking-wider block leading-none">
-                          CLUB
+                          FUNDACION. AFE
                         </span>
                         <span className="text-amber-300 text-[10px] font-bold uppercase tracking-widest block mt-0.5">
                           {teamName} • {matchCompeticion}
@@ -3022,8 +3067,8 @@ export default function MatchdayPosterModal({
                         <div className="w-8 h-8 rounded-full bg-white p-0.5 mb-1 shadow">
                           <UDLaPovedaLogo className="w-full h-full" />
                         </div>
-                        <span className="block text-base sm:text-lg font-black text-white uppercase">CLUB</span>
-                        <span className="text-[9px] font-bold text-cyan-300 uppercase">{isLocal ? 'LOCAL' : 'VISITANTE'}</span>
+                        <span className="block text-base sm:text-lg font-black text-white uppercase">FUNDACION. AFE</span>
+                        <span className="text-[9px] font-bold text-emerald-300 uppercase">{isLocal ? 'LOCAL' : 'VISITANTE'}</span>
                       </div>
                       <div className="w-9 h-9 rounded-xl bg-amber-400 text-slate-950 font-black text-sm flex items-center justify-center shadow">
                         VS
@@ -3063,6 +3108,16 @@ export default function MatchdayPosterModal({
                         <MapPin className="w-3.5 h-3.5 text-red-500" />
                         <span className="truncate">{matchLugar}</span>
                       </div>
+
+                      {/* Corporate Kit Indicator */}
+                      <div className="border-t border-slate-100 pt-1 flex items-center justify-center gap-2 text-[9px] font-black text-slate-800 uppercase">
+                        <div className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-white border border-slate-400 shadow-xs" title="Camiseta Blanca" />
+                          <span className="w-2 h-2 rounded-full bg-emerald-600 shadow-xs" title="Pantalón Verde" />
+                          <span className="w-2 h-2 rounded-full bg-emerald-700 shadow-xs" title="Medias Verdes" />
+                        </div>
+                        <span>Camiseta Blanca • Pantalón y Medias Verdes</span>
+                      </div>
                     </div>
 
                     {/* Slogan */}
@@ -3074,7 +3129,7 @@ export default function MatchdayPosterModal({
                   {/* Corporate Footer */}
                   <div className="relative z-10 bg-slate-950 border-t border-slate-800 px-4 py-2 flex items-center justify-between text-[10px] text-slate-300">
                     <span className="font-extrabold text-white uppercase truncate">
-                      CLUB • MÁS QUE UN CLUB, UNA FAMILIA.
+                      FUNDACION. AFE • PASIÓN, TALENTO Y VALORES.
                     </span>
                     <span className="font-bold text-slate-400 shrink-0">
                       Arganda del Rey, Madrid

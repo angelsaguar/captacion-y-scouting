@@ -87,7 +87,7 @@ export default function Login() {
               <UDLaPovedaLogo className="w-16 h-16" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold tracking-tight text-white uppercase">CLUB SCOUTING</CardTitle>
+          <CardTitle className="text-2xl font-bold tracking-tight text-white uppercase">FUNDACION. AFE SCOUTING</CardTitle>
           <CardDescription className="text-slate-400 font-medium">
             Acceso autorizado para el administrador Ángel Saguar y los observadores (SANTI, ALEJANDRO SAGUAR).
           </CardDescription>

@@ -75,7 +75,7 @@ async function startServer() {
         }
       });
 
-      const prompt = `Eres el Director Técnico y Analista Táctico Máster de fútbol para el equipo ${teamName || 'U.D. La Poveda'}.
+      const prompt = `Eres el Director Técnico y Analista Táctico Máster de fútbol para el equipo ${teamName || 'FUNDACION. AFE'}.
 Nos enfrentamos al rival "${rivalName || 'Rival'}" que juega habitualmente con el sistema de juego / formación: ${rivalSystem}.
 ${rivalNotes ? `Información/Notas sobre el juego del rival: ${rivalNotes}` : ''}
 ${myRoster && myRoster.length > 0 ? `Nuestra plantilla disponible incluye a: ${myRoster.map((p: any) => `${p.nombre} (${p.posicion || 'Jugadora'})`).join(', ')}.` : ''}

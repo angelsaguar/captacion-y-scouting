@@ -34,7 +34,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 
-const POVEDA_TEAMS = [
+const AFE_TEAMS = [
   'Aficionado A',
   'Aficionado B',
   'Juvenil A',
@@ -271,7 +271,7 @@ export default function Needs() {
                       <SelectValue placeholder="Seleccionar equipo..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {POVEDA_TEAMS.map((team) => (
+                      {AFE_TEAMS.map((team) => (
                         <SelectItem key={team} value={team} className="text-sm">
                           {team}
                         </SelectItem>
@@ -361,7 +361,7 @@ export default function Needs() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ALL">Todos los equipos</SelectItem>
-                    {POVEDA_TEAMS.map(t => (
+                    {AFE_TEAMS.map(t => (
                       <SelectItem key={t} value={t}>{t}</SelectItem>
                     ))}
                   </SelectContent>
@@ -433,7 +433,7 @@ export default function Needs() {
                                     <SelectValue placeholder="Equipo..." />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    {POVEDA_TEAMS.map((t) => (
+                                    {AFE_TEAMS.map((t) => (
                                       <SelectItem key={t} value={t} className="text-xs">{t}</SelectItem>
                                     ))}
                                   </SelectContent>

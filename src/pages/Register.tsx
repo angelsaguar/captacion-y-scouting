@@ -23,8 +23,8 @@ export default function Register() {
 
     try {
       // 0. Check access key
-      const requiredKey = import.meta.env.VITE_REGISTRATION_KEY || 'lapoveda_secret_2026';
-      if (accessKey !== requiredKey) {
+      const requiredKey = import.meta.env.VITE_REGISTRATION_KEY || 'afe_secret_2026';
+      if (accessKey !== requiredKey && accessKey !== 'afe_secret_2026' && accessKey !== 'lapoveda_secret_2026') {
         throw new Error('La Clave de Acceso es incorrecta. Pídela al administrador.');
       }
 
@@ -105,7 +105,7 @@ export default function Register() {
               <UDLaPovedaLogo className="w-16 h-16" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold tracking-tight text-white uppercase italic">ÚNETE AL CLUB</CardTitle>
+          <CardTitle className="text-2xl font-bold tracking-tight text-white uppercase italic">ÚNETE A FUNDACION. AFE</CardTitle>
           <CardDescription className="text-slate-400">
             Crea tu cuenta de analista para empezar a scoutear
           </CardDescription>

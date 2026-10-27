@@ -69,7 +69,7 @@ export function getMatchCondition(ev?: CalendarEvent): 'Local' | 'Visitante' {
   if (combined.includes('visitante') || combined.includes('fuera') || combined.includes('@') || combined.includes('campo rival')) {
     return 'Visitante';
   }
-  if (combined.includes('poveda') || combined.includes('local') || combined.includes('casa') || combined.includes('polideportivo')) {
+  if (combined.includes('fundacion') || combined.includes('afe') || combined.includes('local') || combined.includes('casa') || combined.includes('polideportivo')) {
     return 'Local';
   }
   return 'Local';
@@ -812,7 +812,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
   // Generate WhatsApp summary text for current month's events
   const generateWhatsAppSummary = () => {
     const monthName = MONTH_NAMES[currentMonth].toUpperCase();
-    let text = `📅 *CLUB - CALENDARIO DE ${monthName} ${currentYear}*\n`;
+    let text = `📅 *FUNDACIÓN AFE - CALENDARIO DE ${monthName} ${currentYear}*\n`;
     text += `⚽ *Equipo:* ${selectedTeam}\n`;
     text += `🏆 *Temporada:* ${seasonLabel}\n`;
     text += `------------------------------------\n\n`;
@@ -1095,7 +1095,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
             {/* Club & Category Titles */}
             <div>
               <h2 className="text-3xl sm:text-4xl font-black italic tracking-wider text-white uppercase drop-shadow-md">
-                CLUB
+                FUNDACIÓN AFE
               </h2>
               <p className="text-xs sm:text-sm font-black text-blue-400 uppercase tracking-widest mt-1">
                 {selectedTeam} • CALENDARIO MENSUAL DE ACTIVIDAD

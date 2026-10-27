@@ -490,7 +490,7 @@ export default function PruebasFisicas() {
       ];
       worksheet['!cols'] = max_cols;
 
-      XLSX.writeFile(workbook, `historial_pruebas_fisicas.xlsx`);
+      XLSX.writeFile(workbook, `historial_pruebas_fisicas_fundacion_afe.xlsx`);
       toast.success('Historial exportado a Excel con éxito.');
     } catch (err) {
       toast.error('Error al exportar a Excel.');

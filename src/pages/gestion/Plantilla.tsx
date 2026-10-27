@@ -2415,13 +2415,13 @@ function FUTPlayerCard({ player, stats }: { player: TeamPlayer; stats: any }) {
         </div>
 
         {/* Mid Horizontal Ribbon */}
-        <div className="mx-2 mt-2 bg-gradient-to-r from-red-600/30 via-slate-950/90 to-blue-600/30 border-y border-amber-500/20 py-1 flex items-center justify-center gap-2 z-10 rounded-md">
-          <div className="w-4 h-2.5 flex flex-col rounded-xs overflow-hidden border border-white/20">
-            <div className="bg-red-600 h-0.5 w-full" />
-            <div className="bg-yellow-400 h-1.5 w-full" />
-            <div className="bg-red-600 h-0.5 w-full" />
+        <div className="mx-2 mt-2 bg-gradient-to-r from-emerald-600/30 via-slate-950/90 to-emerald-600/30 border-y border-emerald-500/20 py-1 flex items-center justify-center gap-2 z-10 rounded-md">
+          <div className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-white border border-emerald-600 inline-block shadow-xs" title="Camiseta Blanca" />
+            <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block shadow-xs" title="Pantalón Verde" />
+            <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block shadow-xs" title="Medias Verdes" />
           </div>
-          <span className="text-[8px] font-black uppercase tracking-wider text-amber-400">CLUB</span>
+          <span className="text-[8px] font-black uppercase tracking-wider text-emerald-400">FUNDACION. AFE</span>
           <span className="text-white/30 text-[8px]">•</span>
           <span className="text-[8px] font-extrabold uppercase text-white tracking-wider">
             {player.anio_nacimiento ? `${2026 - parseInt(player.anio_nacimiento as any)} AÑOS` : '15 AÑOS'}
@@ -3087,7 +3087,7 @@ export default function Plantilla() {
       fecha_nacimiento: j.fecha_nacimiento,
       lateralidad: j.lateralidad || 'Derecho',
       estado_fisico: 'Disponible',
-      email: `${j.nombre.toLowerCase().replace(/\s+/g, '')}@povedafemenino.es`
+      email: `${j.nombre.toLowerCase().replace(/\s+/g, '')}@fundacionafe.es`
     })) : [];
 
     let currentRoster: TeamPlayer[] = [];

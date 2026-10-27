@@ -448,7 +448,7 @@ export default function Antropometria() {
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Composicion Corporal");
       
-      XLSX.writeFile(workbook, `controles_antropometricos_poveda.xlsx`);
+      XLSX.writeFile(workbook, `controles_antropometricos_fundacion_afe.xlsx`);
       toast.success('Historial exportado a Excel con éxito.');
     } catch (err) {
       toast.error('Error al exportar a Excel.');
