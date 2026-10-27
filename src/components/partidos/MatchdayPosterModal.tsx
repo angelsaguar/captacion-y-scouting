@@ -40,13 +40,13 @@ import RivalCrestsManagerModal from '@/components/partidos/RivalCrestsManagerMod
 import { Upload } from 'lucide-react';
 import { cleanPhotoUrl } from '@/lib/utils';
 import { getRivalCrestSync } from '@/lib/rivalCrests';
-import povedaPlayerBrushImg from '@/assets/images/poveda_player_brush_1788964313566.jpg';
-import playerBrushActionImg from '@/assets/images/player_brush_action_1788963018733.jpg';
-import femalePlayerBrushImg from '@/assets/images/female_player_brush_1788963036471.jpg';
+import afePlayerBrushImg from '@/assets/images/afe_player_action_1793134423816.jpg';
+import playerBrushActionImg from '@/assets/images/afe_player_action_1793134423816.jpg';
+import femalePlayerBrushImg from '@/assets/images/afe_female_player_1793134424535.jpg';
 import stadiumNightImg from '@/assets/images/stadium_night_matchday_1788963681857.jpg';
-import playerHeroCelebrationImg from '@/assets/images/player_hero_celebration_1788963937522.jpg';
-import playerHeroCaptainImg from '@/assets/images/player_hero_captain_1788963961101.jpg';
-import retroSixtiesPlayerImg from '@/assets/images/retro_sixties_player_1788965361349.jpg';
+import playerHeroCelebrationImg from '@/assets/images/afe_hero_celebration_1793134424304.jpg';
+import playerHeroCaptainImg from '@/assets/images/afe_hero_celebration_1793134424304.jpg';
+import retroSixtiesPlayerImg from '@/assets/images/retro_afe_player_1793134422544.jpg';
 import retroSixtiesBgImg from '@/assets/images/retro_sixties_bg_1788965376731.jpg';
 
 export interface MatchdayMatch {
@@ -78,15 +78,15 @@ interface MatchdayPosterModalProps {
 export type PosterTheme =
   | 'convocatoria_modern' // Modelo de Convocatoria Oficial Moderno (fondo azul noche, duelo de equipos, logística detallada, jugadoras y lema oficial)
   | 'vintage_60s'      // Authentic 1960s letterpress Spanish football match poster (woodblock type, aged paper & vintage player)
-  | 'poveda_captacion' // Flagship: Official CLUB poster with blue sky, paint splatters, watermark, dynamic player & brush ribbons
+  | 'poveda_captacion' // Flagship: Official FUNDACION. AFE poster with green paint splatters, dynamic player & brush ribbons
   | 'stadium_night'    // Authentic Matchday stadium under bright floodlights
-  | 'poveda_brush'     // Dynamic club poster with royal blue paint splatters and value badges
+  | 'poveda_brush'     // Dynamic club poster with emerald green paint splatters and value badges
   | 'editorial_press'; // Clean, high-impact federated sports split poster
 
 export type PosterBgColor = 
   | 'papel_60s'        // Authentic 1960s aged cream paper with carmine & navy letterpress ink (#fbf5e8 -> #f5eedc)
   | 'sepia_vintage'    // Vintage duotone sepia halftone print (#eadecc -> #d6c4a8)
-  | 'azul_poveda'      // Royal Blue & Navy (#00358e -> #051a44)
+  | 'azul_poveda'      // Corporate Verde & Blanco AFE
   | 'noche_estadio'    // Pitch Black & Midnight Blue (#020617 -> #091a38)
   | 'blanco_limpio'    // Clean White & Sky Blue brush (#f8fafc -> #ffffff)
   | 'oro_champions'    // Champions Gold & Deep Navy (#120e03 -> #04102c)
@@ -96,8 +96,8 @@ export type PosterBgColor =
   | 'cian_electrico';  // Electric Cyan & Cobalt (#021a36 -> #044372)
 
 export type CharacterMode =
-  | 'retro_player_60s' // Authentic 1960s vintage football player with classic laced leather ball
-  | 'captacion_player' // Exact dynamic youth player in Poveda white/blue kit with paint splatters
+  | 'retro_player_60s' // Authentic 1960s vintage football player with classic laced leather ball and white/green kit
+  | 'captacion_player' // Exact dynamic youth player in FUNDACION. AFE white/green kit with paint splatters
   | 'celebration_hero' // Arms open in celebration, high emotion
   | 'captain_portrait' // Intense captain close-up portrait with armband
   | 'female_brush'     // Dynamic female player in motion with ball
@@ -459,7 +459,7 @@ export default function MatchdayPosterModal({
       case 'retro_player_60s':
         return retroSixtiesPlayerImg;
       case 'captacion_player':
-        return povedaPlayerBrushImg;
+        return afePlayerBrushImg;
       case 'celebration_hero':
         return playerHeroCelebrationImg;
       case 'captain_portrait':
@@ -1364,7 +1364,7 @@ export default function MatchdayPosterModal({
                     <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                     <span className="text-xs font-black">Jugador Años 60</span>
                   </div>
-                  <span className="text-[9px] text-slate-400 block leading-tight">Balón de cuero clásico</span>
+                  <span className="text-[9px] text-amber-300/90 block leading-tight">Clásico Blanco/Verde</span>
                 </button>
 
                 {/* 1. Jugador Oficial Club */}
@@ -1373,15 +1373,15 @@ export default function MatchdayPosterModal({
                   onClick={() => setCharacterMode('captacion_player')}
                   className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
                     characterMode === 'captacion_player'
-                      ? 'bg-cyan-500/20 border-cyan-400 text-white font-black ring-1 ring-cyan-400/50'
+                      ? 'bg-emerald-500/20 border-emerald-400 text-white font-black ring-1 ring-emerald-400/50'
                       : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
                   }`}
                 >
                   <div className="flex items-center gap-1.5 mb-1">
-                    <Zap className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                    <span className="text-xs font-black">Jugador Club</span>
+                    <Zap className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="text-xs font-black">Acción AFE</span>
                   </div>
-                  <span className="text-[9px] text-slate-400 block leading-tight">Acción & pintura oficial</span>
+                  <span className="text-[9px] text-emerald-300/90 block leading-tight">Blanco / Pantalón Verde</span>
                 </button>
 
                 {/* 1. Celebración Épica */}
@@ -1398,7 +1398,7 @@ export default function MatchdayPosterModal({
                     <Flame className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                     <span className="text-xs font-black">Celebración</span>
                   </div>
-                  <span className="text-[9px] text-slate-400 block leading-tight">Brazos en alto</span>
+                  <span className="text-[9px] text-slate-400 block leading-tight">Victoria Blanco/Verde</span>
                 </button>
 
                 {/* 2. Retrato Capitán/a */}
@@ -1424,15 +1424,15 @@ export default function MatchdayPosterModal({
                   onClick={() => setCharacterMode('female_brush')}
                   className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
                     characterMode === 'female_brush'
-                      ? 'bg-blue-900/60 border-blue-400 text-white font-black ring-1 ring-blue-400/50'
+                      ? 'bg-emerald-900/60 border-emerald-400 text-white font-black ring-1 ring-emerald-400/50'
                       : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
                   }`}
                 >
                   <div className="flex items-center gap-1.5 mb-1">
-                    <Sparkles className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                    <span className="text-xs font-black">En Carrera</span>
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="text-xs font-black">Jugadora AFE</span>
                   </div>
-                  <span className="text-[9px] text-slate-400 block leading-tight">Acción con balón</span>
+                  <span className="text-[9px] text-emerald-300/90 block leading-tight">Femenino Blanco/Verde</span>
                 </button>
 
                 {/* 4. Jugador en Golpeo */}
@@ -1441,15 +1441,15 @@ export default function MatchdayPosterModal({
                   onClick={() => setCharacterMode('male_brush')}
                   className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
                     characterMode === 'male_brush'
-                      ? 'bg-blue-900/60 border-blue-400 text-white font-black ring-1 ring-blue-400/50'
+                      ? 'bg-emerald-900/60 border-emerald-400 text-white font-black ring-1 ring-emerald-400/50'
                       : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
                   }`}
                 >
                   <div className="flex items-center gap-1.5 mb-1">
-                    <Zap className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                    <Zap className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                     <span className="text-xs font-black">En Golpeo</span>
                   </div>
-                  <span className="text-[9px] text-slate-400 block leading-tight">Remate atlético</span>
+                  <span className="text-[9px] text-emerald-300/90 block leading-tight">Remate Blanco/Verde</span>
                 </button>
 
                 {/* 5. Foto Plantilla Real */}
@@ -2094,17 +2094,17 @@ export default function MatchdayPosterModal({
 
                       {/* Center: Vintage 1960s Football Player Illustration with Leather Ball */}
                       <div className="col-span-4 flex items-center justify-center">
-                        <div className="relative w-28 sm:w-34 aspect-[3/4] rounded-sm overflow-hidden border-2 border-[#1a2b54] shadow-md bg-[#eaddc4]">
+                        <div className="relative w-28 sm:w-34 aspect-[3/4] rounded-sm overflow-hidden border-2 border-[#064e3b] shadow-md bg-[#eaddc4]">
                           <img
                             src={activePhotoSrc || retroSixtiesPlayerImg}
                             alt="Futbolista Años 60"
-                            className="w-full h-full object-cover object-top contrast-110 sepia-[0.25]"
+                            className="w-full h-full object-cover object-top contrast-105"
                             crossOrigin="anonymous"
                             referrerPolicy="no-referrer"
                           />
                           {/* Halftone & duotone vintage ink wash */}
-                          <div className="absolute inset-0 bg-gradient-to-t from-[#14234b]/30 via-transparent to-transparent pointer-events-none" />
-                          <div className="absolute bottom-0 inset-x-0 bg-[#14234b]/90 text-white text-[7px] sm:text-[8px] font-black uppercase text-center py-0.5 tracking-wider">
+                          <div className="absolute inset-0 bg-gradient-to-t from-[#022c22]/20 via-transparent to-transparent pointer-events-none" />
+                          <div className="absolute bottom-0 inset-x-0 bg-[#064e3b]/95 text-white text-[7px] sm:text-[8px] font-black uppercase text-center py-0.5 tracking-wider">
                             FUNDACION. AFE
                           </div>
                         </div>
@@ -2323,7 +2323,7 @@ export default function MatchdayPosterModal({
                       <div className="relative h-20 sm:h-24 flex items-center justify-center overflow-hidden my-0.5">
                         <div className="absolute inset-0 bg-gradient-to-r from-emerald-600/10 via-green-500/15 to-emerald-600/10 rounded-2xl blur-lg pointer-events-none" />
                         <img 
-                          src={povedaPlayerBrushImg} 
+                          src={afePlayerBrushImg} 
                           alt="Jugador FUNDACION. AFE" 
                           className="h-full max-h-[95px] sm:max-h-[110px] object-contain drop-shadow-[0_10px_20px_rgba(16,185,129,0.3)] relative z-10 transform -scale-x-100"
                           crossOrigin="anonymous"
@@ -2488,17 +2488,17 @@ export default function MatchdayPosterModal({
                     
                     {/* Left Side: Dynamic Soccer Player with Blue Splatters (5 cols) */}
                     <div className="col-span-5 relative flex items-center justify-center h-full min-h-[190px]">
-                      {/* Vibrant blue paint splatters around player */}
-                      <div className="absolute -inset-2 bg-gradient-to-tr from-blue-600/20 via-cyan-500/15 to-transparent rounded-full blur-xl pointer-events-none" />
+                      {/* Vibrant green & white paint splatters around player */}
+                      <div className="absolute -inset-2 bg-gradient-to-tr from-emerald-600/20 via-green-500/15 to-transparent rounded-full blur-xl pointer-events-none" />
                       
                       {/* Paint splash artistic shapes */}
-                      <div className="absolute -bottom-2 -left-2 w-16 h-16 bg-blue-500/20 rounded-full blur-md pointer-events-none" />
-                      <div className="absolute top-4 -right-1 w-12 h-12 bg-cyan-400/20 rounded-full blur-md pointer-events-none" />
+                      <div className="absolute -bottom-2 -left-2 w-16 h-16 bg-emerald-500/20 rounded-full blur-md pointer-events-none" />
+                      <div className="absolute top-4 -right-1 w-12 h-12 bg-green-400/20 rounded-full blur-md pointer-events-none" />
 
                       <img
-                        src={activePhotoSrc || povedaPlayerBrushImg}
+                        src={activePhotoSrc || afePlayerBrushImg}
                         alt="Jugador FUNDACION. AFE"
-                        className="relative z-10 w-full max-h-[260px] object-contain drop-shadow-[0_12px_24px_rgba(4,24,72,0.35)] transform -scale-x-100 hover:scale-105 transition-transform"
+                        className="relative z-10 w-full max-h-[260px] object-contain drop-shadow-[0_12px_24px_rgba(4,72,36,0.35)] transform -scale-x-100 hover:scale-105 transition-transform"
                         crossOrigin="anonymous"
                       />
                     </div>
