@@ -192,6 +192,40 @@ export default function Partidos() {
   const [searchPlayerQuery, setSearchPlayerQuery] = useState<string>('');
   const [filterPosition, setFilterPosition] = useState<string>('TODAS');
   const [isMsgCustomEdited, setIsMsgCustomEdited] = useState<boolean>(false);
+  const [editingPlayerApodoId, setEditingPlayerApodoId] = useState<string | null>(null);
+  const [tempApodoText, setTempApodoText] = useState<string>('');
+
+  const handleSavePlayerApodo = async (playerId: string, newApodo: string) => {
+    const trimmed = newApodo.trim();
+    const updated = players.map(p => p.id === playerId ? { ...p, apodo: trimmed } : p);
+    setPlayers(updated);
+    setEditingPlayerApodoId(null);
+
+    try {
+      const rosterKey = `team_roster_${selectedTeam}`;
+      localStorage.setItem(rosterKey, JSON.stringify(updated));
+
+      const savedSc = localStorage.getItem('scouting_local_players');
+      if (savedSc) {
+        const scList: any[] = JSON.parse(savedSc);
+        const updatedSc = scList.map(sp => {
+          if (sp.id === playerId || normalizePlayerNameKey(sp.nombre, sp.apellidos) === normalizePlayerNameKey(updated.find(u => u.id === playerId)?.nombre || '', updated.find(u => u.id === playerId)?.apellidos || '')) {
+            return { ...sp, apodo: trimmed };
+          }
+          return sp;
+        });
+        localStorage.setItem('scouting_local_players', JSON.stringify(updatedSc));
+      }
+
+      if (playerId && !playerId.startsWith('mock-') && playerId.length > 20) {
+        await supabase.from('players').update({ apodo: trimmed || null }).eq('id', playerId);
+      }
+      toast.success('Apodo actualizado para el cartel de convocatoria');
+    } catch (err) {
+      console.warn('Error saving apodo:', err);
+    }
+  };
+
 
   // Plan de Partido & IA Táctica Modal state
   const [showPlanPartidoModal, setShowPlanPartidoModal] = useState<Match | null>(null);
@@ -433,7 +467,8 @@ export default function Partidos() {
           const numStr = String(index + 1).padStart(2, '0');
           const dorsalStr = p.dorsal ? `#${p.dorsal}` : '';
           const icon = getPosIcon(p.posicion);
-          return `${numStr}. ${icon} ${dorsalStr} ${p.nombre} ${p.apellidos}`.trim();
+          const nameToDisplay = (p.apodo && p.apodo.trim()) ? p.apodo.trim() : p.nombre;
+          return `${numStr}. ${icon} ${dorsalStr} ${nameToDisplay}`.trim();
         }).join('\n')
       : '_(No se han seleccionado jugadoras convocadas aún)_';
 
@@ -2518,7 +2553,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                                         <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden border-2 border-slate-300/50 shadow-xl bg-slate-950 flex items-center justify-center shrink-0">
                                           <img 
                                             src={player.foto_url} 
-                                            alt={`${player.nombre} ${player.apellidos || ''}`}
+                                            alt={(player.apodo && player.apodo.trim()) ? player.apodo.trim() : player.nombre}
                                             className="w-full h-full object-cover object-top"
                                             crossOrigin="anonymous"
                                             referrerPolicy="no-referrer"
@@ -2544,13 +2579,10 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                                       )}
                                     </div>
 
-                                    {/* Player Name and Surname */}
-                                    <div className="my-0.5 text-center relative z-10 px-0.5">
-                                      <p className="font-black text-xs sm:text-[13px] text-white uppercase tracking-tight truncate leading-tight">
-                                        {player.nombre}
-                                      </p>
-                                      <p className="font-bold text-[9px] text-slate-300 uppercase truncate leading-tight mt-0.5">
-                                        {player.apellidos}
+                                    {/* Player Nickname Only (Solo apodo, sin apellidos) */}
+                                    <div className="my-1.5 text-center relative z-10 px-1 min-h-[30px] flex items-center justify-center">
+                                      <p className="font-black text-xs sm:text-[13px] text-white uppercase tracking-tight truncate leading-tight drop-shadow-sm">
+                                        {(player.apodo && player.apodo.trim()) ? player.apodo.trim() : player.nombre}
                                       </p>
                                     </div>
 
@@ -2746,10 +2778,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                                         </span>
                                       </div>
                                       <p className="font-black text-xs text-slate-900 uppercase truncate mt-0.5">
-                                        {player.nombre}
-                                      </p>
-                                      <p className="text-[10px] font-bold text-slate-600 uppercase truncate">
-                                        {player.apellidos || ''}
+                                        {(player.apodo && player.apodo.trim()) ? player.apodo.trim() : player.nombre}
                                       </p>
                                       <p className="text-[9px] text-slate-500 font-medium truncate">
                                         {player.posicion || 'Jugadora'}
@@ -2883,7 +2912,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                   ) : (
                     players
                       .filter(p => {
-                        const matchesSearch = `${p.nombre} ${p.apellidos} ${p.dorsal}`
+                        const matchesSearch = `${p.apodo || ''} ${p.nombre} ${p.apellidos} ${p.dorsal}`
                           .toLowerCase()
                           .includes(searchPlayerQuery.toLowerCase());
                         const matchesPos = filterPosition === 'TODAS' || 
@@ -2907,12 +2936,12 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                                 : 'bg-slate-900/40 border-slate-850 hover:border-slate-800 text-slate-400'
                             }`}
                           >
-                            <div className="flex items-center gap-2.5 truncate">
+                            <div className="flex items-center gap-2.5 truncate flex-1 min-w-0 mr-2">
                               <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-slate-700 bg-slate-800 shrink-0 flex items-center justify-center">
                                 {p.foto_url ? (
                                   <img 
                                     src={p.foto_url} 
-                                    alt={p.nombre} 
+                                    alt={(p.apodo && p.apodo.trim()) ? p.apodo.trim() : p.nombre} 
                                     className="w-full h-full object-cover object-top" 
                                     crossOrigin="anonymous"
                                     referrerPolicy="no-referrer"
@@ -2925,10 +2954,60 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                                   </span>
                                 )}
                               </div>
-                              <div className="truncate">
-                                <div className="flex items-center gap-1.5">
+                              <div className="truncate flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className="font-mono font-black text-[11px] text-amber-400">#{p.dorsal || '•'}</span>
-                                  <p className="font-bold text-xs truncate leading-tight text-white">{p.nombre} {p.apellidos}</p>
+                                  {editingPlayerApodoId === p.id ? (
+                                    <div className="flex items-center gap-1 my-0.5" onClick={(e) => e.stopPropagation()}>
+                                      <input
+                                        type="text"
+                                        value={tempApodoText}
+                                        onChange={(e) => setTempApodoText(e.target.value)}
+                                        placeholder="Apodo cartel..."
+                                        className="bg-slate-950 border border-amber-400 px-1.5 py-0.5 text-xs text-white rounded font-bold uppercase w-28 focus:outline-none"
+                                        autoFocus
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') handleSavePlayerApodo(p.id, tempApodoText);
+                                          if (e.key === 'Escape') setEditingPlayerApodoId(null);
+                                        }}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSavePlayerApodo(p.id, tempApodoText)}
+                                        className="bg-amber-500 hover:bg-amber-400 text-slate-950 text-[10px] font-black px-1.5 py-0.5 rounded cursor-pointer"
+                                      >
+                                        ✓
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingPlayerApodoId(null)}
+                                        className="text-slate-400 hover:text-white text-[10px] px-1 cursor-pointer"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-1.5 flex-wrap truncate">
+                                      <span className="font-black text-xs text-white uppercase truncate">
+                                        {(p.apodo && p.apodo.trim()) ? p.apodo.trim() : p.nombre}
+                                      </span>
+                                      <span className="text-[10px] text-slate-400 font-normal truncate">
+                                        ({p.nombre} {p.apellidos})
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditingPlayerApodoId(p.id);
+                                          setTempApodoText(p.apodo || p.nombre || '');
+                                        }}
+                                        className="text-[9px] text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold transition-colors cursor-pointer"
+                                        title="Editar apodo para el cartel de convocatoria"
+                                      >
+                                        ✏️ {p.apodo ? 'Apodo' : '+ Apodo'}
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                                 <p className="text-[9px] text-slate-500 uppercase font-semibold">{p.posicion || 'Jugadora'}</p>
                               </div>

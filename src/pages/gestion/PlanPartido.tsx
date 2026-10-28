@@ -38,6 +38,7 @@ interface TeamPlayer {
   id: string;
   nombre: string;
   apellidos: string;
+  apodo?: string;
   dorsal: string;
   posicion: string;
 }
@@ -429,8 +430,8 @@ export default function PlanPartido() {
       ? activePlan.convocatoria
           .map((id, index) => {
             const pl = roster.find(p => p.id === id);
-            if (!pl) return null;
-            return `🔹 ${pl.dorsal ? `#${pl.dorsal} ` : `Jugadora ${index + 1}`}: ${pl.nombre} ${pl.apellidos}`;
+            const displayName = (pl.apodo && pl.apodo.trim()) ? pl.apodo.trim() : pl.nombre;
+            return `🔹 ${pl.dorsal ? `#${pl.dorsal} ` : `Jugadora ${index + 1}`}: ${displayName}`;
           })
           .filter(Boolean)
           .join('\n')
@@ -1041,7 +1042,7 @@ export default function PlanPartido() {
                           {pl.dorsal || index + 1}
                         </span>
                         <div>
-                          <p className="font-extrabold text-sm text-slate-900 uppercase leading-none">{pl.nombre} {pl.apellidos}</p>
+                          <p className="font-extrabold text-sm text-slate-900 uppercase leading-none">{(pl.apodo && pl.apodo.trim()) ? pl.apodo.trim() : pl.nombre}</p>
                           <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">{pl.posicion}</p>
                         </div>
                       </div>
@@ -1168,7 +1169,7 @@ export default function PlanPartido() {
                           {pl.dorsal || index + 1}
                         </span>
                         <div>
-                          <p className="font-extrabold text-sm text-slate-900 uppercase leading-none">{pl.nombre} {pl.apellidos}</p>
+                          <p className="font-extrabold text-sm text-slate-900 uppercase leading-none">{(pl.apodo && pl.apodo.trim()) ? pl.apodo.trim() : pl.nombre}</p>
                           <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">{pl.posicion}</p>
                         </div>
                       </div>

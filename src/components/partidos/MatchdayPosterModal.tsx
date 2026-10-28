@@ -187,6 +187,11 @@ export default function MatchdayPosterModal({
     return players.find(p => p.id === selectedPlayerId) || null;
   }, [players, selectedPlayerId]);
 
+  const featuredPlayerApodo = useMemo(() => {
+    if (!featuredPlayer) return 'Jugadora';
+    return (featuredPlayer.apodo && featuredPlayer.apodo.trim()) ? featuredPlayer.apodo.trim() : featuredPlayer.nombre;
+  }, [featuredPlayer]);
+
   // Player roster for the Convocatoria theme
   const calledUpPlayers = useMemo(() => {
     if (activeMatch?.convocatoria && Array.isArray(activeMatch.convocatoria) && activeMatch.convocatoria.length > 0) {
@@ -800,7 +805,7 @@ export default function MatchdayPosterModal({
             <span className="text-[10px] font-bold">Sin foto de jugadora</span>
           </div>
           <div className="mt-1 bg-amber-400 text-slate-950 font-black text-[11px] px-3 py-0.5 rounded-full uppercase shadow">
-            #{featuredPlayer?.dorsal || '—'} {featuredPlayer?.nombre || 'Jugadora'}
+            #{featuredPlayer?.dorsal || '—'} {featuredPlayerApodo}
           </div>
         </div>
       );
@@ -821,7 +826,7 @@ export default function MatchdayPosterModal({
           />
           {characterMode === 'squad_player' && featuredPlayer && (
             <div className="absolute -bottom-2 bg-amber-400 text-slate-950 font-black text-[10px] sm:text-[11px] px-3 py-0.5 rounded-full uppercase shadow-lg border border-white">
-              #{featuredPlayer.dorsal || '—'} {featuredPlayer.nombre}
+              #{featuredPlayer.dorsal || '—'} {featuredPlayerApodo}
             </div>
           )}
         </div>
@@ -850,7 +855,7 @@ export default function MatchdayPosterModal({
           </div>
           {characterMode === 'squad_player' && featuredPlayer && (
             <div className="mt-1.5 bg-blue-600 text-white font-black text-[10px] sm:text-[11px] px-3 py-0.5 rounded-full uppercase shadow border border-blue-400">
-              #{featuredPlayer.dorsal || '—'} {featuredPlayer.nombre}
+              #{featuredPlayer.dorsal || '—'} {featuredPlayerApodo}
             </div>
           )}
         </div>
@@ -879,7 +884,7 @@ export default function MatchdayPosterModal({
           </div>
           {characterMode === 'squad_player' && featuredPlayer && (
             <div className="mt-1.5 bg-amber-400 text-slate-950 font-black text-[10px] sm:text-[11px] px-3 py-0.5 rounded-full uppercase shadow">
-              #{featuredPlayer.dorsal || '—'} {featuredPlayer.nombre}
+              #{featuredPlayer.dorsal || '—'} {featuredPlayerApodo}
             </div>
           )}
         </div>
@@ -902,7 +907,7 @@ export default function MatchdayPosterModal({
           </div>
           {characterMode === 'squad_player' && featuredPlayer && (
             <div className="mt-1.5 bg-amber-400 text-slate-950 font-black text-[10px] sm:text-[11px] px-3 py-0.5 rounded-full uppercase shadow">
-              #{featuredPlayer.dorsal || '—'} {featuredPlayer.nombre}
+              #{featuredPlayer.dorsal || '—'} {featuredPlayerApodo}
             </div>
           )}
         </div>
@@ -920,7 +925,7 @@ export default function MatchdayPosterModal({
         />
         {characterMode === 'squad_player' && featuredPlayer && (
           <div className="mt-1 bg-amber-400 text-slate-950 font-black text-[10px] sm:text-[11px] px-3 py-0.5 rounded-full uppercase shadow">
-            #{featuredPlayer.dorsal || '—'} {featuredPlayer.nombre}
+            #{featuredPlayer.dorsal || '—'} {featuredPlayerApodo}
           </div>
         )}
       </div>
@@ -1500,7 +1505,7 @@ export default function MatchdayPosterModal({
                   >
                     {players.map((p) => (
                       <option key={p.id} value={p.id}>
-                        #{p.dorsal || '—'} {p.nombre} {p.apellidos || ''} ({p.posicion || 'Jugadora'})
+                        #{p.dorsal || '—'} {(p.apodo && p.apodo.trim()) ? p.apodo.trim() : p.nombre} ({p.posicion || 'Jugadora'})
                       </option>
                     ))}
                   </select>
@@ -2316,7 +2321,7 @@ export default function MatchdayPosterModal({
                           crossOrigin="anonymous"
                         />
                         <div className="absolute bottom-1 right-2 bg-[#06142e]/90 border border-cyan-400/40 px-2 py-0.5 rounded-lg text-[8px] font-black text-cyan-200 uppercase tracking-wider shadow">
-                          {featuredPlayer ? `${featuredPlayer.nombre} #${featuredPlayer.dorsal}` : 'MATCHDAY'}
+                          {featuredPlayer ? `${featuredPlayerApodo} #${featuredPlayer.dorsal}` : 'MATCHDAY'}
                         </div>
                       </div>
                     ) : (
