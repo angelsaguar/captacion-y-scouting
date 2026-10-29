@@ -120,6 +120,7 @@ export default function MatchdayPosterModal({
   teamName,
   players
 }: MatchdayPosterModalProps) {
+  const isFemaleTeam = (teamName || '').trim().toUpperCase() === 'SENIOR FEMENINO' || (teamName || '').toUpperCase().includes('FEMENIN');
   // Selected match
   const [selectedMatchId, setSelectedMatchId] = useState<string>(currentMatch?.id || '');
 
@@ -188,9 +189,9 @@ export default function MatchdayPosterModal({
   }, [players, selectedPlayerId]);
 
   const featuredPlayerApodo = useMemo(() => {
-    if (!featuredPlayer) return 'Jugadora';
+    if (!featuredPlayer) return isFemaleTeam ? 'Jugadora' : 'Jugador';
     return (featuredPlayer.apodo && featuredPlayer.apodo.trim()) ? featuredPlayer.apodo.trim() : featuredPlayer.nombre;
-  }, [featuredPlayer]);
+  }, [featuredPlayer, isFemaleTeam]);
 
   // Player roster for the Convocatoria theme
   const calledUpPlayers = useMemo(() => {
@@ -802,7 +803,7 @@ export default function MatchdayPosterModal({
         <div className="relative my-auto flex flex-col items-center">
           <div className="w-32 h-32 sm:w-36 sm:h-36 rounded-2xl overflow-hidden border-2 border-amber-400 shadow-2xl bg-slate-900 flex flex-col items-center justify-center text-slate-400">
             <Users className="w-12 h-12 text-slate-500 mb-1" />
-            <span className="text-[10px] font-bold">Sin foto de jugadora</span>
+            <span className="text-[10px] font-bold">Sin foto de {isFemaleTeam ? 'jugadora' : 'jugador'}</span>
           </div>
           <div className="mt-1 bg-amber-400 text-slate-950 font-black text-[11px] px-3 py-0.5 rounded-full uppercase shadow">
             #{featuredPlayer?.dorsal || '—'} {featuredPlayerApodo}
@@ -1496,7 +1497,7 @@ export default function MatchdayPosterModal({
               {characterMode === 'squad_player' && (
                 <div className="pt-2 border-t border-slate-800/80">
                   <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                    Seleccionar Jugadora de la Plantilla:
+                    Seleccionar {isFemaleTeam ? 'Jugadora' : 'Jugador'} de la Plantilla:
                   </span>
                   <select
                     value={selectedPlayerId}
@@ -1505,7 +1506,7 @@ export default function MatchdayPosterModal({
                   >
                     {players.map((p) => (
                       <option key={p.id} value={p.id}>
-                        #{p.dorsal || '—'} {(p.apodo && p.apodo.trim()) ? p.apodo.trim() : p.nombre} ({p.posicion || 'Jugadora'})
+                        #{p.dorsal || '—'} {(p.apodo && p.apodo.trim()) ? p.apodo.trim() : p.nombre} ({p.posicion || (isFemaleTeam ? 'Jugadora' : 'Jugador')})
                       </option>
                     ))}
                   </select>

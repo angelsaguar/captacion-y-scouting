@@ -148,6 +148,15 @@ export const calculateDefaultCitacionHora = (matchHora: string): string => {
 
 export default function Partidos() {
   const [selectedTeam, setSelectedTeam] = useState<string>(CLUB_TEAMS[0]);
+  const isFemaleTeam = selectedTeam.trim().toUpperCase() === 'SENIOR FEMENINO' || selectedTeam.toUpperCase().includes('FEMENIN');
+  const playerNoun = isFemaleTeam ? 'jugadora' : 'jugador';
+  const playerNounPlural = isFemaleTeam ? 'jugadoras' : 'jugadores';
+  const playerNounUpper = isFemaleTeam ? 'JUGADORA' : 'JUGADOR';
+  const playerNounPluralUpper = isFemaleTeam ? 'JUGADORAS' : 'JUGADORES';
+  const convocadoNoun = isFemaleTeam ? 'convocada' : 'convocado';
+  const convocadosNoun = isFemaleTeam ? 'convocadas' : 'convocados';
+  const convocadoNounUpper = isFemaleTeam ? 'CONVOCADA' : 'CONVOCADO';
+  const convocadosNounUpper = isFemaleTeam ? 'CONVOCADAS' : 'CONVOCADOS';
   const matchDuration = getCategoryMatchDuration(selectedTeam);
   const [matches, setMatches] = useState<Match[]>([]);
   const [players, setPlayers] = useState<any[]>([]);
@@ -462,6 +471,12 @@ export default function Partidos() {
       return numA - numB;
     });
 
+    const isTeamFemale = (teamName || '').trim().toUpperCase() === 'SENIOR FEMENINO' || (teamName || '').toUpperCase().includes('FEMENIN');
+    const plNounPlural = isTeamFemale ? 'jugadoras' : 'jugadores';
+    const plNounPluralUpper = isTeamFemale ? 'JUGADORAS' : 'JUGADORES';
+    const convNounUpper = isTeamFemale ? 'CONVOCADAS' : 'CONVOCADOS';
+    const convNoun = isTeamFemale ? 'convocadas' : 'convocados';
+
     const playersListText = sortedList.length > 0
       ? sortedList.map((p, index) => {
           const numStr = String(index + 1).padStart(2, '0');
@@ -470,7 +485,7 @@ export default function Partidos() {
           const nameToDisplay = (p.apodo && p.apodo.trim()) ? p.apodo.trim() : p.nombre;
           return `${numStr}. ${icon} ${dorsalStr} ${nameToDisplay}`.trim();
         }).join('\n')
-      : '_(No se han seleccionado jugadoras convocadas aún)_';
+      : `_(No se han seleccionado ${plNounPlural} ${convNoun} aún)_`;
 
     let formattedDate = match.fecha;
     if (match.fecha) {
@@ -504,7 +519,7 @@ export default function Partidos() {
 👕 *INDUMENTARIA:* ${citEquip || '1ª Equipación Oficial (Camiseta Blanca, Pantalón Verde, Medias Verdes) + Chándal'}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👥 *JUGADORAS CONVOCADAS (${sortedList.length})*:
+👥 *${plNounPluralUpper} ${convNounUpper} (${sortedList.length})*:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${playersListText}
 
@@ -1872,7 +1887,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                   <div className="space-y-2 text-xs">
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-[10px] text-slate-400">Sale Jugadora</label>
+                        <label className="text-[10px] text-slate-400">Sale {isFemaleTeam ? 'Jugadora' : 'Jugador'}</label>
                         <select
                           value={newSub.saleId}
                           onChange={(e) => setNewSub({...newSub, saleId: e.target.value})}
@@ -1880,12 +1895,12 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                         >
                           <option value="">Selecciona...</option>
                           {players.map(p => (
-                            <option key={`sale-${p.id}`} value={p.id}>{p.nombre} {p.apellidos} ({p.dorsal})</option>
+                            <option key={`sale-${p.id}`} value={p.id}>{(p.apodo && p.apodo.trim()) ? p.apodo.trim() : p.nombre} ({p.dorsal || '•'})</option>
                           ))}
                         </select>
                       </div>
                       <div>
-                        <label className="text-[10px] text-slate-400">Entra Jugadora</label>
+                        <label className="text-[10px] text-slate-400">Entra {isFemaleTeam ? 'Jugadora' : 'Jugador'}</label>
                         <select
                           value={newSub.entraId}
                           onChange={(e) => setNewSub({...newSub, entraId: e.target.value})}
@@ -1893,7 +1908,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                         >
                           <option value="">Selecciona...</option>
                           {players.map(p => (
-                            <option key={`entra-${p.id}`} value={p.id}>{p.nombre} {p.apellidos} ({p.dorsal})</option>
+                            <option key={`entra-${p.id}`} value={p.id}>{(p.apodo && p.apodo.trim()) ? p.apodo.trim() : p.nombre} ({p.dorsal || '•'})</option>
                           ))}
                         </select>
                       </div>
@@ -1915,11 +1930,11 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                         type="button"
                         onClick={() => {
                           if (!newSub.saleId || !newSub.entraId) {
-                            toast.error('Debes seleccionar ambas jugadoras para registrar el cambio.');
+                            toast.error(isFemaleTeam ? 'Debes seleccionar ambas jugadoras para registrar el cambio.' : 'Debes seleccionar ambos jugadores para registrar el cambio.');
                             return;
                           }
                           if (newSub.saleId === newSub.entraId) {
-                            toast.error('Una jugadora no puede cambiarse por sí misma.');
+                            toast.error(isFemaleTeam ? 'Una jugadora no puede cambiarse por sí misma.' : 'Un jugador no puede cambiarse por sí mismo.');
                             return;
                           }
                           setSubstitutions([...substitutions, { ...newSub }]);
@@ -1988,19 +2003,19 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                   <div className="flex items-center justify-between border-b border-slate-850 pb-2">
                     <h4 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-1.5">
                       <UserCheck className="w-4 h-4 text-blue-400" />
-                      <span>Rendimiento Individual de Jugadoras</span>
+                      <span>Rendimiento Individual de {isFemaleTeam ? 'Jugadoras' : 'Jugadores'}</span>
                     </h4>
-                    <span className="text-[10px] font-bold text-slate-400">({players.length} registradas)</span>
+                    <span className="text-[10px] font-bold text-slate-400">({players.length} {isFemaleTeam ? 'registradas' : 'registrados'})</span>
                   </div>
 
                   {players.length === 0 ? (
                     <div className="text-center py-12">
-                      <p className="text-xs text-slate-500 italic">No hay jugadoras en la plantilla activa para este equipo. Agrega jugadoras en el apartado Plantilla.</p>
+                      <p className="text-xs text-slate-500 italic">No hay {playerNounPlural} en la plantilla activa para este equipo. Agrega {playerNounPlural} en el apartado Plantilla.</p>
                     </div>
                   ) : (
                     <div className="space-y-2 max-h-[500px] overflow-y-auto overflow-x-auto pr-1">
                       <div className="min-w-[620px] space-y-2">
-                      {/* Aviso y Contador de Jugadoras Titulares (Once Inicial) */}
+                      {/* Aviso y Contador de Jugadores/as Titulares (Once Inicial) */}
                       {(() => {
                         const titularesCount = matchPlayerStats.filter(s => s.titular).length;
                         if (titularesCount === 11) {
@@ -2008,7 +2023,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                             <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 text-xs font-bold shadow-sm animate-in fade-in">
                               <div className="flex items-center gap-2">
                                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                                <span>¡Aviso: Once inicial completo! Ya tienes 11 jugadoras puestas de titulares.</span>
+                                <span>¡Aviso: Once inicial completo! Ya tienes 11 {isFemaleTeam ? 'jugadoras puestas' : 'jugadores puestos'} de titulares.</span>
                               </div>
                               <span className="bg-emerald-500 text-slate-950 px-2 py-0.5 rounded font-black text-[10px] font-mono shrink-0">
                                 11 / 11 TITULARES
@@ -2021,7 +2036,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                             <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-amber-950/80 border border-amber-500/50 text-amber-300 text-xs font-bold shadow-sm animate-in fade-in">
                               <div className="flex items-center gap-2">
                                 <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                                <span>Aviso: Tienes {titularesCount} titulares seleccionadas (el máximo reglamentario es 11). Desmarca una antes de guardar.</span>
+                                <span>Aviso: Tienes {titularesCount} titulares {isFemaleTeam ? 'seleccionadas' : 'seleccionados'} (el máximo reglamentario es 11). Desmarca {isFemaleTeam ? 'una' : 'uno'} antes de guardar.</span>
                               </div>
                               <span className="bg-amber-500 text-slate-950 px-2 py-0.5 rounded font-black text-[10px] font-mono shrink-0">
                                 {titularesCount} / 11 TITULARES
@@ -2033,7 +2048,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                           <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-400">
                             <div className="flex items-center gap-1.5">
                               <Users className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                              <span>Alineación titular: <strong className="text-blue-300">{titularesCount} de 11</strong> puestas de titulares {11 - titularesCount > 0 ? `(faltan ${11 - titularesCount} para completar el once)` : ''}</span>
+                              <span>Alineación titular: <strong className="text-blue-300">{titularesCount} de 11</strong> {isFemaleTeam ? 'puestas' : 'puestos'} de titulares {11 - titularesCount > 0 ? `(faltan ${11 - titularesCount} para completar el once)` : ''}</span>
                             </div>
                             <span className="text-[10px] font-mono font-bold text-slate-400">
                               {titularesCount}/11 TIT
@@ -2044,13 +2059,13 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
                       {/* Grid Header */}
                       <div className="grid grid-cols-12 gap-1 px-2 py-1.5 text-[9px] font-black uppercase text-slate-500 tracking-wider">
-                        <div className="col-span-3">Jugadora</div>
+                        <div className="col-span-3">{isFemaleTeam ? 'Jugadora' : 'Jugador'}</div>
                         <div className="col-span-1 text-center" title="Titular">TIT</div>
                         <div className="col-span-1 text-center" title="Suplente">SUP</div>
                         <div className="col-span-2 text-center" title="Minutos Jugados">MIN</div>
                         <div className="col-span-1 text-center" title="Goles Marcados">GOL</div>
                         <div className="col-span-1 text-center" title="Asistencias">ASI</div>
-                        <div className="col-span-1 text-center" title="Goles Encajados (Portera)">ENC</div>
+                        <div className="col-span-1 text-center" title={`Goles Encajados (${isFemaleTeam ? 'Portera' : 'Portero'})`}>ENC</div>
                         <div className="col-span-1 text-center" title="Tarjetas Amarillas">TA</div>
                         <div className="col-span-1 text-center" title="Tarjetas Rojas">TR</div>
                       </div>
@@ -2340,7 +2355,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                       <div className="flex items-center gap-2 text-xs">
                         <span className="w-3 h-3 rounded-full bg-amber-400 animate-pulse" />
                         <span className="font-extrabold text-amber-300 uppercase tracking-wide">
-                          Cartel Vistoso Estilo FIFA EA FC Convocatoria ({selectedPlayersList.length} Convocadas)
+                          Cartel Vistoso Estilo FIFA EA FC Convocatoria ({selectedPlayersList.length} {isFemaleTeam ? 'Convocadas' : 'Convocados'})
                         </span>
                       </div>
 
@@ -2509,19 +2524,19 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                             <div className="flex items-center gap-1.5">
                               <Trophy className="w-4 h-4 text-slate-200" />
                               <h3 className="text-xs font-black text-slate-200 uppercase tracking-wider">
-                                JUGADORAS CONVOCADAS ({selectedPlayersList.length})
+                                {playerNounPluralUpper} {convocadosNounUpper} ({selectedPlayersList.length})
                               </h3>
                             </div>
                           </div>
 
                           {selectedPlayersList.length === 0 ? (
                             <div className="p-6 text-center text-slate-400 italic text-xs bg-slate-950/40 rounded-2xl border border-slate-800">
-                              No se han seleccionado jugadoras convocadas aún.
+                              No se han seleccionado {playerNounPlural} {convocadosNoun} aún.
                             </div>
                           ) : (
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                               {selectedPlayersList.map((player) => {
-                                const pos = player.posicion || 'Jugadora';
+                                const pos = player.posicion || (isFemaleTeam ? 'Jugadora' : 'Jugador');
                                 const isPor = pos.toLowerCase().includes('port') || pos.toLowerCase().includes('gk');
                                 const isDef = pos.toLowerCase().includes('def') || pos.toLowerCase().includes('lat') || pos.toLowerCase().includes('centr');
                                 const isMed = pos.toLowerCase().includes('med') || pos.toLowerCase().includes('pivote') || pos.toLowerCase().includes('mc');
@@ -2727,7 +2742,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                           <div className="mb-4">
                             <div className="flex items-center justify-between border-b border-slate-300 pb-1 mb-3">
                               <span className="text-xs font-black text-blue-950 uppercase tracking-wide">
-                                RELACIÓN DE JUGADORAS CONVOCADAS ({selectedPlayersList.length})
+                                RELACIÓN DE {playerNounPluralUpper} {convocadosNounUpper} ({selectedPlayersList.length})
                               </span>
                               <span className="text-[10px] font-bold text-slate-500">
                                 Con fotografía oficial de plantilla
@@ -2736,7 +2751,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
                             <div className="grid grid-cols-2 gap-2.5">
                               {selectedPlayersList.map((player) => {
-                                const pos = player.posicion || 'Jugadora';
+                                const pos = player.posicion || (isFemaleTeam ? 'Jugadora' : 'Jugador');
                                 const isPor = pos.toLowerCase().includes('port') || pos.toLowerCase().includes('gk');
                                 const isDef = pos.toLowerCase().includes('def') || pos.toLowerCase().includes('lat') || pos.toLowerCase().includes('centr');
                                 const isMed = pos.toLowerCase().includes('med') || pos.toLowerCase().includes('pivote') || pos.toLowerCase().includes('mc');
@@ -2781,7 +2796,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                                         {(player.apodo && player.apodo.trim()) ? player.apodo.trim() : player.nombre}
                                       </p>
                                       <p className="text-[9px] text-slate-500 font-medium truncate">
-                                        {player.posicion || 'Jugadora'}
+                                        {player.posicion || (isFemaleTeam ? 'Jugadora' : 'Jugador')}
                                       </p>
                                     </div>
                                   </div>
@@ -2832,15 +2847,15 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                 ) : (
                   /* TAB 2: EDITOR DE DATOS Y CONVOCADAS + WHATSAPP CORPORATIVO */
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-                    {/* Col 1: Jugadoras de la Plantilla (4 Cols) */}
+                    {/* Col 1: Jugadores/as de la Plantilla (4 Cols) */}
                     <div className="lg:col-span-4 bg-slate-950/50 border border-slate-850 p-4 rounded-2xl flex flex-col space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                   <div className="flex items-center gap-2">
                     <Users className="w-4 h-4 text-green-400" />
-                    <span className="text-xs font-extrabold text-white uppercase tracking-wider">Selección de Convocadas</span>
+                    <span className="text-xs font-extrabold text-white uppercase tracking-wider">Selección de {convocadosNounUpper}</span>
                   </div>
                   <span className="bg-green-500/10 text-green-400 border border-green-500/20 text-[10px] font-black px-2 py-0.5 rounded-full">
-                    {selectedPlayersList.length} / {players.length} Convocadas
+                    {selectedPlayersList.length} / {players.length} {convocadosNoun}
                   </span>
                 </div>
 
@@ -2859,7 +2874,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
                   <div className="flex items-center justify-between gap-1 text-[10px]">
                     <div className="flex items-center gap-1 overflow-x-auto py-1 max-w-[220px]">
-                      {['TODAS', 'Portera', 'Defensa', 'Centrocampista', 'Delantera'].map(pos => (
+                      {['TODAS', isFemaleTeam ? 'Portera' : 'Portero', 'Defensa', 'Centrocampista', isFemaleTeam ? 'Delantera' : 'Delantero'].map(pos => (
                         <button
                           key={pos}
                           type="button"
@@ -2870,7 +2885,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                               : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
                           }`}
                         >
-                          {pos === 'TODAS' ? 'Todas' : pos.substring(0, 3)}
+                          {pos === 'TODAS' ? (isFemaleTeam ? 'Todas' : 'Todos') : pos.substring(0, 3)}
                         </button>
                       ))}
                     </div>
@@ -2881,11 +2896,11 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                         onClick={() => {
                           setSelectedConvocadas(players.map(p => p.id));
                           setIsMsgCustomEdited(false);
-                          toast.success('Todas las jugadoras seleccionadas.');
+                          toast.success(isFemaleTeam ? 'Todas las jugadoras seleccionadas.' : 'Todos los jugadores seleccionados.');
                         }}
                         className="text-[9px] text-green-400 hover:underline font-bold"
                       >
-                        Todas
+                        {isFemaleTeam ? 'Todas' : 'Todos'}
                       </button>
                       <span className="text-slate-600">|</span>
                       <button
@@ -2897,7 +2912,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                         }}
                         className="text-[9px] text-slate-400 hover:underline font-bold"
                       >
-                        Ninguna
+                        {isFemaleTeam ? 'Ninguna' : 'Ninguno'}
                       </button>
                     </div>
                   </div>
@@ -2907,7 +2922,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                 <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1">
                   {players.length === 0 ? (
                     <div className="p-8 text-center text-slate-500 italic text-xs">
-                      No hay jugadoras registradas en la plantilla de este equipo.
+                      No hay {playerNounPlural} {isFemaleTeam ? 'registradas' : 'registrados'} en la plantilla de este equipo.
                     </div>
                   ) : (
                     players
@@ -3009,7 +3024,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                                     </div>
                                   )}
                                 </div>
-                                <p className="text-[9px] text-slate-500 uppercase font-semibold">{p.posicion || 'Jugadora'}</p>
+                                <p className="text-[9px] text-slate-500 uppercase font-semibold">{p.posicion || (isFemaleTeam ? 'Jugadora' : 'Jugador')}</p>
                               </div>
                             </div>
 
@@ -3442,7 +3457,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                       value={editingMatch.observaciones || ''}
                       onChange={(e) => setEditingMatch({ ...editingMatch, observaciones: e.target.value })}
                       className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1 h-16"
-                      placeholder="Instrucciones para las jugadoras, recomendación de llegada, etc."
+                      placeholder={`Instrucciones para ${isFemaleTeam ? 'las jugadoras' : 'los jugadores'}, recomendación de llegada, etc.`}
                     />
                   </div>
                 </div>

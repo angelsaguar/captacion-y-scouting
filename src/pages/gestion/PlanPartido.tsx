@@ -60,6 +60,15 @@ interface MatchPlan {
 
 export default function PlanPartido() {
   const [selectedTeam, setSelectedTeam] = useState<string>(CLUB_TEAMS[0]);
+  const isFemaleTeam = selectedTeam.trim().toUpperCase() === 'SENIOR FEMENINO' || selectedTeam.toUpperCase().includes('FEMENIN');
+  const playerNoun = isFemaleTeam ? 'jugadora' : 'jugador';
+  const playerNounPlural = isFemaleTeam ? 'jugadoras' : 'jugadores';
+  const playerNounUpper = isFemaleTeam ? 'JUGADORA' : 'JUGADOR';
+  const playerNounPluralUpper = isFemaleTeam ? 'JUGADORAS' : 'JUGADORES';
+  const convocadoNoun = isFemaleTeam ? 'convocada' : 'convocado';
+  const convocadosNoun = isFemaleTeam ? 'convocadas' : 'convocados';
+  const convocadoNounUpper = isFemaleTeam ? 'CONVOCADA' : 'CONVOCADO';
+  const convocadosNounUpper = isFemaleTeam ? 'CONVOCADAS' : 'CONVOCADOS';
   const [matches, setMatches] = useState<Match[]>([]);
   const [roster, setRoster] = useState<TeamPlayer[]>([]);
   const [plans, setPlans] = useState<MatchPlan[]>([]);
@@ -431,17 +440,17 @@ export default function PlanPartido() {
           .map((id, index) => {
             const pl = roster.find(p => p.id === id);
             const displayName = (pl.apodo && pl.apodo.trim()) ? pl.apodo.trim() : pl.nombre;
-            return `🔹 ${pl.dorsal ? `#${pl.dorsal} ` : `Jugadora ${index + 1}`}: ${displayName}`;
+            return `🔹 ${pl.dorsal ? `#${pl.dorsal} ` : `${isFemaleTeam ? 'Jugadora' : 'Jugador'} ${index + 1}`}: ${displayName}`;
           })
           .filter(Boolean)
           .join('\n')
-      : 'No se han seleccionado jugadoras convocadas.';
+      : `No se han seleccionado ${playerNounPlural} ${convocadosNoun}.`;
 
     const initialMsg = `📢 *FUNDACION. AFE - CONVOCATORIA OFICIAL* 📢\n\n` +
       `⚔️ *Rival:* VS ${activePlan.rivalName}\n` +
       `📅 *Fecha:* ${activePlan.fechaPartido}\n` +
       `👕 *1ª Equipación Oficial:* Camiseta Blanca • Pantalón Verde • Medias Verdes\n\n` +
-      `📋 *Jugadoras Convocadas:* \n${listText}\n\n` +
+      `📋 *${isFemaleTeam ? 'Jugadoras Convocadas' : 'Jugadores Convocados'}:* \n${listText}\n\n` +
       `👔 *Cuerpo Técnico FUNDACION. AFE* • Acudir con la equipación oficial 1 hora antes del encuentro. ¡Vamos equipo! 💪🟢⚪`;
 
     setWhatsappConvMessage(initialMsg);
@@ -597,9 +606,9 @@ export default function PlanPartido() {
             <div className="col-span-full bg-slate-950 p-4 rounded-xl border border-slate-850 space-y-3">
               <span className="text-xs font-bold text-slate-300 uppercase tracking-widest flex items-center gap-1.5">
                 <UserCheck className="w-4 h-4 text-emerald-500" />
-                <span>Construir Convocatoria ({formData.convocatoria.length} Jugadoras Seleccionadas)</span>
+                <span>Construir Convocatoria ({formData.convocatoria.length} {isFemaleTeam ? 'Jugadoras Seleccionadas' : 'Jugadores Seleccionados'})</span>
               </span>
-              <p className="text-[10px] text-slate-500">Haz clic sobre las jugadoras del equipo para convocarlas al encuentro.</p>
+              <p className="text-[10px] text-slate-500">Haz clic sobre {isFemaleTeam ? 'las jugadoras' : 'los jugadores'} del equipo para {isFemaleTeam ? 'convocarlas' : 'convocarlos'} al encuentro.</p>
               
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 pt-1">
                 {roster.map(p => {
@@ -616,7 +625,7 @@ export default function PlanPartido() {
                       }`}
                     >
                       <span className="truncate">
-                        {p.dorsal ? `#${p.dorsal} ` : ''}{p.nombre}
+                        {p.dorsal ? `#${p.dorsal} ` : ''}{(p.apodo && p.apodo.trim()) ? p.apodo.trim() : p.nombre}
                       </span>
                       <span className="text-[8px] opacity-60 ml-1 uppercase">{p.posicion.substring(0,3)}</span>
                     </button>
@@ -624,7 +633,7 @@ export default function PlanPartido() {
                 })}
                 {roster.length === 0 && (
                   <div className="col-span-full py-4 text-center text-slate-650 text-xs font-semibold">
-                    No hay jugadoras cargadas en la plantilla.
+                    No hay {playerNounPlural} {isFemaleTeam ? 'cargadas' : 'cargados'} en la plantilla.
                   </div>
                 )}
               </div>
@@ -842,7 +851,7 @@ export default function PlanPartido() {
               <div className="bg-slate-950/60 border border-slate-850 rounded-2xl p-4 space-y-2.5 print:bg-gray-100 print:border-gray-300 print:text-black">
                 <h5 className="font-extrabold text-white text-[10px] uppercase tracking-wider flex items-center gap-1.5 text-emerald-400 border-b border-slate-900 pb-2 print:text-black print:border-gray-300">
                   <UserCheck className="w-4 h-4 text-emerald-500 print:text-black" />
-                  <span>Convocatoria de Jugadoras ({activePlan.convocatoria?.length || 0})</span>
+                  <span>Convocatoria de {playerNounPlural} ({activePlan.convocatoria?.length || 0})</span>
                 </h5>
                 {activePlan.convocatoria && activePlan.convocatoria.length > 0 ? (
                   <div className="flex flex-wrap gap-2 text-xs font-mono font-bold">
@@ -924,7 +933,7 @@ export default function PlanPartido() {
             </div>
             
             <p className="text-xs text-slate-400">
-              Copia o edita este mensaje listo para enviar al grupo de WhatsApp del equipo o a las jugadoras:
+              Copia o edita este mensaje listo para enviar al grupo de WhatsApp del equipo o a {isFemaleTeam ? 'las jugadoras' : 'los jugadores'}:
             </p>
 
             <div className="space-y-1.5">
@@ -1027,7 +1036,7 @@ export default function PlanPartido() {
 
             <div className="space-y-4 my-6">
               <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider border-b-2 border-slate-950 pb-2 flex items-center justify-between">
-                <span>Jugadoras Convocadas</span>
+                <span>{isFemaleTeam ? 'Jugadoras Convocadas' : 'Jugadores Convocados'}</span>
                 <span className="bg-slate-900 text-white px-2.5 py-0.5 rounded-full text-xs font-extrabold">Total: {activePlan.convocatoria?.length || 0}</span>
               </h3>
 
@@ -1050,7 +1059,7 @@ export default function PlanPartido() {
                   })}
                 </div>
               ) : (
-                <p className="text-xs text-slate-500 italic text-center py-12">No se han seleccionado jugadoras convocadas todavía.</p>
+                <p className="text-xs text-slate-500 italic text-center py-12">No se han seleccionado {playerNounPlural} {convocadosNoun} todavía.</p>
               )}
             </div>
 
@@ -1154,7 +1163,7 @@ export default function PlanPartido() {
 
             <div className="max-w-2xl mx-auto space-y-4 my-6">
               <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider border-b-2 border-slate-950 pb-2 flex items-center justify-between">
-                <span>Jugadoras Convocadas</span>
+                <span>{isFemaleTeam ? 'Jugadoras Convocadas' : 'Jugadores Convocados'}</span>
                 <span className="bg-slate-900 text-white px-2.5 py-0.5 rounded-full text-xs font-extrabold">Total: {activePlan.convocatoria?.length || 0}</span>
               </h3>
 
@@ -1177,7 +1186,7 @@ export default function PlanPartido() {
                   })}
                 </div>
               ) : (
-                <p className="text-xs text-slate-500 italic text-center py-12">No se han seleccionado jugadoras convocadas todavía.</p>
+                <p className="text-xs text-slate-500 italic text-center py-12">No se han seleccionado {playerNounPlural} {convocadosNoun} todavía.</p>
               )}
             </div>
 
