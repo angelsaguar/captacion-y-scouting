@@ -139,6 +139,11 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
   useEffect(() => {
     if (!player) return;
 
+    const pos = (player.posicion || 'DELANTERO').toUpperCase();
+    const isGk = pos.includes('PORTERO') || pos.includes('GK') || pos.includes('GOALKEEPER');
+    const isDf = pos.includes('DEFENSA') || pos.includes('CENTRAL') || pos.includes('LATERAL') || pos.includes('DFC') || pos.includes('DF');
+    const isMf = pos.includes('MEDIO') || pos.includes('INTERIOR') || pos.includes('PUNTA') || pos.includes('MCO') || pos.includes('MC');
+
     // Load Physical Tests
     const savedPhys = localStorage.getItem('ud_poveda_physical_test_history');
     if (savedPhys) {
@@ -180,14 +185,28 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
             matchesArr.forEach((m: any) => {
               const pStat = m.estadisticas?.jugadoras_stats?.find((s: any) => 
                 s.playerId === player.id || 
+                (s.id && s.id === player.id) ||
                 (s.nombre && s.nombre.toLowerCase().trim() === `${player.nombre} ${player.apellidos}`.toLowerCase().trim()) ||
-                (s.nombre && s.nombre.toLowerCase().trim() === player.nombre.toLowerCase().trim())
+                (s.nombre && s.nombre.toLowerCase().trim() === player.nombre.toLowerCase().trim()) ||
+                isPlayerMatch(s, player)
               );
 
               const isConvocado = m.convocatoria && Array.isArray(m.convocatoria) && m.convocatoria.includes(player.id);
 
               if (pStat || isConvocado) {
                 const played = (pStat?.minutos && pStat.minutos > 0) || !!pStat?.titular || !!pStat?.suplente;
+                const dur = getCategoryMatchDuration(m.team_id || m.team_name || key.replace('team_matches_', '') || player.team || player.equipo_asignado);
+                let minutos = 0;
+                if (pStat?.minutos !== undefined && pStat?.minutos !== null) {
+                  minutos = Math.min(dur.totalMinutes, pStat.minutos);
+                } else if (played) {
+                  minutos = dur.totalMinutes;
+                }
+
+                const matchConceded = (pStat?.goles_encajados !== undefined && pStat?.goles_encajados !== null && pStat.goles_encajados > 0)
+                  ? Number(pStat.goles_encajados)
+                  : (isGk && played ? Number(m.goles_contra ?? (m.estadisticas?.totales_equipo?.goles_contra ?? 0)) : Number(pStat?.goles_encajados ?? 0));
+
                 foundMatches.push({
                   matchId: m.id || `${m.fecha}-${m.rival}`,
                   jornada: m.jornada || (m.jornada_numero ? `Jornada ${m.jornada_numero}` : 'J.Liga'),
@@ -200,18 +219,12 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
                   goles_favor: m.goles_favor ?? (m.estadisticas?.totales_equipo?.goles_favor ?? 0),
                   goles_contra: m.goles_contra ?? (m.estadisticas?.totales_equipo?.goles_contra ?? 0),
                   pStat: pStat || {},
-                  minutos: (() => {
-                    const dur = getCategoryMatchDuration(m.team_id || m.team_name || key.replace('team_matches_', '') || player.team || player.equipo_asignado);
-                    if (pStat?.minutos !== undefined && pStat?.minutos !== null) {
-                      return Math.min(dur.totalMinutes, pStat.minutos);
-                    }
-                    return played ? dur.totalMinutes : 0;
-                  })(),
+                  minutos,
                   titular: !!pStat?.titular,
                   suplente: !!pStat?.suplente,
                   convocado: true,
                   goles_metidos: pStat?.goles_metidos ?? 0,
-                  goles_encajados: pStat?.goles_encajados ?? 0,
+                  goles_encajados: matchConceded,
                   asistencias: pStat?.asistencias ?? 0,
                   recuperaciones_balon: pStat?.recuperaciones_balon ?? 0,
                   perdidas_balon: pStat?.perdidas_balon ?? 0,
@@ -242,11 +255,6 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
     });
 
     const uniqueMatches = Array.from(uniqueMatchesMap.values()).sort((a: any, b: any) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
-
-    const pos = (player.posicion || 'DELANTERO').toUpperCase();
-    const isGk = pos.includes('PORTERO') || pos.includes('GK');
-    const isDf = pos.includes('DEFENSA') || pos.includes('CENTRAL') || pos.includes('LATERAL') || pos.includes('DFC') || pos.includes('DF');
-    const isMf = pos.includes('MEDIO') || pos.includes('INTERIOR') || pos.includes('PUNTA') || pos.includes('MCO') || pos.includes('MC');
 
     if (uniqueMatches.length > 0 && uniqueMatches.some(m => m.played || m.minutos > 0)) {
       setPlayerMatches(uniqueMatches);
@@ -697,8 +705,10 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
   
   // Heatmap configuration based on position
   const pos = (player.posicion || 'DELANTERO').toUpperCase();
+  const isGk = pos.includes('PORTERO') || pos.includes('GK') || pos.includes('GOALKEEPER');
+  const isFemaleTeam = (player.team || player.equipo_asignado || '').toLowerCase().includes('femenino');
   let heatMapConfig = { left: '72%', top: '45%', area: 'Área Rival' };
-  if (pos.includes('PORTERO') || pos.includes('GK')) {
+  if (isGk) {
     heatMapConfig = { left: '12%', top: '50%', area: 'Área Propia' };
   } else if (pos.includes('CENTRAL') || pos.includes('DEFENSA')) {
     heatMapConfig = { left: '25%', top: '50%', area: 'Tercio Defensivo' };
@@ -719,7 +729,10 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
   const assists = stats.asistencias || 0;
   const yellowCards = stats.tarjetas_amarillas || 0;
   const redCards = stats.tarjetas_rojas || 0;
-  const attendance = stats.asistencia_entrenamientos || 0;
+  const attendance = stats.asistencia_entrenamientos !== undefined && stats.asistencia_entrenamientos !== null
+    ? stats.asistencia_entrenamientos
+    : (player.asistencia_entrenamientos ?? 100);
+  const golesEncajados = matchStatsSummary.goalsConceded ?? stats.goles_encajados ?? player.goles_encajados ?? 0;
 
   // Position-specific registered attributes for Page 2
   const specificGroups = POSITION_STRUCTURED_ATTRIBUTES[player.posicion] || [];
@@ -890,7 +903,9 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
               02
             </div>
             <div>
-              <h4 className="text-xs font-black uppercase text-white leading-none">PERFIL Y FICHA DE LA JUGADORA</h4>
+              <h4 className="text-xs font-black uppercase text-white leading-none">
+                PERFIL Y FICHA {isFemaleTeam ? 'DE LA JUGADORA' : 'DEL JUGADOR'}
+              </h4>
               <span className="text-[9px] text-slate-500 uppercase tracking-widest">DATOS PERSONALES Y VALORACIÓN DE ATRIBUTOS</span>
             </div>
           </div>
@@ -958,36 +973,50 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
           <div className="md:col-span-7 space-y-5 text-left">
             
             {/* Actual Stats Badges */}
-            <div className="grid grid-cols-4 gap-2.5">
+            <div className={`grid ${isGk ? 'grid-cols-5 gap-2' : 'grid-cols-4 gap-2.5'}`}>
               <div className="bg-slate-900 border border-blue-950/80 rounded-2xl p-2 flex flex-col items-center justify-center text-center min-h-[105px]">
                 <div className="w-11 h-11 rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-sky-400 text-lg font-black font-mono">
                   {stats.rating_general || 50}
                 </div>
-                <span className="text-[8px] font-black text-slate-300 uppercase tracking-wider mt-2 leading-tight">
+                <span className="text-[7.5px] font-black text-slate-300 uppercase tracking-wider mt-2 leading-tight">
                   VALORACIÓN MEDIA
                 </span>
               </div>
+
+              {isGk && (
+                <div className="bg-slate-900 border border-rose-950/80 rounded-2xl p-2 flex flex-col items-center justify-center text-center min-h-[105px]">
+                  <div className="w-11 h-11 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 text-lg font-black font-mono">
+                    {golesEncajados}
+                  </div>
+                  <span className="text-[7.5px] font-black text-rose-300 uppercase tracking-wider mt-2 leading-tight">
+                    GOLES ENCAJADOS
+                  </span>
+                </div>
+              )}
+
               <div className="bg-slate-900 border border-blue-950/80 rounded-2xl p-2 flex flex-col items-center justify-center text-center min-h-[105px]">
                 <div className="w-11 h-11 rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 text-lg font-black font-mono">
                   {goals}
                 </div>
-                <span className="text-[8px] font-black text-slate-300 uppercase tracking-wider mt-2 leading-tight">
+                <span className="text-[7.5px] font-black text-slate-300 uppercase tracking-wider mt-2 leading-tight">
                   GOLES MARCADOS
                 </span>
               </div>
+
               <div className="bg-slate-900 border border-blue-950/80 rounded-2xl p-2 flex flex-col items-center justify-center text-center min-h-[105px]">
                 <div className="w-11 h-11 rounded-full bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400 text-lg font-black font-mono">
                   {assists}
                 </div>
-                <span className="text-[8px] font-black text-slate-300 uppercase tracking-wider mt-2 leading-tight">
+                <span className="text-[7.5px] font-black text-slate-300 uppercase tracking-wider mt-2 leading-tight">
                   ASISTENCIAS DE GOL
                 </span>
               </div>
+
               <div className="bg-slate-900 border border-blue-950/80 rounded-2xl p-2 flex flex-col items-center justify-center text-center min-h-[105px]">
                 <div className="w-11 h-11 rounded-full bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-300 text-sm font-black font-mono">
                   {attendance}%
                 </div>
-                <span className="text-[7.5px] font-black text-slate-300 uppercase tracking-wider mt-2 leading-tight">
+                <span className="text-[7px] font-black text-slate-300 uppercase tracking-wider mt-2 leading-tight">
                   ASISTENCIA A ENTRENAMIENTOS
                 </span>
               </div>
@@ -1068,12 +1097,26 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
                 <div className="text-2xl font-black text-blue-400">{matchStatsSummary.totalMinutes} <span className="text-xs font-semibold text-slate-400">min</span></div>
               </div>
 
-              <div className="bg-slate-900/50 border border-blue-950 p-3 rounded-xl space-y-1">
-                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Goles / Asistencias</span>
-                <div className="text-2xl font-black text-indigo-400">
-                  {matchStatsSummary.goals} <span className="text-xs font-semibold text-slate-400">goles</span> • <span className="text-sky-400">{matchStatsSummary.assists}</span> <span className="text-xs font-semibold text-slate-400">asist.</span>
+              {isGk ? (
+                <div className="bg-slate-900/50 border border-blue-950 p-3 rounded-xl space-y-1">
+                  <span className="text-[9px] font-extrabold text-rose-400 uppercase tracking-wider flex items-center gap-1">
+                    <Shield className="w-3 h-3 text-rose-400" />
+                    Goles Encajados / Imbatibilidad
+                  </span>
+                  <div className="text-2xl font-black text-rose-400">
+                    {matchStatsSummary.goalsConceded} <span className="text-xs font-semibold text-slate-400">encajados</span>
+                    <span className="text-slate-600 mx-1.5">•</span>
+                    <span className="text-emerald-400">{matchStatsSummary.cleanSheets}</span> <span className="text-xs font-semibold text-slate-400">porterías 0</span>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="bg-slate-900/50 border border-blue-950 p-3 rounded-xl space-y-1">
+                  <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Goles / Asistencias</span>
+                  <div className="text-2xl font-black text-indigo-400">
+                    {matchStatsSummary.goals} <span className="text-xs font-semibold text-slate-400">goles</span> • <span className="text-sky-400">{matchStatsSummary.assists}</span> <span className="text-xs font-semibold text-slate-400">asist.</span>
+                  </div>
+                </div>
+              )}
 
               <div className="bg-slate-900/50 border border-blue-950 p-3 rounded-xl space-y-1">
                 <span className="text-[9px] font-extrabold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
@@ -1220,18 +1263,33 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
             </span>
           </div>
 
-          <div className="bg-slate-900/60 border border-indigo-950/60 p-3 rounded-xl space-y-1">
-            <span className="text-[8px] font-extrabold text-indigo-400 uppercase tracking-wider flex items-center gap-1">
-              <Target className="w-2.5 h-2.5" />
-              Goles + Asist. (G+A)
-            </span>
-            <div className="text-xl font-black text-white">
-              {matchStatsSummary.goals + matchStatsSummary.assists}
+          {isGk ? (
+            <div className="bg-slate-900/60 border border-rose-950/60 p-3 rounded-xl space-y-1">
+              <span className="text-[8px] font-extrabold text-rose-400 uppercase tracking-wider flex items-center gap-1">
+                <Shield className="w-2.5 h-2.5 text-rose-400" />
+                Goles Encajados
+              </span>
+              <div className="text-xl font-black text-rose-400">
+                {matchStatsSummary.goalsConceded}
+              </div>
+              <span className="text-[8px] text-slate-400 block font-semibold">
+                {matchStatsSummary.cleanSheets} porterías a cero
+              </span>
             </div>
-            <span className="text-[8px] text-slate-400 block font-semibold">
-              {matchStatsSummary.goals}G • {matchStatsSummary.assists}A
-            </span>
-          </div>
+          ) : (
+            <div className="bg-slate-900/60 border border-indigo-950/60 p-3 rounded-xl space-y-1">
+              <span className="text-[8px] font-extrabold text-indigo-400 uppercase tracking-wider flex items-center gap-1">
+                <Target className="w-2.5 h-2.5" />
+                Goles + Asist. (G+A)
+              </span>
+              <div className="text-xl font-black text-white">
+                {matchStatsSummary.goals + matchStatsSummary.assists}
+              </div>
+              <span className="text-[8px] text-slate-400 block font-semibold">
+                {matchStatsSummary.goals}G • {matchStatsSummary.assists}A
+              </span>
+            </div>
+          )}
 
           <div className="bg-slate-900/60 border border-sky-950/60 p-3 rounded-xl space-y-1">
             <span className="text-[8px] font-extrabold text-sky-400 uppercase tracking-wider flex items-center gap-1">
@@ -1288,7 +1346,7 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
                   <th className="py-1.5 px-1.5 text-center">Res.</th>
                   <th className="py-1.5 px-1.5 text-center">Rol</th>
                   <th className="py-1.5 px-1.5 text-center text-blue-400">Min</th>
-                  <th className="py-1.5 px-1.5 text-center text-indigo-400">G</th>
+                  <th className="py-1.5 px-1.5 text-center text-indigo-400">{isGk ? 'Enc 🥅' : 'G'}</th>
                   <th className="py-1.5 px-1.5 text-center text-sky-400">A</th>
                   <th className="py-1.5 px-1.5 text-center text-emerald-400">Rec ⚡</th>
                   <th className="py-1.5 px-1.5 text-center text-amber-400">Pér ⚠️</th>
@@ -1338,7 +1396,9 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
                         </span>
                       </td>
                       <td className="py-1 px-1.5 text-center font-bold text-blue-400 font-mono">{m.minutos ?? '-'}</td>
-                      <td className="py-1 px-1.5 text-center font-bold text-indigo-300 font-mono">{m.goles_metidos || 0}</td>
+                      <td className={cn("py-1 px-1.5 text-center font-bold font-mono", isGk ? "text-rose-400" : "text-indigo-300")}>
+                        {isGk ? (m.goles_encajados ?? 0) : (m.goles_metidos || 0)}
+                      </td>
                       <td className="py-1 px-1.5 text-center font-bold text-sky-300 font-mono">{m.asistencias || 0}</td>
                       <td className="py-1 px-1.5 text-center font-black text-emerald-400 font-mono">{m.recuperaciones_balon || 0}</td>
                       <td className="py-1 px-1.5 text-center font-black text-amber-400 font-mono">{m.perdidas_balon || 0}</td>
@@ -2285,6 +2345,8 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
 
 
 function FUTPlayerCard({ player, stats }: { player: TeamPlayer; stats: any }) {
+  const pos = (player.posicion || '').toUpperCase();
+  const isGk = pos.includes('PORTERO') || pos.includes('GK') || pos.includes('GOALKEEPER');
   const angles = [-90, -30, 30, 90, 150, 210].map(deg => deg * Math.PI / 180);
   const cx = 95;
   const cy = 105;
@@ -2457,14 +2519,28 @@ function FUTPlayerCard({ player, stats }: { player: TeamPlayer; stats: any }) {
               </div>
             </div>
 
-            {/* Goals */}
+            {/* Goals (Outfield) or Goals Conceded (Goalkeepers) */}
             <div className="bg-slate-950/60 border border-slate-900 rounded-lg p-1 flex items-center gap-1.5 text-left">
-              <div className="w-5 h-5 rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0">
-                <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full" />
+              <div className={cn(
+                "w-5 h-5 rounded-full flex items-center justify-center shrink-0",
+                isGk ? "bg-rose-500/10" : "bg-emerald-500/10"
+              )}>
+                {isGk ? (
+                  <Shield className="w-2.5 h-2.5 text-rose-400" />
+                ) : (
+                  <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full" />
+                )}
               </div>
               <div className="min-w-0">
-                <div className="text-[11px] font-black text-emerald-400 leading-none">{stats.goles}</div>
-                <div className="text-[6px] font-bold uppercase text-slate-500 tracking-wider">Goles</div>
+                <div className={cn(
+                  "text-[11px] font-black leading-none",
+                  isGk ? "text-rose-400" : "text-emerald-400"
+                )}>
+                  {isGk ? (stats.goles_encajados ?? 0) : stats.goles}
+                </div>
+                <div className="text-[6px] font-bold uppercase text-slate-500 tracking-wider">
+                  {isGk ? 'Encajados' : 'Goles'}
+                </div>
               </div>
             </div>
 
@@ -2803,6 +2879,10 @@ export default function Plantilla() {
                   minutos = dur.totalMinutes;
                 }
 
+                const matchConceded = (pStat?.goles_encajados !== undefined && pStat?.goles_encajados !== null && pStat.goles_encajados > 0)
+                  ? Number(pStat.goles_encajados)
+                  : (isGk && played ? Number(m.goles_contra ?? (m.estadisticas?.totales_equipo?.goles_contra ?? 0)) : Number(pStat?.goles_encajados ?? 0));
+
                 foundMatches.push({
                   matchId: m.id || `${m.fecha}-${m.rival}`,
                   jornada: m.jornada || (m.jornada_numero ? `Jornada ${m.jornada_numero}` : 'J.Liga'),
@@ -2820,7 +2900,7 @@ export default function Plantilla() {
                   suplente: !!pStat?.suplente,
                   convocado: true,
                   goles_metidos: pStat?.goles_metidos ?? 0,
-                  goles_encajados: pStat?.goles_encajados ?? 0,
+                  goles_encajados: matchConceded,
                   asistencias: pStat?.asistencias ?? 0,
                   recuperaciones_balon: pStat?.recuperaciones_balon ?? 0,
                   perdidas_balon: pStat?.perdidas_balon ?? 0,
@@ -5839,6 +5919,7 @@ export default function Plantilla() {
                         {(() => {
                           const stats = getPlayerStats(selectedPlayerProfile);
                           const age = selectedPlayerProfile.anio_nacimiento ? (2026 - parseInt(selectedPlayerProfile.anio_nacimiento as any)) : 15;
+                          const isGk = (selectedPlayerProfile.posicion || '').toUpperCase().includes('PORTERO') || (selectedPlayerProfile.posicion || '').toUpperCase().includes('GK') || (selectedPlayerProfile.posicion || '').toUpperCase().includes('GOALKEEPER');
                           return (
                             <>
                               {/* Dossier Header */}
@@ -5902,10 +5983,23 @@ export default function Plantilla() {
                                       <span className="text-slate-400 font-semibold">Minutos Totales:</span>
                                       <strong className="text-white">{stats.minutos_jugados} min</strong>
                                     </p>
-                                    <p className="flex justify-between">
-                                      <span className="text-slate-400 font-semibold">Goles Marcados:</span>
-                                      <strong className="text-emerald-400 font-bold">{stats.goles} goles</strong>
-                                    </p>
+                                    {isGk ? (
+                                      <>
+                                        <p className="flex justify-between">
+                                          <span className="text-slate-400 font-semibold">Goles Encajados:</span>
+                                          <strong className="text-rose-400 font-bold">{stats.goles_encajados ?? 0} encajados</strong>
+                                        </p>
+                                        <p className="flex justify-between">
+                                          <span className="text-slate-400 font-semibold">Porterías a Cero:</span>
+                                          <strong className="text-emerald-400 font-bold">{stats.cleanSheets ?? 0} partidos</strong>
+                                        </p>
+                                      </>
+                                    ) : (
+                                      <p className="flex justify-between">
+                                        <span className="text-slate-400 font-semibold">Goles Marcados:</span>
+                                        <strong className="text-emerald-400 font-bold">{stats.goles} goles</strong>
+                                      </p>
+                                    )}
                                     <p className="flex justify-between">
                                       <span className="text-slate-400 font-semibold">Asistencia Entrenos:</span>
                                       <strong className="text-amber-400">{stats.asistencia_entrenamientos}%</strong>
@@ -5985,6 +6079,7 @@ export default function Plantilla() {
                 {(() => {
                   const stats = getPlayerStats(selectedPlayerProfile);
                   const age = selectedPlayerProfile.anio_nacimiento ? (2026 - parseInt(selectedPlayerProfile.anio_nacimiento as any)) : 15;
+                  const isGk = (selectedPlayerProfile.posicion || '').toUpperCase().includes('PORTERO') || (selectedPlayerProfile.posicion || '').toUpperCase().includes('GK') || (selectedPlayerProfile.posicion || '').toUpperCase().includes('GOALKEEPER');
                   return (
                     <>
                       <div>
@@ -6022,7 +6117,14 @@ export default function Plantilla() {
                           <div className="text-xs space-y-1.5">
                             <p className="flex justify-between"><span className="text-slate-400">Partidos Disputados:</span> <strong className="text-white">{stats.partidos_jugados}</strong></p>
                             <p className="flex justify-between"><span className="text-slate-400">Minutos Jugados:</span> <strong className="text-white">{stats.minutos_jugados} min</strong></p>
-                            <p className="flex justify-between"><span className="text-slate-400">Goles Marcados:</span> <strong className="text-emerald-400 font-bold">{stats.goles} goles</strong></p>
+                            {isGk ? (
+                              <>
+                                <p className="flex justify-between"><span className="text-slate-400">Goles Encajados:</span> <strong className="text-rose-400 font-bold">{stats.goles_encajados ?? 0} encajados</strong></p>
+                                <p className="flex justify-between"><span className="text-slate-400">Porterías a Cero:</span> <strong className="text-emerald-400 font-bold">{stats.cleanSheets ?? 0} partidos</strong></p>
+                              </>
+                            ) : (
+                              <p className="flex justify-between"><span className="text-slate-400">Goles Marcados:</span> <strong className="text-emerald-400 font-bold">{stats.goles} goles</strong></p>
+                            )}
                             <p className="flex justify-between"><span className="text-slate-400">Asistencia Entrenos:</span> <strong className="text-amber-400">{stats.asistencia_entrenamientos}%</strong></p>
                           </div>
                         </div>
