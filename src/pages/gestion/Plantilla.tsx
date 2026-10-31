@@ -90,6 +90,16 @@ interface TeamPlayer {
   tarjetas_amarillas?: number;
   tarjetas_rojas?: number;
   asistencia_entrenamientos?: number;
+  titularidades?: number;
+  suplencias?: number;
+  recuperaciones_balon?: number;
+  perdidas_balon?: number;
+  faltas_favor?: number;
+  faltas_contra?: number;
+  corners_favor?: number;
+  corners_contra?: number;
+  cleanSheets?: number;
+  goles_encajados?: number;
   // FIFA attributes (0-99)
   ritmo?: number;
   tiro?: number;
@@ -301,20 +311,20 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         hasRealMatches: true
       });
     } else {
-      const fallbackPlayed = stats.partidos_jugados || 14;
-      const fallbackMin = stats.minutos_jugados || (fallbackPlayed * 78);
-      const fallbackGoals = stats.goles ?? (isGk ? 0 : isDf ? 1 : isMf ? 4 : 8);
-      const fallbackAssists = stats.asistencias ?? (isGk ? 0 : isDf ? 2 : isMf ? 6 : 3);
-      const fallbackRec = stats.recuperaciones_balon ?? Math.round(fallbackPlayed * (isGk ? 4.2 : isDf ? 8.6 : isMf ? 7.2 : 3.8));
-      const fallbackPer = stats.perdidas_balon ?? Math.round(fallbackPlayed * (isGk ? 1.1 : isDf ? 2.4 : isMf ? 3.9 : 4.5));
-      const fallbackFoulsWon = stats.faltas_favor ?? Math.round(fallbackPlayed * (isDf ? 1.4 : isMf ? 2.1 : 2.8));
-      const fallbackFoulsCom = stats.faltas_contra ?? Math.round(fallbackPlayed * (isDf ? 1.8 : isMf ? 1.5 : 0.8));
-      const fallbackCorn = stats.corners_favor ?? Math.round(fallbackPlayed * (isMf ? 1.8 : 0.6));
+      const fallbackPlayed = stats.partidos_jugados ?? 0;
+      const fallbackMin = stats.minutos_jugados ?? (fallbackPlayed > 0 ? fallbackPlayed * 78 : 0);
+      const fallbackGoals = stats.goles ?? (fallbackPlayed > 0 ? (isGk ? 0 : isDf ? 1 : isMf ? 4 : 8) : 0);
+      const fallbackAssists = stats.asistencias ?? (fallbackPlayed > 0 ? (isGk ? 0 : isDf ? 2 : isMf ? 6 : 3) : 0);
+      const fallbackRec = stats.recuperaciones_balon ?? (fallbackPlayed > 0 ? Math.round(fallbackPlayed * (isGk ? 4.2 : isDf ? 8.6 : isMf ? 7.2 : 3.8)) : 0);
+      const fallbackPer = stats.perdidas_balon ?? (fallbackPlayed > 0 ? Math.round(fallbackPlayed * (isGk ? 1.1 : isDf ? 2.4 : isMf ? 3.9 : 4.5)) : 0);
+      const fallbackFoulsWon = stats.faltas_favor ?? (fallbackPlayed > 0 ? Math.round(fallbackPlayed * (isDf ? 1.4 : isMf ? 2.1 : 2.8)) : 0);
+      const fallbackFoulsCom = stats.faltas_contra ?? (fallbackPlayed > 0 ? Math.round(fallbackPlayed * (isDf ? 1.8 : isMf ? 1.5 : 0.8)) : 0);
+      const fallbackCorn = stats.corners_favor ?? (fallbackPlayed > 0 ? Math.round(fallbackPlayed * (isMf ? 1.8 : 0.6)) : 0);
 
       setMatchStatsSummary({
         matchesPlayed: fallbackPlayed,
-        starts: stats.titularidades ?? Math.round(fallbackPlayed * 0.85),
-        subs: stats.suplencias ?? Math.round(fallbackPlayed * 0.15),
+        starts: stats.titularidades ?? (fallbackPlayed > 0 ? Math.round(fallbackPlayed * 0.85) : 0),
+        subs: stats.suplencias ?? (fallbackPlayed > 0 ? Math.round(fallbackPlayed * 0.15) : 0),
         totalMinutes: fallbackMin,
         goals: fallbackGoals,
         assists: fallbackAssists,
@@ -325,9 +335,9 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
         foulsWon: fallbackFoulsWon,
         foulsCommitted: fallbackFoulsCom,
         cornersWon: fallbackCorn,
-        cornersConceded: Math.round(fallbackPlayed * 0.4),
-        cleanSheets: stats.cleanSheets ?? (isGk || isDf ? 6 : 0),
-        goalsConceded: stats.goles_encajados ?? (isGk ? 11 : 0),
+        cornersConceded: fallbackPlayed > 0 ? Math.round(fallbackPlayed * 0.4) : 0,
+        cleanSheets: stats.cleanSheets ?? (fallbackPlayed > 0 && (isGk || isDf) ? 6 : 0),
+        goalsConceded: stats.goles_encajados ?? (fallbackPlayed > 0 && isGk ? 11 : 0),
         hasRealMatches: false
       });
 
@@ -2720,127 +2730,186 @@ export default function Plantilla() {
     const isDf = pos.includes('DEFENSA') || pos.includes('CENTRAL') || pos.includes('LATERAL') || pos.includes('DFC') || pos.includes('DF');
     const isMf = pos.includes('MEDIO') || pos.includes('INTERIOR') || pos.includes('PUNTA') || pos.includes('MCO') || pos.includes('MC');
     
-    // Retrieve real match and attendance session records for dynamic statistics aggregation
-    const matchesKey = `team_matches_${selectedTeam}`;
-    const sessionsKey = `team_sessions_${selectedTeam}`;
-    const savedMatches = localStorage.getItem(matchesKey);
-    const savedSessions = localStorage.getItem(sessionsKey);
+    // 1. Calculate training attendance dynamically across all team_sessions_ keys
+    let dynamicAttendance = player.asistencia_entrenamientos ?? 100;
+    let sessionsWithPlayer = 0;
+    let presentCount = 0;
 
-    const teamMatches = savedMatches ? JSON.parse(savedMatches) : [];
-    const teamSessions = savedSessions ? JSON.parse(savedSessions) : [];
-
-    // 1. Calculate training attendance dynamically from real training sessions
-    const trainingSessions = teamSessions.filter((s: any) => s.tipo === 'Entrenamiento');
-    let dynamicAttendance = player.asistencia_entrenamientos ?? 93;
-
-    if (trainingSessions.length > 0) {
-      let sessionsWithPlayer = 0;
-      let presentCount = 0;
-
-      trainingSessions.forEach((s: any) => {
-        const record = s.records?.find((r: any) => r.playerId === player.id);
-        if (record) {
-          sessionsWithPlayer += 1;
-          if (
-            record.status === 'Presente' || 
-            record.status === 'Retraso' || 
-            record.status === 'Justificado' || 
-            record.status === 'Lesionado'
-          ) {
-            presentCount += 1;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('team_sessions_')) {
+        try {
+          const sessionsArr = JSON.parse(localStorage.getItem(key) || '[]');
+          if (Array.isArray(sessionsArr)) {
+            sessionsArr.forEach((s: any) => {
+              if (s.tipo === 'Entrenamiento' && Array.isArray(s.records)) {
+                const record = s.records.find((r: any) => 
+                  r.playerId === player.id || 
+                  (r.id && r.id === player.id) ||
+                  (r.nombre && r.nombre.toLowerCase().trim() === `${player.nombre} ${player.apellidos}`.toLowerCase().trim()) ||
+                  (r.nombre && r.nombre.toLowerCase().trim() === player.nombre.toLowerCase().trim()) ||
+                  isPlayerMatch(r, player)
+                );
+                if (record) {
+                  sessionsWithPlayer += 1;
+                  if (
+                    record.status === 'Presente' || 
+                    record.status === 'Retraso' || 
+                    record.status === 'Justificado' || 
+                    record.status === 'Lesionado'
+                  ) {
+                    presentCount += 1;
+                  }
+                }
+              }
+            });
           }
+        } catch (e) {
+          console.error("Error reading sessions in getPlayerStats", e);
         }
-      });
-
-      if (sessionsWithPlayer > 0) {
-        dynamicAttendance = Math.round((presentCount / sessionsWithPlayer) * 100);
       }
     }
 
-    // 2. Calculate match statistics (matches played, minutes, goals, yellow cards, red cards, recoveries, turnovers, fouls, corners)
-    const finishedMatches = teamMatches.filter((m: any) => m.estado === 'Finalizado');
-    const hasFinishedMatches = finishedMatches.some((m: any) => 
-      m.estadisticas?.jugadoras_stats?.some((s: any) => s.playerId === player.id)
-    );
+    if (sessionsWithPlayer > 0) {
+      dynamicAttendance = Math.round((presentCount / sessionsWithPlayer) * 100);
+    }
 
-    let partidos_jugados = player.partidos_jugados ?? 14;
-    let minutos_jugados = player.minutos_jugados ?? (player.partidos_jugados ?? 14) * 82;
-    let goles = player.goles ?? (isGk ? 0 : isDf ? 1 : isMf ? 3 : 9);
-    let asistencias = player.asistencias ?? (isGk ? 0 : isDf ? 2 : isMf ? 6 : 4);
-    let tarjetas_amarillas = player.tarjetas_amarillas ?? 0;
-    let tarjetas_rojas = player.tarjetas_rojas ?? 0;
-    let recuperaciones_balon = Math.round(partidos_jugados * (isGk ? 4.2 : isDf ? 8.6 : isMf ? 7.2 : 3.8));
-    let perdidas_balon = Math.round(partidos_jugados * (isGk ? 1.1 : isDf ? 2.4 : isMf ? 3.9 : 4.5));
-    let faltas_favor = Math.round(partidos_jugados * (isDf ? 1.4 : isMf ? 2.1 : 2.8));
-    let faltas_contra = Math.round(partidos_jugados * (isDf ? 1.8 : isMf ? 1.5 : 0.8));
-    let corners_favor = Math.round(partidos_jugados * (isMf ? 1.8 : 0.6));
-    let corners_contra = Math.round(partidos_jugados * 0.4);
-    let titularidades = Math.round(partidos_jugados * 0.85);
-    let suplencias = Math.round(partidos_jugados * 0.15);
-    let cleanSheets = isGk || isDf ? 6 : 0;
-    let goles_encajados = isGk ? 11 : 0;
+    // 2. Load Match History and Granular Match Statistics across all team_matches_ keys
+    const foundMatches: any[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('team_matches_')) {
+        try {
+          const matchesArr = JSON.parse(localStorage.getItem(key) || '[]');
+          if (Array.isArray(matchesArr)) {
+            matchesArr.forEach((m: any) => {
+              const pStat = m.estadisticas?.jugadoras_stats?.find((s: any) => 
+                s.playerId === player.id || 
+                (s.id && s.id === player.id) ||
+                (s.nombre && s.nombre.toLowerCase().trim() === `${player.nombre} ${player.apellidos}`.toLowerCase().trim()) ||
+                (s.nombre && s.nombre.toLowerCase().trim() === player.nombre.toLowerCase().trim()) ||
+                isPlayerMatch(s, player)
+              );
 
-    if (hasFinishedMatches) {
-      let playedCount = 0;
-      let startsCount = 0;
-      let subsCount = 0;
-      let totalMin = 0;
-      let totalGoles = 0;
-      let totalAssists = 0;
-      let totalYellows = 0;
-      let totalReds = 0;
-      let totalRec = 0;
-      let totalPer = 0;
-      let totalFoulsWon = 0;
-      let totalFoulsCom = 0;
-      let totalCornWon = 0;
-      let totalCornCon = 0;
-      let totalGolesEnc = 0;
-      let csCount = 0;
+              const isConvocado = m.convocatoria && Array.isArray(m.convocatoria) && m.convocatoria.includes(player.id);
 
-      finishedMatches.forEach((m: any) => {
-        const pStat = m.estadisticas?.jugadoras_stats?.find((s: any) => s.playerId === player.id);
-        if (pStat) {
-          if (pStat.minutos > 0 || pStat.titular || pStat.suplente) {
-            playedCount += 1;
-            if (pStat.titular) startsCount += 1;
-            if (pStat.suplente) subsCount += 1;
-            totalMin += pStat.minutos || 0;
-            totalGoles += pStat.goles_metidos || 0;
-            totalAssists += pStat.asistencias || 0;
-            totalYellows += pStat.tarjetas_amarillas || 0;
-            totalReds += pStat.tarjetas_rojas || 0;
-            totalRec += pStat.recuperaciones_balon || 0;
-            totalPer += pStat.perdidas_balon || 0;
-            totalFoulsWon += pStat.faltas_favor || 0;
-            totalFoulsCom += pStat.faltas_contra || 0;
-            totalCornWon += pStat.corners_favor || 0;
-            totalCornCon += pStat.corners_contra || 0;
-            totalGolesEnc += pStat.goles_encajados || 0;
-            const catDur = getCategoryMatchDuration(m.team_id || m.team_name || selectedTeam);
-            if (m.goles_contra === 0 && (pStat.minutos || 0) >= catDur.halfMinutes) {
-              csCount += 1;
-            }
+              if (pStat || isConvocado) {
+                const played = (pStat?.minutos && pStat.minutos > 0) || !!pStat?.titular || !!pStat?.suplente;
+                const dur = getCategoryMatchDuration(m.team_id || m.team_name || key.replace('team_matches_', '') || player.team || player.equipo_asignado);
+                let minutos = 0;
+                if (pStat?.minutos !== undefined && pStat?.minutos !== null) {
+                  minutos = Math.min(dur.totalMinutes, pStat.minutos);
+                } else if (played) {
+                  minutos = dur.totalMinutes;
+                }
+
+                foundMatches.push({
+                  matchId: m.id || `${m.fecha}-${m.rival}`,
+                  jornada: m.jornada || (m.jornada_numero ? `Jornada ${m.jornada_numero}` : 'J.Liga'),
+                  fecha: m.fecha || 'Sin fecha',
+                  hora: m.hora || '',
+                  rival: m.rival || 'Rival Deportivo',
+                  condicion: m.condicion || 'Local',
+                  tipo: m.tipo || 'Liga',
+                  estado: m.estado || 'Finalizado',
+                  goles_favor: m.goles_favor ?? (m.estadisticas?.totales_equipo?.goles_favor ?? 0),
+                  goles_contra: m.goles_contra ?? (m.estadisticas?.totales_equipo?.goles_contra ?? 0),
+                  pStat: pStat || {},
+                  minutos,
+                  titular: !!pStat?.titular,
+                  suplente: !!pStat?.suplente,
+                  convocado: true,
+                  goles_metidos: pStat?.goles_metidos ?? 0,
+                  goles_encajados: pStat?.goles_encajados ?? 0,
+                  asistencias: pStat?.asistencias ?? 0,
+                  recuperaciones_balon: pStat?.recuperaciones_balon ?? 0,
+                  perdidas_balon: pStat?.perdidas_balon ?? 0,
+                  tarjetas_amarillas: pStat?.tarjetas_amarillas ?? 0,
+                  tarjetas_rojas: pStat?.tarjetas_rojas ?? 0,
+                  faltas_favor: pStat?.faltas_favor ?? 0,
+                  faltas_contra: pStat?.faltas_contra ?? 0,
+                  corners_favor: pStat?.corners_favor ?? 0,
+                  corners_contra: pStat?.corners_contra ?? 0,
+                  played
+                });
+              }
+            });
           }
+        } catch (e) {
+          console.error("Error reading matches in getPlayerStats", e);
+        }
+      }
+    }
+
+    // Deduplicate matches by date, rival, and matchday
+    const uniqueMatchesMap = new Map();
+    foundMatches.forEach(m => {
+      const uKey = `${m.fecha}-${m.rival}-${m.jornada}`;
+      if (!uniqueMatchesMap.has(uKey)) {
+        uniqueMatchesMap.set(uKey, m);
+      }
+    });
+
+    const uniqueMatches = Array.from(uniqueMatchesMap.values());
+    const playedMatches = uniqueMatches.filter((m: any) => m.played || m.minutos > 0);
+
+    let partidos_jugados = 0;
+    let titularidades = 0;
+    let suplencias = 0;
+    let minutos_jugados = 0;
+    let goles = 0;
+    let asistencias = 0;
+    let tarjetas_amarillas = 0;
+    let tarjetas_rojas = 0;
+    let recuperaciones_balon = 0;
+    let perdidas_balon = 0;
+    let faltas_favor = 0;
+    let faltas_contra = 0;
+    let corners_favor = 0;
+    let corners_contra = 0;
+    let cleanSheets = 0;
+    let goles_encajados = 0;
+
+    if (playedMatches.length > 0) {
+      playedMatches.forEach((m: any) => {
+        partidos_jugados += 1;
+        if (m.titular) titularidades += 1;
+        if (m.suplente) suplencias += 1;
+        minutos_jugados += m.minutos || 0;
+        goles += m.goles_metidos || 0;
+        asistencias += m.asistencias || 0;
+        tarjetas_amarillas += m.tarjetas_amarillas || 0;
+        tarjetas_rojas += m.tarjetas_rojas || 0;
+        recuperaciones_balon += m.recuperaciones_balon || 0;
+        perdidas_balon += m.perdidas_balon || 0;
+        faltas_favor += m.faltas_favor || 0;
+        faltas_contra += m.faltas_contra || 0;
+        corners_favor += m.corners_favor || 0;
+        corners_contra += m.corners_contra || 0;
+        goles_encajados += m.goles_encajados || 0;
+        const catDur = getCategoryMatchDuration(m.team_id || m.team_name || player.team || player.equipo_asignado || selectedTeam);
+        if (m.goles_contra === 0 && (m.minutos || 0) >= catDur.halfMinutes) {
+          cleanSheets += 1;
         }
       });
-
-      partidos_jugados = playedCount;
-      titularidades = startsCount;
-      suplencias = subsCount;
-      minutos_jugados = totalMin;
-      goles = totalGoles;
-      asistencias = totalAssists;
-      tarjetas_amarillas = totalYellows;
-      tarjetas_rojas = totalReds;
-      recuperaciones_balon = totalRec;
-      perdidas_balon = totalPer;
-      faltas_favor = totalFoulsWon;
-      faltas_contra = totalFoulsCom;
-      corners_favor = totalCornWon;
-      corners_contra = totalCornCon;
-      goles_encajados = totalGolesEnc;
-      cleanSheets = csCount;
+    } else {
+      // Fallback to real player fields if defined directly, or 0 (never invent 14 matches)
+      partidos_jugados = player.partidos_jugados ?? 0;
+      minutos_jugados = player.minutos_jugados ?? 0;
+      goles = player.goles ?? 0;
+      asistencias = player.asistencias ?? 0;
+      tarjetas_amarillas = player.tarjetas_amarillas ?? 0;
+      tarjetas_rojas = player.tarjetas_rojas ?? 0;
+      titularidades = player.titularidades ?? (partidos_jugados > 0 ? Math.round(partidos_jugados * 0.85) : 0);
+      suplencias = player.suplencias ?? (partidos_jugados > 0 ? Math.round(partidos_jugados * 0.15) : 0);
+      recuperaciones_balon = player.recuperaciones_balon ?? (partidos_jugados > 0 ? Math.round(partidos_jugados * (isGk ? 4.2 : isDf ? 8.6 : isMf ? 7.2 : 3.8)) : 0);
+      perdidas_balon = player.perdidas_balon ?? (partidos_jugados > 0 ? Math.round(partidos_jugados * (isGk ? 1.1 : isDf ? 2.4 : isMf ? 3.9 : 4.5)) : 0);
+      faltas_favor = player.faltas_favor ?? (partidos_jugados > 0 ? Math.round(partidos_jugados * (isDf ? 1.4 : isMf ? 2.1 : 2.8)) : 0);
+      faltas_contra = player.faltas_contra ?? (partidos_jugados > 0 ? Math.round(partidos_jugados * (isDf ? 1.8 : isMf ? 1.5 : 0.8)) : 0);
+      corners_favor = player.corners_favor ?? (partidos_jugados > 0 ? Math.round(partidos_jugados * (isMf ? 1.8 : 0.6)) : 0);
+      corners_contra = player.corners_contra ?? (partidos_jugados > 0 ? Math.round(partidos_jugados * 0.4) : 0);
+      cleanSheets = player.cleanSheets ?? 0;
+      goles_encajados = player.goles_encajados ?? 0;
     }
 
     return {
