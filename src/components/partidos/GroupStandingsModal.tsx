@@ -6,20 +6,13 @@ import {
   Search, 
   RotateCcw, 
   TrendingUp, 
-  Edit3,
-  Save,
-  Calendar,
-  RefreshCw,
-  FastForward,
-  Award,
-  ChevronRight,
-  Shield,
-  Clock,
-  MapPin,
-  Sparkles,
-  CheckCircle2,
-  ListFilter,
-  Globe
+  Calendar, 
+  RefreshCw, 
+  Shield, 
+  Clock, 
+  MapPin, 
+  CheckCircle2, 
+  Globe 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -27,13 +20,13 @@ import RivalBadge from './RivalBadge';
 import UDLaPovedaLogo from '@/components/layout/UDLaPovedaLogo';
 import { 
   StandingTeam, 
-  JornadaMatch,
-  OFFICIAL_RFFM_JORNADA_4_STANDINGS,
-  OFFICIAL_RFFM_ALL_MATCHES,
-  RFFM_URL_CONFIG,
-  RFFM_INFANTIL_G50_INFO,
-  fetchLiveRFFMClasificacion,
-  fetchLiveRFFMResultados
+  JornadaMatch, 
+  OFFICIAL_RFFM_JORNADA_4_STANDINGS, 
+  OFFICIAL_RFFM_ALL_MATCHES, 
+  RFFM_URL_CONFIG, 
+  RFFM_INFANTIL_G50_INFO, 
+  fetchLiveRFFMClasificacion, 
+  fetchLiveRFFMResultados 
 } from '@/data/rffmStandingsData';
 
 interface GroupStandingsModalProps {
@@ -64,9 +57,7 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
   const [allMatches, setAllMatches] = useState<JornadaMatch[]>(OFFICIAL_RFFM_ALL_MATCHES);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoadingLive, setIsLoadingLive] = useState(false);
-  const [isLiveConnected, setIsLiveConnected] = useState(false);
 
-  // Load initial data and attempt live sync with user's RFFM URL
   useEffect(() => {
     try {
       const savedStandings = localStorage.getItem(`${STORAGE_STANDINGS_KEY}_j${selectedJornada}`);
@@ -90,12 +81,10 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
 
   if (!isOpen) return null;
 
-  // Handle changing Jornada
   const handleSelectJornada = async (jornada: number) => {
     setSelectedJornada(jornada);
     localStorage.setItem(ACTIVE_JORNADA_KEY, String(jornada));
 
-    // Try fetching live data for this specific Jornada from user's RFFM URL
     setIsLoadingLive(true);
     try {
       const liveStandings = await fetchLiveRFFMClasificacion(jornada);
@@ -104,7 +93,6 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
       if (liveStandings && liveStandings.length > 0) {
         setStandings(liveStandings);
         localStorage.setItem(`${STORAGE_STANDINGS_KEY}_j${jornada}`, JSON.stringify(liveStandings));
-        setIsLiveConnected(true);
       }
 
       if (liveMatches && liveMatches.length > 0) {
@@ -122,10 +110,9 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
     }
   };
 
-  // Live Sync trigger button
   const handleLiveSync = async () => {
     setIsLoadingLive(true);
-    const toastId = toast.loading(`Conectando con RFFM.es (Jornada ${selectedJornada})...`);
+    const toastId = toast.loading(`Sincronizando con RFFM.es (Jornada ${selectedJornada})...`);
     try {
       const liveStandings = await fetchLiveRFFMClasificacion(selectedJornada);
       const liveMatches = await fetchLiveRFFMResultados(selectedJornada);
@@ -133,7 +120,6 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
       if (liveStandings && liveStandings.length > 0) {
         setStandings(liveStandings);
         localStorage.setItem(`${STORAGE_STANDINGS_KEY}_j${selectedJornada}`, JSON.stringify(liveStandings));
-        setIsLiveConnected(true);
       }
 
       if (liveMatches && liveMatches.length > 0) {
@@ -146,27 +132,19 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
       }
 
       toast.dismiss(toastId);
-      toast.success(`¡Datos oficiales sincronizados en directo desde www.rffm.es!`);
-    } catch (e) {
+      toast.success(`¡Clasificación oficial sincronizada en vivo con la RFFM!`);
+    } catch {
       toast.dismiss(toastId);
-      toast.error('No se pudo conectar con la RFFM. Mostrando datos oficiales guardados.');
+      toast.error('No se pudo conectar con la RFFM. Mostrando datos oficiales.');
     } finally {
       setIsLoadingLive(false);
     }
   };
 
-  // Open exact RFFM URL in new tab
   const handleOpenRFFMResultados = () => {
-    const url = RFFM_URL_CONFIG.getResultadosUrl(selectedJornada);
-    window.open(url, '_blank', 'noopener,noreferrer');
+    window.open(RFFM_URL_CONFIG.getResultadosUrl(selectedJornada), '_blank', 'noopener,noreferrer');
   };
 
-  const handleOpenRFFMClasificacion = () => {
-    const url = RFFM_URL_CONFIG.getClasificacionUrl(selectedJornada);
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
-
-  // Reset to default official RFFM dataset
   const handleResetToOfficialRFFM = () => {
     if (window.confirm('¿Restablecer clasificación y resultados a los datos oficiales de la RFFM?')) {
       localStorage.removeItem(`${STORAGE_STANDINGS_KEY}_j${selectedJornada}`);
@@ -179,7 +157,6 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
     }
   };
 
-  // Update match score in table
   const handleScoreChange = (matchId: string, gl: string, gv: string) => {
     const numGl = gl.trim() === '' ? undefined : parseInt(gl, 10);
     const numGv = gv.trim() === '' ? undefined : parseInt(gv, 10);
@@ -213,568 +190,415 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
   const myTeamMatches = allMatches.filter(m => m.local.includes('AFE') || m.visitante.includes('AFE'));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-5 bg-slate-950/85 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-800 w-full max-w-5xl rounded-3xl shadow-2xl overflow-hidden flex flex-col my-auto max-h-[94vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-1 sm:p-3 bg-slate-950/85 backdrop-blur-md overflow-hidden animate-in fade-in duration-150">
+      <div className="bg-slate-900 border border-slate-800 w-full max-w-6xl rounded-2xl shadow-2xl flex flex-col max-h-[98vh] h-[96vh] sm:h-[94vh] overflow-hidden">
         
-        {/* Top Header */}
-        <div className="relative p-4 sm:p-6 bg-gradient-to-r from-slate-950 via-slate-900 to-emerald-950/60 border-b border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 p-0.5 shadow-lg shadow-emerald-900/40 flex items-center justify-center shrink-0">
-              <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
-                <Trophy className="w-6 h-6 text-amber-400" />
-              </div>
+        {/* COMPACT TOP HEADER BAR */}
+        <div className="px-3.5 py-2 sm:py-2.5 bg-gradient-to-r from-slate-950 via-slate-900 to-emerald-950/50 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
+          {/* Left Title & Badge */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0">
+              <Trophy className="w-4 h-4 text-amber-400" />
             </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  {RFFM_INFANTIL_G50_INFO.categoria} • {RFFM_INFANTIL_G50_INFO.grupo}
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h2 className="text-sm sm:text-base font-black text-white uppercase tracking-tight whitespace-nowrap">
+                  Clasificación Oficial RFFM
+                </h2>
+                <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 whitespace-nowrap">
+                  2ª Infantil G.50
                 </span>
-                
-                <span className="text-[11px] font-black uppercase px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
-                  <Calendar className="w-3 h-3" />
-                  <span>Jornada {selectedJornada} de 26</span>
-                </span>
-
-                <span className="text-[11px] font-bold text-slate-400 hidden sm:inline-flex items-center gap-1">
-                  <Globe className="w-3 h-3 text-cyan-400" />
-                  <span>Conexión URL RFFM Activa</span>
+                <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 whitespace-nowrap">
+                  J.{selectedJornada} de 26
                 </span>
               </div>
-
-              <h2 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight flex items-center gap-2 mt-1">
-                Clasificación Oficial RFFM
-              </h2>
-              <p className="text-xs text-slate-400 truncate max-w-xl">
-                Fuente oficial: <a href={RFFM_URL_CONFIG.getResultadosUrl(selectedJornada)} target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">www.rffm.es (Competición 26738324 • Grupo 27306559)</a>
-              </p>
             </div>
           </div>
 
-          {/* Quick Header Actions */}
-          <div className="flex items-center gap-2 flex-wrap self-end sm:self-center">
-            {/* Live Sync button directly querying the user's RFFM URL */}
+          {/* Center: Jornada Selector & View Tabs */}
+          <div className="hidden md:flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-slate-950/80 p-0.5 rounded-lg border border-slate-800">
+              {[1, 2, 3, 4, 5].map((jNum) => {
+                const isSelected = selectedJornada === jNum;
+                return (
+                  <button
+                    key={jNum}
+                    onClick={() => handleSelectJornada(jNum)}
+                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                      isSelected 
+                        ? 'bg-emerald-600 text-white shadow-xs' 
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    J.{jNum}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-0.5 bg-slate-950/80 p-0.5 rounded-lg border border-slate-800">
+              <button
+                onClick={() => setActiveTab('tabla')}
+                className={`text-[11px] font-bold px-2.5 py-0.5 rounded transition-all cursor-pointer ${
+                  activeTab === 'tabla' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Tabla Completa
+              </button>
+              <button
+                onClick={() => setActiveTab('jornadas')}
+                className={`text-[11px] font-bold px-2.5 py-0.5 rounded transition-all cursor-pointer ${
+                  activeTab === 'jornadas' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Partidos J.{selectedJornada}
+              </button>
+              <button
+                onClick={() => setActiveTab('mi_equipo')}
+                className={`text-[11px] font-bold px-2.5 py-0.5 rounded transition-all cursor-pointer ${
+                  activeTab === 'mi_equipo' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                AFE 'B'
+              </button>
+            </div>
+          </div>
+
+          {/* Right: Quick actions */}
+          <div className="flex items-center gap-1.5 shrink-0">
             <Button
               onClick={handleLiveSync}
               disabled={isLoadingLive}
-              className="bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs uppercase tracking-wider px-3.5 py-2 h-9 rounded-xl flex items-center gap-1.5 shadow-md shadow-emerald-950/40 cursor-pointer"
-              title="Consultar y sincronizar en vivo con la web de la RFFM"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] h-7 px-2.5 rounded-lg flex items-center gap-1 cursor-pointer"
+              title="Sincronizar en directo desde RFFM"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingLive ? 'animate-spin' : ''}`} />
-              <span>{isLoadingLive ? 'Actualizando...' : 'Actualizar RFFM'}</span>
+              <RefreshCw className={`w-3 h-3 ${isLoadingLive ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{isLoadingLive ? 'Cargando...' : 'Actualizar RFFM'}</span>
             </Button>
 
             <Button
               onClick={handleOpenRFFMResultados}
               variant="outline"
-              className="bg-slate-800/80 hover:bg-slate-700 text-slate-200 border-slate-700 text-xs font-bold px-3 py-2 h-9 rounded-xl flex items-center gap-1.5 cursor-pointer"
-              title="Abrir URL oficial de resultados y jornadas en RFFM.es"
+              className="bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700 text-[11px] h-7 px-2 rounded-lg flex items-center gap-1 cursor-pointer"
+              title="Abrir URL oficial en rffm.es"
             >
-              <ExternalLink className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Resultados RFFM</span>
-            </Button>
-
-            <Button
-              onClick={handleOpenRFFMClasificacion}
-              variant="outline"
-              className="bg-slate-800/80 hover:bg-slate-700 text-slate-200 border-slate-700 text-xs font-bold px-3 py-2 h-9 rounded-xl flex items-center gap-1.5 cursor-pointer"
-              title="Abrir URL oficial de clasificación en RFFM.es"
-            >
-              <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Tabla RFFM</span>
+              <ExternalLink className="w-3 h-3 text-cyan-400" />
+              <span className="hidden sm:inline">RFFM.es</span>
             </Button>
 
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition cursor-pointer"
+              className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
               aria-label="Cerrar modal"
             >
-              <X className="w-6 h-6" />
+              <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* Jornada Selector & Navigation Bar */}
-        <div className="bg-slate-950/90 border-b border-slate-800 p-3 sm:px-6 flex flex-wrap items-center justify-between gap-3">
-          {/* Jornada selector pills */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">
-              Jornada:
-            </span>
-
-            {[1, 2, 3, 4, 5].map((jNum) => {
-              const isSelected = selectedJornada === jNum;
-              const isCurrent = jNum === 4;
-
-              return (
-                <button
-                  key={jNum}
-                  onClick={() => handleSelectJornada(jNum)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                    isSelected 
-                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/50 scale-105' 
-                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white'
-                  }`}
-                >
-                  <span>Jornada {jNum}</span>
-                  {isCurrent && (
-                    <span className="text-[9px] bg-amber-400 text-slate-950 px-1 rounded-sm font-black">OFICIAL</span>
-                  )}
-                </button>
-              );
-            })}
-
-            {/* Dropdown for other Jornadas up to 26 */}
-            <select
-              value={selectedJornada > 5 ? selectedJornada : ''}
-              onChange={(e) => {
-                if (e.target.value) handleSelectJornada(parseInt(e.target.value, 10));
-              }}
-              className="bg-slate-800/80 border border-slate-700 rounded-xl px-2.5 py-1 text-xs font-bold text-slate-300 focus:outline-none focus:border-emerald-500 cursor-pointer"
-            >
-              <option value="">Más jornadas (6-26)...</option>
-              {Array.from({ length: 21 }, (_, i) => i + 6).map((num) => (
-                <option key={num} value={num}>Jornada {num}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Navigation Tabs */}
-          <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
-            <button
-              onClick={() => setActiveTab('tabla')}
-              className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
-                activeTab === 'tabla'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Trophy className="w-3.5 h-3.5" />
-              <span>Clasificación</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('jornadas')}
-              className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
-                activeTab === 'jornadas'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Calendar className="w-3.5 h-3.5" />
-              <span>Resultados J.{selectedJornada}</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('mi_equipo')}
-              className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
-                activeTab === 'mi_equipo'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Shield className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Partidos AFE 'B'</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Quick KPI Overview */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 sm:p-5 bg-slate-950/60 border-b border-slate-800/60">
-          {/* My Team KPI */}
-          <div className="bg-gradient-to-br from-emerald-950/50 to-slate-900 border border-emerald-500/40 rounded-2xl p-3 relative overflow-hidden">
-            <div className="flex items-center justify-between text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-1">
-              <span>Nuestro Equipo</span>
-              <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-black">
-                {myTeam?.pos}º PUESTO
-              </span>
-            </div>
-            <div className="text-sm sm:text-base font-black text-white truncate">
-              {myTeam?.name}
-            </div>
-            <div className="flex items-center gap-2 mt-1 text-xs text-slate-300">
+        {/* ULTRA-COMPACT 1-LINE KPI & SEARCH STRIP */}
+        <div className="px-3 py-1.5 bg-slate-950/70 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0">
+          <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+            {/* My Team Summary Pill */}
+            <div className="flex items-center gap-1.5 bg-emerald-950/60 border border-emerald-500/40 px-2 py-0.5 rounded-md text-[11px]">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span className="font-bold text-emerald-300">Tu Equipo:</span>
+              <span className="font-black text-white">{myTeam?.pos}º PUESTO</span>
+              <span className="text-slate-400">•</span>
               <span className="font-bold text-emerald-400">{myTeam?.pts} PTS</span>
-              <span>•</span>
-              <span>{myTeam?.pj} PJ ({myTeam?.pg}V - {myTeam?.pe}E - {myTeam?.pp}D)</span>
+              <span className="text-slate-400 text-[10px]">({myTeam?.pj} PJ: {myTeam?.pg}V-{myTeam?.pe}E-{myTeam?.pp}D)</span>
             </div>
-          </div>
 
-          {/* Group Leader KPI */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3">
-            <div className="flex items-center justify-between text-[11px] font-bold text-amber-400 uppercase tracking-wider mb-1">
-              <span>Líder Provisional</span>
-              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-black">1º</span>
+            {/* Leader Pill */}
+            <div className="hidden md:flex items-center gap-1.5 bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-md text-[11px]">
+              <span className="font-bold text-amber-400">1º Líder:</span>
+              <span className="font-bold text-slate-200 truncate max-w-[160px]">{leaderTeam?.name}</span>
+              <span className="font-black text-amber-300">({leaderTeam?.pts} PTS)</span>
             </div>
-            <div className="text-sm sm:text-base font-black text-white truncate">
-              {leaderTeam?.name}
-            </div>
-            <div className="flex items-center gap-2 mt-1 text-xs text-slate-300">
-              <span className="font-bold text-amber-400">{leaderTeam?.pts} PTS</span>
-              <span>•</span>
-              <span>{leaderTeam?.gf} GF / {leaderTeam?.gc} GC (+{leaderTeam?.dg})</span>
-            </div>
-          </div>
 
-          {/* Estado de la Jornada */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-              Jornada Seleccionada
-            </div>
-            <div className="text-sm sm:text-base font-black text-white flex items-center gap-1.5">
-              <span>Jornada {selectedJornada}</span>
-              <span className="text-xs text-emerald-400 font-bold">
-                {selectedJornada <= 4 ? '(Actas Cerradas)' : '(Semana En Juego)'}
-              </span>
-            </div>
-            <div className="text-xs text-slate-400 mt-1">
-              14 equipos federados
-            </div>
-          </div>
-
-          {/* Ascenso Info */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3">
-            <div className="text-[11px] font-bold text-blue-400 uppercase tracking-wider mb-1">
-              Puestos de Ascenso
-            </div>
-            <div className="text-sm sm:text-base font-black text-white flex items-center gap-1.5">
-              <TrendingUp className="w-4 h-4 text-emerald-400" />
+            {/* Promotion Zone */}
+            <div className="hidden lg:flex items-center gap-1 text-[11px] text-slate-400">
+              <TrendingUp className="w-3 h-3 text-emerald-400" />
               <span>1º y 2º Ascenso Directo</span>
             </div>
-            <div className="text-xs text-emerald-400/90 mt-1 font-medium">
-              Ascenso a 1ª Infantil RFFM
+          </div>
+
+          {/* Search Input & Reset button */}
+          <div className="flex items-center gap-2 ml-auto">
+            <div className="relative">
+              <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Filtrar equipo..."
+                className="bg-slate-900 border border-slate-700 rounded-md pl-6 pr-2 py-0.5 text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-32 sm:w-44"
+              />
             </div>
+
+            <Button
+              onClick={handleResetToOfficialRFFM}
+              variant="outline"
+              className="bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border-slate-700 text-[10px] h-6 px-2 rounded cursor-pointer"
+              title="Restablecer a oficiales de la RFFM"
+            >
+              <RotateCcw className="w-2.5 h-2.5 mr-1" />
+              <span>Restablecer</span>
+            </Button>
           </div>
         </div>
 
-        {/* Tab 1: Clasificación General */}
+        {/* TAB 1: COMPLETE CLASSIFICATION TABLE (ALL 14 TEAMS VISIBLE WITHOUT SCROLL) */}
         {activeTab === 'tabla' && (
-          <>
-            {/* Search Bar & Reset button */}
-            <div className="p-3 sm:px-6 sm:py-3.5 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
-              <div className="relative flex-1 min-w-[200px] max-w-sm">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Buscar equipo del Grupo 50..."
-                  className="w-full bg-slate-950/70 border border-slate-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden px-2 sm:px-4 py-1">
+            <div className="flex-1 flex flex-col min-h-0 rounded-xl border border-slate-800/80 bg-slate-950/40 overflow-hidden">
+              <table className="w-full text-left border-collapse h-full">
+                {/* Fixed table header */}
+                <thead>
+                  <tr className="bg-slate-950 text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-800 h-7 select-none">
+                    <th className="py-1 px-2 text-center w-10">Pos</th>
+                    <th className="py-1 px-2">Equipo</th>
+                    <th className="py-1 px-2 text-center font-black text-emerald-400 w-12">PTS</th>
+                    <th className="py-1 px-1.5 text-center w-9">PJ</th>
+                    <th className="py-1 px-1.5 text-center w-9 text-emerald-400">PG</th>
+                    <th className="py-1 px-1.5 text-center w-9 text-amber-400">PE</th>
+                    <th className="py-1 px-1.5 text-center w-9 text-rose-400">PP</th>
+                    <th className="py-1 px-1.5 text-center w-10 text-slate-300">GF</th>
+                    <th className="py-1 px-1.5 text-center w-10 text-slate-400">GC</th>
+                    <th className="py-1 px-1.5 text-center w-11 text-slate-200">DG</th>
+                    <th className="py-1 px-2 text-center w-24">Racha</th>
+                  </tr>
+                </thead>
 
-              <div className="flex items-center gap-2">
-                <Button
-                  onClick={handleResetToOfficialRFFM}
-                  variant="outline"
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700 text-xs font-semibold h-8 px-3 rounded-lg flex items-center gap-1.5 cursor-pointer"
-                  title="Restaurar a los datos originales de la RFFM"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Restablecer Oficiales</span>
-                </Button>
-              </div>
-            </div>
+                {/* 14 compact rows filling the exact height */}
+                <tbody className="divide-y divide-slate-800/40 text-[11px] sm:text-xs">
+                  {filteredStandings.map((team) => {
+                    const isPromotion = team.pos <= 2;
+                    const isAFE = team.isMyTeam || team.name.includes('AFE');
 
-            {/* Standings Table Container */}
-            <div className="flex-1 overflow-y-auto p-2 sm:p-5">
-              <div className="overflow-x-auto rounded-2xl border border-slate-800/80 bg-slate-950/50 shadow-inner">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-slate-950 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800">
-                      <th className="py-3 px-3 text-center w-12">Pos</th>
-                      <th className="py-3 px-4">Equipo</th>
-                      <th className="py-3 px-3 text-center font-black text-emerald-400 w-14">PTS</th>
-                      <th className="py-3 px-2 text-center w-12">PJ</th>
-                      <th className="py-3 px-2 text-center w-12 text-emerald-400">PG</th>
-                      <th className="py-3 px-2 text-center w-12 text-amber-400">PE</th>
-                      <th className="py-3 px-2 text-center w-12 text-rose-400">PP</th>
-                      <th className="py-3 px-2 text-center w-12 text-slate-300">GF</th>
-                      <th className="py-3 px-2 text-center w-12 text-slate-300">GC</th>
-                      <th className="py-3 px-2 text-center w-12 text-slate-200">DG</th>
-                      <th className="py-3 px-3 text-center w-28">Racha</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60 font-medium">
-                    {filteredStandings.map((team) => {
-                      const isPromotion = team.pos <= 2;
-                      const isAFE = team.isMyTeam || team.name.includes('AFE');
+                    return (
+                      <tr 
+                        key={team.name}
+                        className={`transition-colors ${
+                          isAFE 
+                            ? 'bg-emerald-950/70 border-l-4 border-l-emerald-500 font-bold text-white shadow-xs' 
+                            : isPromotion 
+                              ? 'bg-emerald-950/15 hover:bg-slate-800/50 text-slate-200' 
+                              : 'hover:bg-slate-800/40 text-slate-300'
+                        }`}
+                        style={{ height: 'calc((100% - 28px) / 14)' }}
+                      >
+                        {/* Posición */}
+                        <td className="py-0.5 px-2 text-center">
+                          <div className="flex items-center justify-center">
+                            {team.pos === 1 ? (
+                              <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center justify-center text-[10px] font-black">
+                                1
+                              </span>
+                            ) : team.pos === 2 ? (
+                              <span className="w-5 h-5 rounded-full bg-slate-300/20 text-slate-200 border border-slate-300/40 flex items-center justify-center text-[10px] font-black">
+                                2
+                              </span>
+                            ) : team.pos === 3 ? (
+                              <span className="w-5 h-5 rounded-full bg-amber-700/20 text-amber-500 border border-amber-700/40 flex items-center justify-center text-[10px] font-black">
+                                3
+                              </span>
+                            ) : (
+                              <span className={`text-[11px] ${isAFE ? 'font-black text-emerald-400' : 'text-slate-400'}`}>
+                                {team.pos}
+                              </span>
+                            )}
+                          </div>
+                        </td>
 
-                      return (
-                        <tr 
-                          key={team.name}
-                          className={`transition-colors ${
-                            isAFE 
-                              ? 'bg-gradient-to-r from-emerald-950/70 via-emerald-900/40 to-slate-950 border-l-4 border-l-emerald-500 font-bold text-white shadow-xs' 
-                              : isPromotion 
-                                ? 'bg-emerald-950/15 hover:bg-slate-800/50 text-slate-200' 
-                                : 'hover:bg-slate-800/40 text-slate-300'
-                          }`}
-                        >
-                          {/* Posición */}
-                          <td className="py-3 px-3 text-center">
-                            <div className="flex items-center justify-center">
-                              {team.pos === 1 ? (
-                                <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center justify-center text-xs font-black shadow-xs">
-                                  1
-                                </span>
-                              ) : team.pos === 2 ? (
-                                <span className="w-6 h-6 rounded-full bg-slate-300/20 text-slate-200 border border-slate-300/40 flex items-center justify-center text-xs font-black">
-                                  2
-                                </span>
-                              ) : team.pos === 3 ? (
-                                <span className="w-6 h-6 rounded-full bg-amber-700/20 text-amber-500 border border-amber-700/40 flex items-center justify-center text-xs font-black">
-                                  3
-                                </span>
+                        {/* Equipo y Escudo Oficial */}
+                        <td className="py-0.5 px-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="shrink-0 w-5 h-5 rounded bg-slate-900 flex items-center justify-center border border-slate-800 overflow-hidden">
+                              {team.escudoUrl ? (
+                                <img 
+                                  src={team.escudoUrl} 
+                                  alt={team.name} 
+                                  className="w-full h-full object-contain"
+                                  onError={(e) => {
+                                    (e.target as HTMLElement).style.display = 'none';
+                                  }}
+                                />
+                              ) : isAFE ? (
+                                <UDLaPovedaLogo className="w-4 h-4" />
                               ) : (
-                                <span className={`text-xs ${isAFE ? 'font-black text-emerald-400' : 'text-slate-400'}`}>
-                                  {team.pos}
+                                <RivalBadge rivalName={team.name} size="xs" />
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 min-w-0 truncate">
+                              <span className={`truncate ${isAFE ? 'font-black text-emerald-300 text-xs' : 'font-semibold text-white'}`} title={team.name}>
+                                {team.name}
+                              </span>
+                              {isAFE && (
+                                <span className="text-[9px] uppercase font-black px-1 rounded bg-emerald-500 text-slate-950 shrink-0">
+                                  Tu Equipo
+                                </span>
+                              )}
+                              {isPromotion && !isAFE && (
+                                <span className="text-[8px] uppercase font-bold px-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
+                                  Ascenso
                                 </span>
                               )}
                             </div>
-                          </td>
+                          </div>
+                        </td>
 
-                          {/* Nombre del Equipo y Escudo Oficial RFFM */}
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-3">
-                              <div className="shrink-0 w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center border border-slate-800 p-0.5 overflow-hidden">
-                                {team.escudoUrl ? (
-                                  <img 
-                                    src={team.escudoUrl} 
-                                    alt={team.name} 
-                                    className="w-full h-full object-contain"
-                                    onError={(e) => {
-                                      // fallback
-                                      (e.target as HTMLElement).style.display = 'none';
-                                    }}
-                                  />
-                                ) : isAFE ? (
-                                  <UDLaPovedaLogo className="w-6 h-6" />
-                                ) : (
-                                  <RivalBadge rivalName={team.name} size="xs" />
-                                )}
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <span className={`text-xs ${isAFE ? 'font-black text-emerald-300' : 'font-semibold text-white'}`}>
-                                    {team.name}
-                                  </span>
-                                  {isAFE && (
-                                    <span className="text-[10px] uppercase font-black px-1.5 py-0.2 rounded bg-emerald-500 text-slate-950">
-                                      Tu Equipo
-                                    </span>
-                                  )}
-                                  {isPromotion && !isAFE && (
-                                    <span className="text-[9px] uppercase font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                                      Ascenso
-                                    </span>
-                                  )}
-                                </div>
-                                {team.shortName && team.shortName !== team.name && (
-                                  <span className="text-[10px] text-slate-500 block">
-                                    {team.shortName}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </td>
+                        {/* PTS */}
+                        <td className="py-0.5 px-2 text-center">
+                          <span className={`text-xs sm:text-sm font-black ${isAFE ? 'text-emerald-400' : 'text-white'}`}>
+                            {team.pts}
+                          </span>
+                        </td>
 
-                          {/* Puntos (PTS) */}
-                          <td className="py-3 px-3 text-center">
-                            <span className={`text-sm font-black ${isAFE ? 'text-emerald-400' : 'text-white'}`}>
-                              {team.pts}
-                            </span>
-                          </td>
+                        {/* PJ */}
+                        <td className="py-0.5 px-1.5 text-center text-slate-400 font-semibold text-[11px]">
+                          {team.pj}
+                        </td>
 
-                          {/* PJ */}
-                          <td className="py-3 px-2 text-center text-slate-400 font-semibold">
-                            {team.pj}
-                          </td>
+                        {/* PG */}
+                        <td className="py-0.5 px-1.5 text-center text-emerald-400 font-bold text-[11px]">
+                          {team.pg}
+                        </td>
 
-                          {/* PG */}
-                          <td className="py-3 px-2 text-center text-emerald-400 font-bold">
-                            {team.pg}
-                          </td>
+                        {/* PE */}
+                        <td className="py-0.5 px-1.5 text-center text-amber-400 font-bold text-[11px]">
+                          {team.pe}
+                        </td>
 
-                          {/* PE */}
-                          <td className="py-3 px-2 text-center text-amber-400 font-bold">
-                            {team.pe}
-                          </td>
+                        {/* PP */}
+                        <td className="py-0.5 px-1.5 text-center text-rose-400 font-bold text-[11px]">
+                          {team.pp}
+                        </td>
 
-                          {/* PP */}
-                          <td className="py-3 px-2 text-center text-rose-400 font-bold">
-                            {team.pp}
-                          </td>
+                        {/* GF */}
+                        <td className="py-0.5 px-1.5 text-center text-slate-300 text-[11px]">
+                          {team.gf}
+                        </td>
 
-                          {/* GF */}
-                          <td className="py-3 px-2 text-center text-slate-300">
-                            {team.gf}
-                          </td>
+                        {/* GC */}
+                        <td className="py-0.5 px-1.5 text-center text-slate-400 text-[11px]">
+                          {team.gc}
+                        </td>
 
-                          {/* GC */}
-                          <td className="py-3 px-2 text-center text-slate-400">
-                            {team.gc}
-                          </td>
+                        {/* DG */}
+                        <td className="py-0.5 px-1.5 text-center font-bold text-[11px]">
+                          <span className={team.dg > 0 ? 'text-emerald-400' : team.dg < 0 ? 'text-rose-400' : 'text-slate-400'}>
+                            {team.dg > 0 ? `+${team.dg}` : team.dg}
+                          </span>
+                        </td>
 
-                          {/* DG */}
-                          <td className="py-3 px-2 text-center font-bold">
-                            <span className={team.dg > 0 ? 'text-emerald-400' : team.dg < 0 ? 'text-rose-400' : 'text-slate-400'}>
-                              {team.dg > 0 ? `+${team.dg}` : team.dg}
-                            </span>
-                          </td>
-
-                          {/* Racha de Partidos */}
-                          <td className="py-3 px-3 text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              {team.form && team.form.map((result, rIdx) => {
-                                const isWin = result === 'V' || result === 'G';
-                                const isDraw = result === 'E';
-                                return (
-                                  <span 
-                                    key={rIdx}
-                                    className={`w-4 h-4 rounded text-[9px] font-black flex items-center justify-center ${
-                                      isWin 
-                                        ? 'bg-emerald-500 text-slate-950' 
-                                        : isDraw 
-                                          ? 'bg-amber-500 text-slate-950' 
-                                          : 'bg-rose-500 text-white'
-                                    }`}
-                                    title={isWin ? 'Victoria' : isDraw ? 'Empate' : 'Derrota'}
-                                  >
-                                    {isWin ? 'G' : isDraw ? 'E' : 'P'}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Footer Notes & Legend */}
-              <div className="mt-4 p-4 rounded-2xl bg-slate-950/70 border border-slate-800 flex flex-wrap items-center justify-between gap-4 text-xs text-slate-400">
-                <div className="flex items-center gap-4 flex-wrap">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded bg-emerald-500/30 border border-emerald-500/50 inline-block"></span>
-                    <span>Puestos 1º y 2º: Ascenso a 1ª Infantil</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded bg-emerald-500 inline-block"></span>
-                    <span>G = Ganado (3 pts)</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded bg-amber-500 inline-block"></span>
-                    <span>E = Empatado (1 pt)</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded bg-rose-500 inline-block"></span>
-                    <span>P = Perdido (0 pts)</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={handleOpenRFFMResultados}
-                    className="text-xs text-emerald-400 hover:text-emerald-300 border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 h-7 px-2.5 rounded-lg flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>Ver en www.rffm.es</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </Button>
-                </div>
-              </div>
+                        {/* Racha */}
+                        <td className="py-0.5 px-2 text-center">
+                          <div className="flex items-center justify-center gap-0.5">
+                            {team.form && team.form.map((result, rIdx) => {
+                              const isWin = result === 'V' || result === 'G';
+                              const isDraw = result === 'E';
+                              return (
+                                <span 
+                                  key={rIdx}
+                                  className={`w-3.5 h-3.5 rounded text-[8px] font-black flex items-center justify-center ${
+                                    isWin 
+                                      ? 'bg-emerald-500 text-slate-950' 
+                                      : isDraw 
+                                        ? 'bg-amber-500 text-slate-950' 
+                                        : 'bg-rose-500 text-white'
+                                  }`}
+                                  title={isWin ? 'Victoria' : isDraw ? 'Empate' : 'Derrota'}
+                                >
+                                  {isWin ? 'G' : isDraw ? 'E' : 'P'}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          </>
+          </div>
         )}
 
-        {/* Tab 2: Todos los Resultados de la Jornada */}
+        {/* TAB 2: PARTIDOS DE LA JORNADA */}
         {activeTab === 'jornadas' && (
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div>
-                <h3 className="text-base font-black text-white uppercase tracking-tight flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-emerald-400" />
-                  <span>Encuentros y Resultados Oficiales de la Jornada {selectedJornada}</span>
-                </h3>
-                <p className="text-xs text-slate-400">
-                  {currentJornadaMatches.length} partidos oficiales extraídos de la plataforma de la RFFM
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  onClick={handleLiveSync}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-8 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Sincronizar Jornada {selectedJornada}</span>
-                </Button>
-              </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            <div className="flex items-center justify-between pb-1 text-xs text-slate-400 border-b border-slate-800">
+              <span className="font-bold text-white flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                <span>7 Partidos de la Jornada {selectedJornada}</span>
+              </span>
+              <span>Resultados extraídos de las actas de la RFFM</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {currentJornadaMatches.map((m) => {
                 const isAFEMatch = m.local.includes('AFE') || m.visitante.includes('AFE');
 
                 return (
                   <div 
                     key={m.id}
-                    className={`rounded-2xl p-4 border transition-all ${
+                    className={`rounded-xl p-2.5 border transition-all ${
                       isAFEMatch 
-                        ? 'bg-gradient-to-br from-emerald-950/60 to-slate-900 border-emerald-500/60 shadow-lg shadow-emerald-950/30' 
-                        : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700'
+                        ? 'bg-emerald-950/40 border-emerald-500/50' 
+                        : 'bg-slate-950/60 border-slate-800'
                     }`}
                   >
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 mb-3 border-b border-slate-800/60 pb-2">
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1.5 pb-1 border-b border-slate-800/60">
                       <div className="flex items-center gap-1 font-semibold">
-                        <Clock className="w-3 h-3 text-emerald-400" />
+                        <Clock className="w-2.5 h-2.5 text-emerald-400" />
                         <span>{m.fecha} • {m.hora} h</span>
                       </div>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1">
                         {m.jugado ? (
-                          <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" />
-                            <span>Acta Oficial</span>
+                          <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                            Acta Oficial
                           </span>
                         ) : (
-                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300">
                             Pendiente
                           </span>
                         )}
                         {isAFEMatch && (
-                          <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500 text-slate-950">
+                          <span className="text-[9px] font-black uppercase px-1 rounded bg-emerald-500 text-slate-950">
                             AFE 'B'
                           </span>
                         )}
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-12 items-center gap-2">
-                      {/* Local Team */}
-                      <div className="col-span-5 flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center shrink-0 border border-slate-800 overflow-hidden">
+                    <div className="grid grid-cols-12 items-center gap-1.5">
+                      {/* Local */}
+                      <div className="col-span-5 flex items-center gap-1.5 min-w-0">
+                        <div className="w-6 h-6 rounded bg-slate-900 flex items-center justify-center shrink-0 border border-slate-800 overflow-hidden">
                           {m.escudoLocal ? (
                             <img src={m.escudoLocal} alt={m.local} className="w-full h-full object-contain" />
                           ) : m.local.includes('AFE') ? (
-                            <UDLaPovedaLogo className="w-6 h-6" />
+                            <UDLaPovedaLogo className="w-5 h-5" />
                           ) : (
                             <RivalBadge rivalName={m.local} size="xs" />
                           )}
                         </div>
-                        <span className={`text-xs truncate ${m.local.includes('AFE') ? 'font-black text-emerald-300' : 'font-semibold text-white'}`} title={m.local}>
+                        <span className={`text-[11px] truncate ${m.local.includes('AFE') ? 'font-black text-emerald-300' : 'font-semibold text-white'}`} title={m.local}>
                           {m.local}
                         </span>
                       </div>
 
                       {/* Score */}
                       <div className="col-span-2 text-center">
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="flex items-center justify-center gap-0.5">
                           <input
                             type="number"
                             min="0"
                             placeholder="-"
                             value={m.golesLocal !== undefined ? m.golesLocal : ''}
                             onChange={(e) => handleScoreChange(m.id, e.target.value, m.golesVisitante !== undefined ? String(m.golesVisitante) : '')}
-                            className={`w-7 h-7 bg-slate-900 border rounded-md text-center text-xs font-black text-white focus:outline-none focus:border-emerald-500 ${
+                            className={`w-6 h-6 bg-slate-900 border rounded text-center text-xs font-black text-white focus:outline-none focus:border-emerald-500 ${
                               m.jugado ? 'border-emerald-500/50 bg-emerald-950/20' : 'border-slate-700'
                             }`}
                           />
@@ -785,23 +609,23 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
                             placeholder="-"
                             value={m.golesVisitante !== undefined ? m.golesVisitante : ''}
                             onChange={(e) => handleScoreChange(m.id, m.golesLocal !== undefined ? String(m.golesLocal) : '', e.target.value)}
-                            className={`w-7 h-7 bg-slate-900 border rounded-md text-center text-xs font-black text-white focus:outline-none focus:border-emerald-500 ${
+                            className={`w-6 h-6 bg-slate-900 border rounded text-center text-xs font-black text-white focus:outline-none focus:border-emerald-500 ${
                               m.jugado ? 'border-emerald-500/50 bg-emerald-950/20' : 'border-slate-700'
                             }`}
                           />
                         </div>
                       </div>
 
-                      {/* Visitante Team */}
-                      <div className="col-span-5 flex items-center justify-end gap-2 text-right">
-                        <span className={`text-xs truncate ${m.visitante.includes('AFE') ? 'font-black text-emerald-300' : 'font-semibold text-white'}`} title={m.visitante}>
+                      {/* Visitante */}
+                      <div className="col-span-5 flex items-center justify-end gap-1.5 text-right min-w-0">
+                        <span className={`text-[11px] truncate ${m.visitante.includes('AFE') ? 'font-black text-emerald-300' : 'font-semibold text-white'}`} title={m.visitante}>
                           {m.visitante}
                         </span>
-                        <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center shrink-0 border border-slate-800 overflow-hidden">
+                        <div className="w-6 h-6 rounded bg-slate-900 flex items-center justify-center shrink-0 border border-slate-800 overflow-hidden">
                           {m.escudoVisitante ? (
                             <img src={m.escudoVisitante} alt={m.visitante} className="w-full h-full object-contain" />
                           ) : m.visitante.includes('AFE') ? (
-                            <UDLaPovedaLogo className="w-6 h-6" />
+                            <UDLaPovedaLogo className="w-5 h-5" />
                           ) : (
                             <RivalBadge rivalName={m.visitante} size="xs" />
                           )}
@@ -810,8 +634,8 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
                     </div>
 
                     {m.campo && (
-                      <div className="mt-2.5 pt-2 border-t border-slate-800/40 text-[10px] text-slate-400 flex items-center gap-1">
-                        <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
+                      <div className="mt-1 pt-1 border-t border-slate-800/40 text-[9px] text-slate-400 flex items-center gap-1 truncate">
+                        <MapPin className="w-2.5 h-2.5 text-slate-500 shrink-0" />
                         <span className="truncate">{m.campo}</span>
                       </div>
                     )}
@@ -822,93 +646,72 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
           </div>
         )}
 
-        {/* Tab 3: Partidos Específicos de la Fundación AFE 'B' */}
+        {/* TAB 3: TRAYECTORIA AFE 'B' */}
         {activeTab === 'mi_equipo' && (
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div>
-                <h3 className="text-base font-black text-white uppercase tracking-tight flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-emerald-400" />
-                  <span>Trayectoria de la S.A.D. Fundación E.F. AFE 'B' (RFFM Grupo 50)</span>
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Partidos oficiales extraídos de las actas de la RFFM
-                </p>
-              </div>
-
-              <span className="text-xs font-black text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-3 py-1 rounded-lg">
-                Balance Oficial: 1V - 2E - 1D (5 Puntos)
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            <div className="flex items-center justify-between pb-1 text-xs text-slate-400 border-b border-slate-800">
+              <span className="font-bold text-white flex items-center gap-1">
+                <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                <span>S.A.D. Fundación E.F. AFE 'B' (Todos los partidos)</span>
               </span>
+              <span className="font-bold text-emerald-400">Balance: 1V - 2E - 1D (5 Puntos)</span>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-1.5">
               {myTeamMatches.map((m) => {
                 const isHome = m.local.includes('AFE');
                 const rivalName = isHome ? m.visitante : m.local;
                 const myGoals = isHome ? m.golesLocal : m.golesVisitante;
                 const rivalGoals = isHome ? m.golesVisitante : m.golesLocal;
-                
+
                 let resultText = 'Pendiente';
-                let resultBadgeClass = 'bg-slate-800 text-slate-300';
+                let resultClass = 'bg-slate-800 text-slate-300';
                 if (m.jugado && myGoals !== undefined && rivalGoals !== undefined) {
                   if (myGoals > rivalGoals) {
-                    resultText = 'Ganado (+3 pts)';
-                    resultBadgeClass = 'bg-emerald-500 text-slate-950 font-black';
+                    resultText = 'Victoria (+3 pts)';
+                    resultClass = 'bg-emerald-500 text-slate-950 font-black';
                   } else if (myGoals === rivalGoals) {
-                    resultText = 'Empatado (+1 pt)';
-                    resultBadgeClass = 'bg-amber-500 text-slate-950 font-black';
+                    resultText = 'Empate (+1 pt)';
+                    resultClass = 'bg-amber-500 text-slate-950 font-black';
                   } else {
-                    resultText = 'Perdido';
-                    resultBadgeClass = 'bg-rose-500 text-white font-black';
+                    resultText = 'Derrota';
+                    resultClass = 'bg-rose-500 text-white font-black';
                   }
                 }
 
                 return (
                   <div 
                     key={m.id}
-                    className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-slate-700"
+                    className="p-2 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between gap-2"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0">
-                        <span className="text-xs font-black text-emerald-400">J.{m.jornada}</span>
-                      </div>
-
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-400">
-                            {isHome ? 'En Casa (Local)' : 'Fuera (Visitante)'}
-                          </span>
-                          <span className="text-slate-600">•</span>
-                          <span className="text-xs text-slate-400">{m.fecha} ({m.hora} h)</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-slate-800 text-emerald-400">
+                        J.{m.jornada}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-white truncate">
+                          {isHome ? 'Local' : 'Visitante'} vs {rivalName}
                         </div>
-                        <div className="text-sm font-black text-white flex items-center gap-2 mt-0.5">
-                          <span>vs {rivalName}</span>
-                        </div>
-                        <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
-                          <MapPin className="w-3 h-3" />
-                          <span>{m.campo}</span>
+                        <div className="text-[10px] text-slate-500 truncate">
+                          {m.fecha} • {m.hora} h • {m.campo}
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 self-end sm:self-center">
+                    <div className="flex items-center gap-2 shrink-0">
                       {m.jugado ? (
-                        <div className="text-right">
-                          <div className="text-lg font-black text-white flex items-center gap-1.5 justify-end">
-                            <span className="text-emerald-400">{myGoals}</span>
-                            <span className="text-slate-600">-</span>
-                            <span className="text-slate-300">{rivalGoals}</span>
-                          </div>
-                          <span className={`text-[10px] uppercase px-2 py-0.5 rounded-md inline-block ${resultBadgeClass}`}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-white">
+                            <span className="text-emerald-400">{myGoals}</span> - <span className="text-slate-300">{rivalGoals}</span>
+                          </span>
+                          <span className={`text-[9px] uppercase px-1.5 py-0.2 rounded ${resultClass}`}>
                             {resultText}
                           </span>
                         </div>
                       ) : (
-                        <div className="text-right">
-                          <span className="text-xs font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-lg">
-                            Próximo Partido (07/11/2026)
-                          </span>
-                        </div>
+                        <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded">
+                          07/11/2026
+                        </span>
                       )}
                     </div>
                   </div>
@@ -918,19 +721,30 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
           </div>
         )}
 
-        {/* Modal Bottom Close Bar */}
-        <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>URL Oficial: <code className="text-emerald-400 text-[11px]">rffm.es/competicion/resultados-y-jornadas?temporada=22&competicion=26738324&grupo=27306559&jornada={selectedJornada}&tipojuego=1</code></span>
+        {/* ULTRA-SLIM BOTTOM LEGEND & CLOSE BAR */}
+        <div className="px-3 py-1.5 bg-slate-950 border-t border-slate-800/80 flex items-center justify-between gap-2 text-[10px] sm:text-[11px] text-slate-400 shrink-0">
+          <div className="flex items-center gap-3 truncate">
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="w-2.5 h-2.5 rounded bg-emerald-500/30 border border-emerald-500/50 inline-block"></span>
+              <span>1º y 2º Ascenso Directo</span>
+            </div>
+            <div className="hidden sm:flex items-center gap-2 text-slate-500 truncate">
+              <span>G: Ganado</span>
+              <span>•</span>
+              <span>E: Empatado</span>
+              <span>•</span>
+              <span>P: Perdido</span>
+            </div>
           </div>
 
-          <Button
-            onClick={onClose}
-            className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs uppercase tracking-wider px-5 py-2 h-9 rounded-xl cursor-pointer"
-          >
-            Cerrar
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              onClick={onClose}
+              className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-[11px] h-6 px-3 rounded-lg cursor-pointer"
+            >
+              Cerrar
+            </Button>
+          </div>
         </div>
 
       </div>
