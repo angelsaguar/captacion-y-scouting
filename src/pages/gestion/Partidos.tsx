@@ -53,6 +53,7 @@ import { toast } from 'sonner';
 import { generateLocalTacticalAdvice, getTacticalAdvice } from '@/lib/tacticalAdvisor';
 import MatchStatsModal from '@/components/partidos/MatchStatsModal';
 import MatchdayPosterModal from '@/components/partidos/MatchdayPosterModal';
+import GroupStandingsModal from '@/components/partidos/GroupStandingsModal';
 import { cleanPhotoUrl, isPlayerMatch, normalizePlayerNameKey } from '@/lib/utils';
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 import RivalBadge from '@/components/partidos/RivalBadge';
@@ -256,6 +257,9 @@ export default function Partidos() {
   // Rival crests management modal state
   const [showRivalCrestsModal, setShowRivalCrestsModal] = useState<boolean>(false);
   const [crestModalTargetRival, setCrestModalTargetRival] = useState<string>('');
+
+  // RFFM Group 50 Standings Modal state
+  const [showStandingsModal, setShowStandingsModal] = useState<boolean>(false);
 
   const handleOpenPlanPartidoModal = async (match: Match | null) => {
     const targetMatch = match || ({
@@ -1348,6 +1352,15 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <Button 
+            onClick={() => setShowStandingsModal(true)}
+            className="text-xs font-black uppercase tracking-wider bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white flex items-center justify-center gap-2 h-10 px-4 rounded-xl cursor-pointer shadow-lg shadow-emerald-950/40 border border-emerald-400/40"
+            title="Ver Clasificación Oficial RFFM - 2ª Infantil Grupo 50 (www.rffm.es)"
+          >
+            <Trophy className="w-4 h-4 text-amber-300" />
+            <span>Clasificación Grupo 50 (RFFM)</span>
+          </Button>
+
           <Button 
             onClick={() => {
               setCrestModalTargetRival('');
@@ -3915,6 +3928,12 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
         onClose={() => setShowRivalCrestsModal(false)}
         initialRivalName={crestModalTargetRival}
         existingRivalNames={Array.from(new Set(matches.map(m => m.rival).filter(Boolean)))}
+      />
+
+      {/* Official RFFM 2ª Infantil Grupo 50 Standings Modal */}
+      <GroupStandingsModal
+        isOpen={showStandingsModal}
+        onClose={() => setShowStandingsModal(false)}
       />
     </div>
   );
