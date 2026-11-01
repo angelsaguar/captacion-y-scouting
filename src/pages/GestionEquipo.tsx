@@ -12,7 +12,8 @@ import {
   ChevronLeft,
   LayoutGrid,
   Dumbbell,
-  Scale
+  Scale,
+  Swords
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -27,12 +28,14 @@ import Lesionados from './gestion/Lesionados';
 import PlanPartido from './gestion/PlanPartido';
 import PruebasFisicas from './gestion/PruebasFisicas';
 import Antropometria from './gestion/Antropometria';
+import EstadisticasRivales from '@/pages/EstadisticasRivales';
 
 type ModuleKey = 
   | 'plantilla' 
   | 'asistencia' 
   | 'partidos' 
   | 'estadisticas' 
+  | 'estadisticas_rivales'
   | 'pizarra' 
   | 'videoteca' 
   | 'lesionados' 
@@ -89,6 +92,15 @@ export default function GestionEquipo() {
       color: 'text-purple-500',
       bgColor: 'bg-purple-500/10',
       borderColor: 'border-purple-500/20'
+    },
+    {
+      key: 'estadisticas_rivales',
+      title: 'ESTADÍSTICAS RIVALES',
+      subtext: 'RFFM GRUPO 50',
+      icon: Swords,
+      color: 'text-indigo-400',
+      bgColor: 'bg-indigo-500/10',
+      borderColor: 'border-indigo-500/20'
     },
     {
       key: 'pizarra',
@@ -156,6 +168,8 @@ export default function GestionEquipo() {
         return <Partidos />;
       case 'estadisticas':
         return <Estadisticas />;
+      case 'estadisticas_rivales':
+        return <EstadisticasRivales />;
       case 'pizarra':
         return <PizarraTactica />;
       case 'videoteca':

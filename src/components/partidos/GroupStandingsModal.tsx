@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Trophy, 
   ExternalLink, 
@@ -12,7 +13,8 @@ import {
   Clock, 
   MapPin, 
   CheckCircle2, 
-  Globe 
+  Globe,
+  Swords
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -39,6 +41,7 @@ const STORAGE_MATCHES_KEY = 'rffm_g50_official_matches_v4';
 const ACTIVE_JORNADA_KEY = 'rffm_g50_active_jornada_v4';
 
 export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsModalProps) {
+  const navigate = useNavigate();
   const [selectedJornada, setSelectedJornada] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(ACTIVE_JORNADA_KEY);
@@ -274,6 +277,18 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
             >
               <RefreshCw className={`w-3 h-3 ${isLoadingLive ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">{isLoadingLive ? 'Cargando...' : 'Actualizar RFFM'}</span>
+            </Button>
+
+            <Button
+              onClick={() => {
+                onClose();
+                navigate('/estadisticas-rivales');
+              }}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] h-7 px-2.5 rounded-lg flex items-center gap-1 cursor-pointer shadow-sm"
+              title="Abrir Módulo de Estadísticas Colectivas de Rivales y Franjas de 15 minutos"
+            >
+              <Swords className="w-3 h-3 text-amber-300" />
+              <span className="hidden sm:inline">Estadísticas Rivales</span>
             </Button>
 
             <Button

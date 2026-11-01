@@ -23,6 +23,7 @@ import Observers from '@/pages/Observers';
 import Needs from '@/pages/Needs';
 import Coaches from '@/pages/Coaches';
 import Campograma from '@/pages/Campograma';
+import EstadisticasRivales from '@/pages/EstadisticasRivales';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 export default function App() {
@@ -91,6 +92,7 @@ export default function App() {
             <Route path="/needs" element={<Needs />} />
             <Route path="/coaches" element={<Coaches />} />
             <Route path="/campograma" element={<Campograma />} />
+            <Route path="/estadisticas-rivales" element={<EstadisticasRivales />} />
             <Route path="/admin" element={user?.role === 'admin' ? <Admin /> : <Navigate to="/" />} />
             <Route path="/profile" element={<Profile />} />
           </Route>

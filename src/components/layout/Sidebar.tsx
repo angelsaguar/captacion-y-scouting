@@ -15,7 +15,8 @@ import {
   ChevronLeft,
   ClipboardList,
   Shield,
-  LayoutGrid
+  LayoutGrid,
+  Swords
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -25,6 +26,7 @@ import UDLaPovedaLogo from './UDLaPovedaLogo';
 const menuItems = [
   { icon: LayoutGrid, label: 'Volver al Portal', path: '/' },
   { icon: LayoutDashboard, label: 'Dashboard', path: '/scouting' },
+  { icon: Swords, label: 'Estadísticas Rivales', path: '/estadisticas-rivales' },
   { icon: Users, label: 'Jugadores', path: '/players' },
   { icon: UsersRound, label: 'Scouters', path: '/observers' },
   { icon: Trophy, label: 'Necesidades', path: '/needs' },
