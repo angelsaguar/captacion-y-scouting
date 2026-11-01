@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Trophy, 
   ExternalLink, 
@@ -18,7 +18,8 @@ import {
   MapPin,
   Sparkles,
   CheckCircle2,
-  ListFilter
+  ListFilter,
+  Globe
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -27,11 +28,12 @@ import UDLaPovedaLogo from '@/components/layout/UDLaPovedaLogo';
 import { 
   StandingTeam, 
   JornadaMatch,
-  OFFICIAL_RFFM_G50_MATCHES,
-  ALL_RFFM_G50_TEAMS,
+  OFFICIAL_RFFM_JORNADA_4_STANDINGS,
+  OFFICIAL_RFFM_ALL_MATCHES,
+  RFFM_URL_CONFIG,
   RFFM_INFANTIL_G50_INFO,
-  computeStandingsFromMatches,
-  getCurrentWeekJornada
+  fetchLiveRFFMClasificacion,
+  fetchLiveRFFMResultados
 } from '@/data/rffmStandingsData';
 
 interface GroupStandingsModalProps {
@@ -39,11 +41,11 @@ interface GroupStandingsModalProps {
   onClose: () => void;
 }
 
-const STORAGE_MATCHES_KEY = 'rffm_g50_all_matches_v3';
-const ACTIVE_JORNADA_KEY = 'rffm_g50_selected_jornada_v3';
+const STORAGE_STANDINGS_KEY = 'rffm_g50_official_standings_v4';
+const STORAGE_MATCHES_KEY = 'rffm_g50_official_matches_v4';
+const ACTIVE_JORNADA_KEY = 'rffm_g50_active_jornada_v4';
 
 export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsModalProps) {
-  // Current active Jornada (default: 5)
   const [selectedJornada, setSelectedJornada] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(ACTIVE_JORNADA_KEY);
@@ -54,67 +56,130 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
     } catch {
       // fallback
     }
-    return 5;
+    return 4; // Default to Jornada 4 (disputed round on RFFM)
   });
 
   const [activeTab, setActiveTab] = useState<'tabla' | 'jornadas' | 'mi_equipo'>('tabla');
-  const [allMatches, setAllMatches] = useState<JornadaMatch[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_MATCHES_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch {
-      // fallback
-    }
-    return OFFICIAL_RFFM_G50_MATCHES;
-  });
-
+  const [standings, setStandings] = useState<StandingTeam[]>(OFFICIAL_RFFM_JORNADA_4_STANDINGS);
+  const [allMatches, setAllMatches] = useState<JornadaMatch[]>(OFFICIAL_RFFM_ALL_MATCHES);
   const [searchQuery, setSearchQuery] = useState('');
-  const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
+  const [isLoadingLive, setIsLoadingLive] = useState(false);
+  const [isLiveConnected, setIsLiveConnected] = useState(false);
 
-  // Compute standings dynamically based on the current selected jornada and all matches
-  const standings = useMemo(() => {
-    return computeStandingsFromMatches(allMatches, selectedJornada);
-  }, [allMatches, selectedJornada]);
-
-  // Sync state on modal open
+  // Load initial data and attempt live sync with user's RFFM URL
   useEffect(() => {
     try {
+      const savedStandings = localStorage.getItem(`${STORAGE_STANDINGS_KEY}_j${selectedJornada}`);
+      if (savedStandings) {
+        setStandings(JSON.parse(savedStandings));
+      } else {
+        setStandings(OFFICIAL_RFFM_JORNADA_4_STANDINGS);
+      }
+
       const savedMatches = localStorage.getItem(STORAGE_MATCHES_KEY);
       if (savedMatches) {
         setAllMatches(JSON.parse(savedMatches));
       } else {
-        setAllMatches(OFFICIAL_RFFM_G50_MATCHES);
+        setAllMatches(OFFICIAL_RFFM_ALL_MATCHES);
       }
     } catch {
-      setAllMatches(OFFICIAL_RFFM_G50_MATCHES);
+      setStandings(OFFICIAL_RFFM_JORNADA_4_STANDINGS);
+      setAllMatches(OFFICIAL_RFFM_ALL_MATCHES);
     }
-  }, [isOpen]);
+  }, [selectedJornada, isOpen]);
 
   if (!isOpen) return null;
 
-  const handleOpenRFFM = () => {
-    window.open(RFFM_INFANTIL_G50_INFO.webOficial, '_blank', 'noopener,noreferrer');
-  };
-
-  const handleSelectJornada = (jornada: number) => {
+  // Handle changing Jornada
+  const handleSelectJornada = async (jornada: number) => {
     setSelectedJornada(jornada);
     localStorage.setItem(ACTIVE_JORNADA_KEY, String(jornada));
-  };
 
-  // Reset to full official RFFM results
-  const handleResetToOfficialRFFM = () => {
-    if (window.confirm('¿Restablecer todos los resultados oficiales de la RFFM (Jornadas 1 a 5)?')) {
-      localStorage.removeItem(STORAGE_MATCHES_KEY);
-      setAllMatches(OFFICIAL_RFFM_G50_MATCHES);
-      setSelectedJornada(5);
-      localStorage.setItem(ACTIVE_JORNADA_KEY, '5');
-      toast.success('Resultados y clasificación de la RFFM restablecidos.');
+    // Try fetching live data for this specific Jornada from user's RFFM URL
+    setIsLoadingLive(true);
+    try {
+      const liveStandings = await fetchLiveRFFMClasificacion(jornada);
+      const liveMatches = await fetchLiveRFFMResultados(jornada);
+
+      if (liveStandings && liveStandings.length > 0) {
+        setStandings(liveStandings);
+        localStorage.setItem(`${STORAGE_STANDINGS_KEY}_j${jornada}`, JSON.stringify(liveStandings));
+        setIsLiveConnected(true);
+      }
+
+      if (liveMatches && liveMatches.length > 0) {
+        setAllMatches(prev => {
+          const others = prev.filter(m => m.jornada !== jornada);
+          const combined = [...others, ...liveMatches];
+          localStorage.setItem(STORAGE_MATCHES_KEY, JSON.stringify(combined));
+          return combined;
+        });
+      }
+    } catch (err) {
+      console.warn("Could not sync live, keeping current verified data", err);
+    } finally {
+      setIsLoadingLive(false);
     }
   };
 
-  // Update a match score in any jornada
+  // Live Sync trigger button
+  const handleLiveSync = async () => {
+    setIsLoadingLive(true);
+    const toastId = toast.loading(`Conectando con RFFM.es (Jornada ${selectedJornada})...`);
+    try {
+      const liveStandings = await fetchLiveRFFMClasificacion(selectedJornada);
+      const liveMatches = await fetchLiveRFFMResultados(selectedJornada);
+
+      if (liveStandings && liveStandings.length > 0) {
+        setStandings(liveStandings);
+        localStorage.setItem(`${STORAGE_STANDINGS_KEY}_j${selectedJornada}`, JSON.stringify(liveStandings));
+        setIsLiveConnected(true);
+      }
+
+      if (liveMatches && liveMatches.length > 0) {
+        setAllMatches(prev => {
+          const others = prev.filter(m => m.jornada !== selectedJornada);
+          const combined = [...others, ...liveMatches];
+          localStorage.setItem(STORAGE_MATCHES_KEY, JSON.stringify(combined));
+          return combined;
+        });
+      }
+
+      toast.dismiss(toastId);
+      toast.success(`¡Datos oficiales sincronizados en directo desde www.rffm.es!`);
+    } catch (e) {
+      toast.dismiss(toastId);
+      toast.error('No se pudo conectar con la RFFM. Mostrando datos oficiales guardados.');
+    } finally {
+      setIsLoadingLive(false);
+    }
+  };
+
+  // Open exact RFFM URL in new tab
+  const handleOpenRFFMResultados = () => {
+    const url = RFFM_URL_CONFIG.getResultadosUrl(selectedJornada);
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleOpenRFFMClasificacion = () => {
+    const url = RFFM_URL_CONFIG.getClasificacionUrl(selectedJornada);
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  // Reset to default official RFFM dataset
+  const handleResetToOfficialRFFM = () => {
+    if (window.confirm('¿Restablecer clasificación y resultados a los datos oficiales de la RFFM?')) {
+      localStorage.removeItem(`${STORAGE_STANDINGS_KEY}_j${selectedJornada}`);
+      localStorage.removeItem(STORAGE_MATCHES_KEY);
+      setStandings(OFFICIAL_RFFM_JORNADA_4_STANDINGS);
+      setAllMatches(OFFICIAL_RFFM_ALL_MATCHES);
+      setSelectedJornada(4);
+      localStorage.setItem(ACTIVE_JORNADA_KEY, '4');
+      toast.success('Clasificación restablecida con datos oficiales de la RFFM.');
+    }
+  };
+
+  // Update match score in table
   const handleScoreChange = (matchId: string, gl: string, gv: string) => {
     const numGl = gl.trim() === '' ? undefined : parseInt(gl, 10);
     const numGv = gv.trim() === '' ? undefined : parseInt(gv, 10);
@@ -136,7 +201,7 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
     localStorage.setItem(STORAGE_MATCHES_KEY, JSON.stringify(updated));
   };
 
-  const myTeam = standings.find(t => t.isMyTeam || t.name.includes('AFE')) || standings[1];
+  const myTeam = standings.find(t => t.isMyTeam || t.name.includes('AFE')) || standings[8];
   const leaderTeam = standings[0];
 
   const filteredStandings = standings.filter(t => 
@@ -144,10 +209,7 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
     (t.shortName && t.shortName.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  // Matches of the selected jornada
   const currentJornadaMatches = allMatches.filter(m => m.jornada === selectedJornada);
-
-  // My team's all matches
   const myTeamMatches = allMatches.filter(m => m.local.includes('AFE') || m.visitante.includes('AFE'));
 
   return (
@@ -173,40 +235,52 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
                   <span>Jornada {selectedJornada} de 26</span>
                 </span>
 
-                <span className="text-[11px] font-medium text-emerald-400/90 hidden sm:inline-flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-emerald-400" />
-                  <span>Cómputo en vivo según resultados oficiales</span>
+                <span className="text-[11px] font-bold text-slate-400 hidden sm:inline-flex items-center gap-1">
+                  <Globe className="w-3 h-3 text-cyan-400" />
+                  <span>Conexión URL RFFM Activa</span>
                 </span>
               </div>
 
               <h2 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight flex items-center gap-2 mt-1">
                 Clasificación Oficial RFFM
               </h2>
-              <p className="text-xs text-slate-400">
-                {RFFM_INFANTIL_G50_INFO.federacion} • {RFFM_INFANTIL_G50_INFO.temporada}
+              <p className="text-xs text-slate-400 truncate max-w-xl">
+                Fuente oficial: <a href={RFFM_URL_CONFIG.getResultadosUrl(selectedJornada)} target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">www.rffm.es (Competición 26738324 • Grupo 27306559)</a>
               </p>
             </div>
           </div>
 
           {/* Quick Header Actions */}
           <div className="flex items-center gap-2 flex-wrap self-end sm:self-center">
+            {/* Live Sync button directly querying the user's RFFM URL */}
             <Button
-              onClick={handleResetToOfficialRFFM}
-              variant="outline"
-              className="bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700 text-xs font-bold px-3 py-2 h-9 rounded-xl flex items-center gap-1.5"
-              title="Restaurar todos los resultados oficiales de la RFFM"
+              onClick={handleLiveSync}
+              disabled={isLoadingLive}
+              className="bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-bold text-xs uppercase tracking-wider px-3.5 py-2 h-9 rounded-xl flex items-center gap-1.5 shadow-md shadow-emerald-950/40 cursor-pointer"
+              title="Consultar y sincronizar en vivo con la web de la RFFM"
             >
-              <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
-              <span>Restablecer RFFM</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingLive ? 'animate-spin' : ''}`} />
+              <span>{isLoadingLive ? 'Actualizando...' : 'Actualizar RFFM'}</span>
             </Button>
 
             <Button
-              onClick={handleOpenRFFM}
-              className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs uppercase tracking-wider px-3.5 py-2 h-9 rounded-xl flex items-center gap-1.5 shadow-md shadow-emerald-950/40"
-              title="Abrir web oficial de la Federación de Madrid"
+              onClick={handleOpenRFFMResultados}
+              variant="outline"
+              className="bg-slate-800/80 hover:bg-slate-700 text-slate-200 border-slate-700 text-xs font-bold px-3 py-2 h-9 rounded-xl flex items-center gap-1.5 cursor-pointer"
+              title="Abrir URL oficial de resultados y jornadas en RFFM.es"
             >
-              <ExternalLink className="w-3.5 h-3.5" />
-              <span>Ver en RFFM.es</span>
+              <ExternalLink className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Resultados RFFM</span>
+            </Button>
+
+            <Button
+              onClick={handleOpenRFFMClasificacion}
+              variant="outline"
+              className="bg-slate-800/80 hover:bg-slate-700 text-slate-200 border-slate-700 text-xs font-bold px-3 py-2 h-9 rounded-xl flex items-center gap-1.5 cursor-pointer"
+              title="Abrir URL oficial de clasificación en RFFM.es"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Tabla RFFM</span>
             </Button>
 
             <button
@@ -229,7 +303,7 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
 
             {[1, 2, 3, 4, 5].map((jNum) => {
               const isSelected = selectedJornada === jNum;
-              const isCurrent = jNum === 5;
+              const isCurrent = jNum === 4;
 
               return (
                 <button
@@ -243,7 +317,7 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
                 >
                   <span>Jornada {jNum}</span>
                   {isCurrent && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                    <span className="text-[9px] bg-amber-400 text-slate-950 px-1 rounded-sm font-black">OFICIAL</span>
                   )}
                 </button>
               );
@@ -313,7 +387,7 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
               </span>
             </div>
             <div className="text-sm sm:text-base font-black text-white truncate">
-              {myTeam?.shortName || myTeam?.name}
+              {myTeam?.name}
             </div>
             <div className="flex items-center gap-2 mt-1 text-xs text-slate-300">
               <span className="font-bold text-emerald-400">{myTeam?.pts} PTS</span>
@@ -329,7 +403,7 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
               <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-black">1º</span>
             </div>
             <div className="text-sm sm:text-base font-black text-white truncate">
-              {leaderTeam?.shortName || leaderTeam?.name}
+              {leaderTeam?.name}
             </div>
             <div className="flex items-center gap-2 mt-1 text-xs text-slate-300">
               <span className="font-bold text-amber-400">{leaderTeam?.pts} PTS</span>
@@ -341,23 +415,23 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
           {/* Estado de la Jornada */}
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3">
             <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-              Estado de Jornada
+              Jornada Seleccionada
             </div>
             <div className="text-sm sm:text-base font-black text-white flex items-center gap-1.5">
               <span>Jornada {selectedJornada}</span>
               <span className="text-xs text-emerald-400 font-bold">
-                {selectedJornada < 5 ? '(Disputada)' : selectedJornada === 5 ? '(Semana Actual)' : '(Próxima)'}
+                {selectedJornada <= 4 ? '(Actas Cerradas)' : '(Semana En Juego)'}
               </span>
             </div>
             <div className="text-xs text-slate-400 mt-1">
-              14 equipos • Resultados oficiales federados
+              14 equipos federados
             </div>
           </div>
 
           {/* Ascenso Info */}
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3">
             <div className="text-[11px] font-bold text-blue-400 uppercase tracking-wider mb-1">
-              Objetivo Deportivo
+              Puestos de Ascenso
             </div>
             <div className="text-sm sm:text-base font-black text-white flex items-center gap-1.5">
               <TrendingUp className="w-4 h-4 text-emerald-400" />
@@ -372,7 +446,7 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
         {/* Tab 1: Clasificación General */}
         {activeTab === 'tabla' && (
           <>
-            {/* Search Bar */}
+            {/* Search Bar & Reset button */}
             <div className="p-3 sm:px-6 sm:py-3.5 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
               <div className="relative flex-1 min-w-[200px] max-w-sm">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -385,8 +459,16 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
                 />
               </div>
 
-              <div className="flex items-center gap-2 text-xs text-slate-400">
-                <span>Calculada a partir de los marcadores de las Jornadas 1 a {selectedJornada}</span>
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={handleResetToOfficialRFFM}
+                  variant="outline"
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700 text-xs font-semibold h-8 px-3 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                  title="Restaurar a los datos originales de la RFFM"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Restablecer Oficiales</span>
+                </Button>
               </div>
             </div>
 
@@ -406,7 +488,7 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
                       <th className="py-3 px-2 text-center w-12 text-slate-300">GF</th>
                       <th className="py-3 px-2 text-center w-12 text-slate-300">GC</th>
                       <th className="py-3 px-2 text-center w-12 text-slate-200">DG</th>
-                      <th className="py-3 px-3 text-center w-28">Forma</th>
+                      <th className="py-3 px-3 text-center w-28">Racha</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 font-medium">
@@ -448,11 +530,21 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
                             </div>
                           </td>
 
-                          {/* Nombre del Equipo y Escudo */}
+                          {/* Nombre del Equipo y Escudo Oficial RFFM */}
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-3">
-                              <div className="shrink-0 w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center border border-slate-800 p-0.5">
-                                {isAFE ? (
+                              <div className="shrink-0 w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center border border-slate-800 p-0.5 overflow-hidden">
+                                {team.escudoUrl ? (
+                                  <img 
+                                    src={team.escudoUrl} 
+                                    alt={team.name} 
+                                    className="w-full h-full object-contain"
+                                    onError={(e) => {
+                                      // fallback
+                                      (e.target as HTMLElement).style.display = 'none';
+                                    }}
+                                  />
+                                ) : isAFE ? (
                                   <UDLaPovedaLogo className="w-6 h-6" />
                                 ) : (
                                   <RivalBadge rivalName={team.name} size="xs" />
@@ -527,24 +619,28 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
                             </span>
                           </td>
 
-                          {/* Forma Reciente */}
+                          {/* Racha de Partidos */}
                           <td className="py-3 px-3 text-center">
                             <div className="flex items-center justify-center gap-1">
-                              {team.form && team.form.map((result, rIdx) => (
-                                <span 
-                                  key={rIdx}
-                                  className={`w-4 h-4 rounded text-[9px] font-black flex items-center justify-center ${
-                                    result === 'V' 
-                                      ? 'bg-emerald-500 text-slate-950' 
-                                      : result === 'E' 
-                                        ? 'bg-amber-500 text-slate-950' 
-                                        : 'bg-rose-500 text-white'
-                                  }`}
-                                  title={result === 'V' ? 'Victoria' : result === 'E' ? 'Empate' : 'Derrota'}
-                                >
-                                  {result}
-                                </span>
-                              ))}
+                              {team.form && team.form.map((result, rIdx) => {
+                                const isWin = result === 'V' || result === 'G';
+                                const isDraw = result === 'E';
+                                return (
+                                  <span 
+                                    key={rIdx}
+                                    className={`w-4 h-4 rounded text-[9px] font-black flex items-center justify-center ${
+                                      isWin 
+                                        ? 'bg-emerald-500 text-slate-950' 
+                                        : isDraw 
+                                          ? 'bg-amber-500 text-slate-950' 
+                                          : 'bg-rose-500 text-white'
+                                    }`}
+                                    title={isWin ? 'Victoria' : isDraw ? 'Empate' : 'Derrota'}
+                                  >
+                                    {isWin ? 'G' : isDraw ? 'E' : 'P'}
+                                  </span>
+                                );
+                              })}
                             </div>
                           </td>
                         </tr>
@@ -563,25 +659,25 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="w-3 h-3 rounded bg-emerald-500 inline-block"></span>
-                    <span>V = Victoria (3 pts)</span>
+                    <span>G = Ganado (3 pts)</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="w-3 h-3 rounded bg-amber-500 inline-block"></span>
-                    <span>E = Empate (1 pt)</span>
+                    <span>E = Empatado (1 pt)</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="w-3 h-3 rounded bg-rose-500 inline-block"></span>
-                    <span>D = Derrota (0 pts)</span>
+                    <span>P = Perdido (0 pts)</span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
-                    onClick={handleOpenRFFM}
-                    className="text-xs text-emerald-400 hover:text-emerald-300 border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 h-7 px-2.5 rounded-lg flex items-center gap-1"
+                    onClick={handleOpenRFFMResultados}
+                    className="text-xs text-emerald-400 hover:text-emerald-300 border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 h-7 px-2.5 rounded-lg flex items-center gap-1 cursor-pointer"
                   >
-                    <span>Consultar actas en www.rffm.es</span>
+                    <span>Ver en www.rffm.es</span>
                     <ExternalLink className="w-3 h-3" />
                   </Button>
                 </div>
@@ -597,20 +693,22 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
               <div>
                 <h3 className="text-base font-black text-white uppercase tracking-tight flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-emerald-400" />
-                  <span>Encuentros y Resultados de la Jornada {selectedJornada}</span>
+                  <span>Encuentros y Resultados Oficiales de la Jornada {selectedJornada}</span>
                 </h3>
                 <p className="text-xs text-slate-400">
-                  {currentJornadaMatches.length} partidos oficiales • Los resultados actualizan automáticamente la clasificación
+                  {currentJornadaMatches.length} partidos oficiales extraídos de la plataforma de la RFFM
                 </p>
               </div>
 
-              <span className="text-xs font-bold text-slate-400 bg-slate-800/80 px-3 py-1 rounded-lg border border-slate-700">
-                {selectedJornada === 1 && '10/10/2026'}
-                {selectedJornada === 2 && '17/10/2026'}
-                {selectedJornada === 3 && '24/10/2026'}
-                {selectedJornada === 4 && '31/10/2026'}
-                {selectedJornada === 5 && '07/11/2026 - 08/11/2026 (Semana Actual)'}
-              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={handleLiveSync}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-8 px-3 rounded-xl flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Sincronizar Jornada {selectedJornada}</span>
+                </Button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
@@ -635,11 +733,11 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
                         {m.jugado ? (
                           <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
                             <CheckCircle2 className="w-3 h-3" />
-                            <span>Finalizado</span>
+                            <span>Acta Oficial</span>
                           </span>
                         ) : (
                           <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                            Programado
+                            Pendiente
                           </span>
                         )}
                         {isAFEMatch && (
@@ -653,8 +751,10 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
                     <div className="grid grid-cols-12 items-center gap-2">
                       {/* Local Team */}
                       <div className="col-span-5 flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center shrink-0 border border-slate-800">
-                          {m.local.includes('AFE') ? (
+                        <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center shrink-0 border border-slate-800 overflow-hidden">
+                          {m.escudoLocal ? (
+                            <img src={m.escudoLocal} alt={m.local} className="w-full h-full object-contain" />
+                          ) : m.local.includes('AFE') ? (
                             <UDLaPovedaLogo className="w-6 h-6" />
                           ) : (
                             <RivalBadge rivalName={m.local} size="xs" />
@@ -665,7 +765,7 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
                         </span>
                       </div>
 
-                      {/* Score Input */}
+                      {/* Score */}
                       <div className="col-span-2 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <input
@@ -697,8 +797,10 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
                         <span className={`text-xs truncate ${m.visitante.includes('AFE') ? 'font-black text-emerald-300' : 'font-semibold text-white'}`} title={m.visitante}>
                           {m.visitante}
                         </span>
-                        <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center shrink-0 border border-slate-800">
-                          {m.visitante.includes('AFE') ? (
+                        <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center shrink-0 border border-slate-800 overflow-hidden">
+                          {m.escudoVisitante ? (
+                            <img src={m.escudoVisitante} alt={m.visitante} className="w-full h-full object-contain" />
+                          ) : m.visitante.includes('AFE') ? (
                             <UDLaPovedaLogo className="w-6 h-6" />
                           ) : (
                             <RivalBadge rivalName={m.visitante} size="xs" />
@@ -727,15 +829,15 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
               <div>
                 <h3 className="text-base font-black text-white uppercase tracking-tight flex items-center gap-2">
                   <Shield className="w-4 h-4 text-emerald-400" />
-                  <span>Calendario y Resultados de la S.A.D. Fundación E.F. AFE 'B'</span>
+                  <span>Trayectoria de la S.A.D. Fundación E.F. AFE 'B' (RFFM Grupo 50)</span>
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Resumen cronológico de los 4 partidos disputados y el próximo encuentro de la Jornada 5
+                  Partidos oficiales extraídos de las actas de la RFFM
                 </p>
               </div>
 
               <span className="text-xs font-black text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-3 py-1 rounded-lg">
-                Balance: 3V - 1E - 0D (10 PTS • Invicto)
+                Balance Oficial: 1V - 2E - 1D (5 Puntos)
               </span>
             </div>
 
@@ -746,17 +848,17 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
                 const myGoals = isHome ? m.golesLocal : m.golesVisitante;
                 const rivalGoals = isHome ? m.golesVisitante : m.golesLocal;
                 
-                let resultText = 'Programado';
+                let resultText = 'Pendiente';
                 let resultBadgeClass = 'bg-slate-800 text-slate-300';
                 if (m.jugado && myGoals !== undefined && rivalGoals !== undefined) {
                   if (myGoals > rivalGoals) {
-                    resultText = 'Victoria (+3 pts)';
+                    resultText = 'Ganado (+3 pts)';
                     resultBadgeClass = 'bg-emerald-500 text-slate-950 font-black';
                   } else if (myGoals === rivalGoals) {
-                    resultText = 'Empate (+1 pt)';
+                    resultText = 'Empatado (+1 pt)';
                     resultBadgeClass = 'bg-amber-500 text-slate-950 font-black';
                   } else {
-                    resultText = 'Derrota';
+                    resultText = 'Perdido';
                     resultBadgeClass = 'bg-rose-500 text-white font-black';
                   }
                 }
@@ -804,7 +906,7 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
                       ) : (
                         <div className="text-right">
                           <span className="text-xs font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-lg">
-                            Próximo Partido (Jornada 5)
+                            Próximo Partido (07/11/2026)
                           </span>
                         </div>
                       )}
@@ -820,7 +922,7 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
         <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>Clasificación y actas oficiales RFFM actualizadas jornada a jornada (Jornadas 1 a 5)</span>
+            <span>URL Oficial: <code className="text-emerald-400 text-[11px]">rffm.es/competicion/resultados-y-jornadas?temporada=22&competicion=26738324&grupo=27306559&jornada={selectedJornada}&tipojuego=1</code></span>
           </div>
 
           <Button

@@ -44,10 +44,58 @@ async function startServer() {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  // Example API route for complex scouting logic if needed
-  app.post("/api/scouting-report", async (req, res) => {
-    // This could involve Gemini API later
-    res.json({ message: "Scouting report endpoint" });
+  // Official RFFM Classification Proxy
+  app.get("/api/rffm/clasificacion", async (req, res) => {
+    try {
+      const temporada = req.query.temporada || "22";
+      const competicion = req.query.competicion || "26738324";
+      const grupo = req.query.grupo || "27306559";
+      const jornada = req.query.jornada || "4";
+      const tipojuego = req.query.tipojuego || "1";
+
+      const targetUrl = `https://www.rffm.es/competicion/clasificaciones?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&jornada=${jornada}&tipojuego=${tipojuego}`;
+      const response = await fetch(targetUrl, {
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
+      });
+      const html = await response.text();
+      const match = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+      if (!match) {
+        return res.status(502).json({ error: "No se pudieron obtener los datos de la RFFM." });
+      }
+      const json = JSON.parse(match[1]);
+      const standings = json.props?.pageProps?.standings;
+      res.json(standings || {});
+    } catch (err: any) {
+      console.error("Error fetching RFFM clasificacion:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Official RFFM Resultados & Jornadas Proxy
+  app.get("/api/rffm/resultados", async (req, res) => {
+    try {
+      const temporada = req.query.temporada || "22";
+      const competicion = req.query.competicion || "26738324";
+      const grupo = req.query.grupo || "27306559";
+      const jornada = req.query.jornada || "4";
+      const tipojuego = req.query.tipojuego || "1";
+
+      const targetUrl = `https://www.rffm.es/competicion/resultados-y-jornadas?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&jornada=${jornada}&tipojuego=${tipojuego}`;
+      const response = await fetch(targetUrl, {
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
+      });
+      const html = await response.text();
+      const match = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+      if (!match) {
+        return res.status(502).json({ error: "No se pudieron obtener los datos de la RFFM." });
+      }
+      const json = JSON.parse(match[1]);
+      const results = json.props?.pageProps?.results;
+      res.json(results || {});
+    } catch (err: any) {
+      console.error("Error fetching RFFM resultados:", err);
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // Gemini AI Match Plan & Tactical Counter-Strategy endpoint
