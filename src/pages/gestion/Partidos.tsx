@@ -150,6 +150,10 @@ export const calculateDefaultCitacionHora = (matchHora: string): string => {
 export default function Partidos() {
   const [selectedTeam, setSelectedTeam] = useState<string>(CLUB_TEAMS[0]);
   const isFemaleTeam = selectedTeam.trim().toUpperCase() === 'SENIOR FEMENINO' || selectedTeam.toUpperCase().includes('FEMENIN');
+  const isInfantilB = selectedTeam.trim().toUpperCase() === 'INFANTIL B' || 
+                      selectedTeam.toUpperCase().includes('INFANTIL B') ||
+                      selectedTeam.toUpperCase().includes("INFANTIL 'B'") ||
+                      selectedTeam.toUpperCase().includes('INFANTIL-B');
   const playerNoun = isFemaleTeam ? 'jugadora' : 'jugador';
   const playerNounPlural = isFemaleTeam ? 'jugadoras' : 'jugadores';
   const playerNounUpper = isFemaleTeam ? 'JUGADORA' : 'JUGADOR';
@@ -1352,14 +1356,16 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-          <Button 
-            onClick={() => setShowStandingsModal(true)}
-            className="text-xs font-black uppercase tracking-wider bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white flex items-center justify-center gap-2 h-10 px-4 rounded-xl cursor-pointer shadow-lg shadow-emerald-950/40 border border-emerald-400/40"
-            title="Ver Clasificación Oficial RFFM - 2ª Infantil Grupo 50 (www.rffm.es)"
-          >
-            <Trophy className="w-4 h-4 text-amber-300" />
-            <span>Clasificación Grupo 50 (RFFM)</span>
-          </Button>
+          {isInfantilB && (
+            <Button 
+              onClick={() => setShowStandingsModal(true)}
+              className="text-xs font-black uppercase tracking-wider bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white flex items-center justify-center gap-2 h-10 px-4 rounded-xl cursor-pointer shadow-lg shadow-emerald-950/40 border border-emerald-400/40"
+              title="Ver Clasificación Oficial RFFM - 2ª Infantil Grupo 50 (www.rffm.es)"
+            >
+              <Trophy className="w-4 h-4 text-amber-300" />
+              <span>Clasificación Grupo 50 (RFFM)</span>
+            </Button>
+          )}
 
           <Button 
             onClick={() => {
