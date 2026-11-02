@@ -18,7 +18,8 @@ import {
   Printer,
   ChevronLeft,
   Zap,
-  Hourglass
+  Hourglass,
+  ArrowLeftRight
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -474,6 +475,83 @@ export const RivalTeamDossier: React.FC<RivalTeamDossierProps> = ({
             <span className="text-[10px] text-slate-400 block truncate mt-0.5">
               {teamStats.goalTiming.masTardioEncajado ? `J.${teamStats.goalTiming.masTardioEncajado.jornada} vs ${teamStats.goalTiming.masTardioEncajado.rivalShortName}` : 'Portería imbatida'}
             </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Patrón Colectivo de Cambios y Sustituciones (Actas Arbitrales RFFM) */}
+      <div className="bg-slate-950/80 border border-slate-850 rounded-2xl p-5 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+          <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+            <ArrowLeftRight className="w-4 h-4 text-indigo-400" />
+            Patrón de Sustituciones y Cambios (Actas Arbitrales RFFM)
+          </h4>
+          <span className="text-[10px] text-slate-500 font-bold uppercase">
+            {teamStats.substitutions.totalCambios} cambios registrados ({teamStats.substitutions.promedioPorPartido}/p)
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3">
+            <span className="text-[9px] uppercase font-bold text-blue-400 block">1ª Parte (1'-34')</span>
+            <div className="text-lg font-black text-blue-300 mt-1">
+              {teamStats.substitutions.cambiosPrimeraParte} cambios
+            </div>
+            <span className="text-[10px] text-slate-400 block mt-0.5">
+              {teamStats.substitutions.porcentajePrimeraParte}% de sus cambios
+            </span>
+          </div>
+
+          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3">
+            <span className="text-[9px] uppercase font-bold text-teal-400 block">Descanso (35')</span>
+            <div className="text-lg font-black text-teal-300 mt-1">
+              {teamStats.substitutions.cambiosDescanso} cambios
+            </div>
+            <span className="text-[10px] text-slate-400 block mt-0.5">
+              {teamStats.substitutions.porcentajeDescanso}% de sus cambios
+            </span>
+          </div>
+
+          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3">
+            <span className="text-[9px] uppercase font-bold text-indigo-400 block">2ª Parte (36'-70')</span>
+            <div className="text-lg font-black text-indigo-300 mt-1">
+              {teamStats.substitutions.cambiosSegundaParte} cambios
+            </div>
+            <span className="text-[10px] text-slate-400 block mt-0.5">
+              {teamStats.substitutions.porcentajeSegundaParte}% de sus cambios
+            </span>
+          </div>
+
+          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3">
+            <span className="text-[9px] uppercase font-bold text-amber-400 block">1er Cambio / Media</span>
+            <div className="text-lg font-black text-white mt-1">
+              Min {teamStats.substitutions.minutoPrimerCambio ? `${teamStats.substitutions.minutoPrimerCambio}'` : 'N/D'}
+            </div>
+            <span className="text-[10px] text-slate-400 block mt-0.5">
+              Minuto medio: <strong className="text-emerald-400">{teamStats.substitutions.minutoMedioCambios}'</strong>
+            </span>
+          </div>
+        </div>
+
+        <div className="pt-1">
+          <span className="text-[11px] text-slate-400 block mb-1.5 font-medium">
+            Minutos de cambios registrados en acta (Jornadas 1 a 4):
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {teamStats.substitutions.eventos.map((ev, i) => (
+              <span
+                key={i}
+                className={`px-2 py-0.5 rounded text-[11px] font-mono border ${
+                  ev.periodo === 'Descanso'
+                    ? 'bg-teal-500/10 text-teal-300 border-teal-500/20'
+                    : ev.periodo === '1ª Parte'
+                    ? 'bg-blue-500/10 text-blue-300 border-blue-500/20'
+                    : 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20'
+                }`}
+              >
+                Min {ev.minuto}' <span className="text-[9px] text-slate-500">({ev.periodo})</span>
+              </span>
+            ))}
           </div>
         </div>
       </div>

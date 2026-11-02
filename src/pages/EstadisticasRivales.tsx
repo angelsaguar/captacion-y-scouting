@@ -14,13 +14,15 @@ import {
   RefreshCw,
   ExternalLink,
   ChevronRight,
-  Hourglass
+  Hourglass,
+  ArrowLeftRight
 } from 'lucide-react';
 import { computeAllCollectiveStats, RIVAL_TEAMS } from '@/data/rivalStatsData';
 import { RivalAttributionBanner } from '@/components/rivales/RivalAttributionBanner';
 import { RivalGeneralTable } from '@/components/rivales/RivalGeneralTable';
 import { RivalRankings } from '@/components/rivales/RivalRankings';
 import { RivalGoalTimingChart } from '@/components/rivales/RivalGoalTimingChart';
+import { RivalSubstitutionsChart } from '@/components/rivales/RivalSubstitutionsChart';
 import { RivalIntervalsChart } from '@/components/rivales/RivalIntervalsChart';
 import { RivalDisciplineChart } from '@/components/rivales/RivalDisciplineChart';
 import { RivalJornadasEvolution } from '@/components/rivales/RivalJornadasEvolution';
@@ -33,6 +35,7 @@ type ActiveTab =
   | 'general' 
   | 'rankings' 
   | 'cronometria'
+  | 'cambios'
   | 'franjas' 
   | 'disciplina' 
   | 'evolucion' 
@@ -72,6 +75,7 @@ export default function EstadisticasRivales() {
   const tabsConfig = [
     { id: 'general', label: 'Tabla Colectiva', icon: Layers },
     { id: 'rankings', label: 'Rankings Top', icon: Award },
+    { id: 'cambios', label: 'Cambios & Sustituciones', icon: ArrowLeftRight },
     { id: 'cronometria', label: 'Cronometría (Récords Minutos)', icon: Hourglass },
     { id: 'franjas', label: 'Goles por Franjas (15m)', icon: Clock },
     { id: 'disciplina', label: 'Tarjetas & Fair Play', icon: ShieldAlert },
@@ -173,6 +177,13 @@ export default function EstadisticasRivales() {
 
         {activeTab === 'rankings' && (
           <RivalRankings
+            stats={stats}
+            onSelectTeam={handleSelectTeamFromTable}
+          />
+        )}
+
+        {activeTab === 'cambios' && (
+          <RivalSubstitutionsChart
             stats={stats}
             onSelectTeam={handleSelectTeamFromTable}
           />

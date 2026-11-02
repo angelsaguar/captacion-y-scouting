@@ -7,7 +7,10 @@ import {
   CollectiveGoalEvent, 
   CollectiveCardEvent,
   GoalTimingRecord,
-  GoalTimingStats
+  GoalTimingStats,
+  CollectiveSubstitutionEvent,
+  SubstitutionPeriod,
+  TeamSubstitutionStats
 } from '@/types/rivals';
 
 export const FRANJAS_15M: { franja: Franja15Min; label: string; periodo: '1ª Parte' | '2ª Parte' }[] = [
@@ -154,6 +157,23 @@ function createCollectiveCards(matchId: string, teamId: string, cards: { min: nu
     teamId,
     minuto: c.min,
     tipo: c.tipo
+  }));
+}
+
+export function getSubstitutionPeriod(minuto: number): SubstitutionPeriod {
+  if (minuto < 35) return '1ª Parte';
+  if (minuto === 35) return 'Descanso';
+  return '2ª Parte';
+}
+
+export function createCollectiveSubs(matchId: string, teamId: string, minutes: number[], jornada?: number): CollectiveSubstitutionEvent[] {
+  return minutes.map((min, idx) => ({
+    id: `cs-${matchId}-${teamId}-${min}-${idx}`,
+    matchId,
+    teamId,
+    minuto: min,
+    periodo: getSubstitutionPeriod(min),
+    jornada
   }));
 }
 
@@ -844,6 +864,145 @@ export const COLLECTIVE_MATCHES: RivalMatchCollective[] = [
   }
 ];
 
+// Official Referee Match Report Substitutions Data (Jornadas 1 to 4)
+// Rules: 70 min matches (1ª Parte: 1-34, Descanso: 35, 2ª Parte: 36-70)
+// Anonymous collective data only (minutes per team, without individual player identities)
+export const MATCH_SUBSTITUTIONS_DATA: Record<string, Record<string, number[]>> = {
+  // --- JORNADA 1 ---
+  "m-j1-1": {
+    "team-retiro-sur": [35, 35, 45, 52, 60],
+    "team-ciudad-madrid": [24, 35, 48, 56]
+  },
+  "m-j1-2": {
+    "team-vallecas": [35, 44, 53, 62],
+    "team-madrid-sur": [35, 35, 49, 58]
+  },
+  "m-j1-3": {
+    "team-elipa": [35, 35, 42, 51, 60],
+    "team-stella-maris": [28, 35, 46, 55]
+  },
+  "m-j1-4": {
+    "team-carabanchel": [35, 35, 40, 50, 57],
+    "team-inter-victoria": [20, 35, 45, 52]
+  },
+  "m-j1-5": {
+    "team-santa-maria": [35, 45, 55, 63],
+    "team-afe-b": [35, 35, 47, 56, 64]
+  },
+  "m-j1-6": {
+    "team-juventud-madrid": [35, 43, 52, 61],
+    "team-los-olmos": [30, 35, 48, 59]
+  },
+  "m-j1-7": {
+    "team-del-pozo": [35, 35, 44, 54, 62],
+    "team-innova": [25, 35, 46, 58]
+  },
+
+  // --- JORNADA 2 ---
+  "m-j2-1": {
+    "team-ciudad-madrid": [35, 44, 52, 60],
+    "team-del-pozo": [35, 35, 45, 53, 61]
+  },
+  "m-j2-2": {
+    "team-madrid-sur": [35, 46, 55, 62],
+    "team-retiro-sur": [35, 35, 43, 52, 59]
+  },
+  "m-j2-3": {
+    "team-stella-maris": [35, 48, 57, 65],
+    "team-vallecas": [35, 35, 47, 56]
+  },
+  "m-j2-4": {
+    "team-inter-victoria": [26, 35, 48, 58],
+    "team-elipa": [35, 35, 42, 50, 58]
+  },
+  "m-j2-5": {
+    "team-afe-b": [35, 35, 48, 58, 65],
+    "team-carabanchel": [35, 35, 44, 53, 62]
+  },
+  "m-j2-6": {
+    "team-los-olmos": [35, 44, 54, 63],
+    "team-santa-maria": [32, 35, 47, 59]
+  },
+  "m-j2-7": {
+    "team-innova": [35, 45, 55, 64],
+    "team-juventud-madrid": [35, 35, 48, 58]
+  },
+
+  // --- JORNADA 3 ---
+  "m-j3-1": {
+    "team-ciudad-madrid": [35, 42, 51, 62],
+    "team-madrid-sur": [35, 35, 46, 57]
+  },
+  "m-j3-2": {
+    "team-retiro-sur": [35, 35, 44, 51, 60],
+    "team-stella-maris": [22, 35, 48, 59]
+  },
+  "m-j3-3": {
+    "team-vallecas": [35, 35, 46, 55, 63],
+    "team-inter-victoria": [35, 45, 54, 62]
+  },
+  "m-j3-4": {
+    "team-elipa": [35, 35, 46, 54, 62],
+    "team-afe-b": [35, 35, 45, 53, 64]
+  },
+  "m-j3-5": {
+    "team-carabanchel": [35, 35, 43, 52, 61],
+    "team-los-olmos": [35, 46, 56, 64]
+  },
+  "m-j3-6": {
+    "team-santa-maria": [35, 44, 53, 62],
+    "team-juventud-madrid": [29, 35, 47, 58]
+  },
+  "m-j3-7": {
+    "team-del-pozo": [35, 35, 42, 50, 59],
+    "team-innova": [35, 44, 52, 61]
+  },
+
+  // --- JORNADA 4 ---
+  "m-j4-1": {
+    "team-madrid-sur": [35, 45, 54, 63],
+    "team-del-pozo": [35, 35, 43, 52, 60]
+  },
+  "m-j4-2": {
+    "team-stella-maris": [35, 35, 46, 55, 64],
+    "team-ciudad-madrid": [35, 43, 52, 61]
+  },
+  "m-j4-3": {
+    "team-inter-victoria": [18, 35, 47, 56],
+    "team-retiro-sur": [35, 35, 42, 51, 58]
+  },
+  "m-j4-4": {
+    "team-afe-b": [35, 35, 44, 52, 62],
+    "team-vallecas": [31, 35, 48, 59]
+  },
+  "m-j4-5": {
+    "team-los-olmos": [35, 45, 55, 64],
+    "team-elipa": [35, 35, 43, 51, 59]
+  },
+  "m-j4-6": {
+    "team-juventud-madrid": [35, 44, 53, 62],
+    "team-carabanchel": [35, 35, 42, 50, 58]
+  },
+  "m-j4-7": {
+    "team-innova": [35, 46, 56, 65],
+    "team-santa-maria": [35, 35, 47, 58]
+  }
+};
+
+// Initialize substitutionEvents on COLLECTIVE_MATCHES
+COLLECTIVE_MATCHES.forEach(m => {
+  if (!m.substitutionEvents) {
+    const subData = MATCH_SUBSTITUTIONS_DATA[m.id];
+    if (subData) {
+      const subs: CollectiveSubstitutionEvent[] = [];
+      Object.entries(subData).forEach(([teamId, minutes]) => {
+        subs.push(...createCollectiveSubs(m.id, teamId, minutes, m.jornada));
+      });
+      m.substitutionEvents = subs;
+    }
+  }
+});
+
 export const RIVAL_MATCHES_COLLECTIVE = COLLECTIVE_MATCHES;
 
 /**
@@ -891,6 +1050,24 @@ export function computeAllCollectiveStats(
 
     // Discipline counters
     let amarillas = 0, rojasDirectas = 0, doblesAmarillas = 0;
+
+    // Substitutions state (actas arbitrales RFFM)
+    let totalSubs = 0;
+    let subs1T = 0;
+    let subsDescanso = 0;
+    let subs2T = 0;
+    let minSubMinuto = Infinity;
+    let minSubJornada: number | undefined = undefined;
+    let sumSubMinutes = 0;
+    const subEventsTeam: CollectiveSubstitutionEvent[] = [];
+    const subFranjas = {
+      '1-15': 0,
+      '16-34': 0,
+      '35 (Descanso)': 0,
+      '36-50': 0,
+      '51-65': 0,
+      '66-70': 0
+    };
 
     // Evolution by Jornada
     const evolucionPuntos: { jornada: number; puntos: number; posicion: number }[] = [];
@@ -1000,6 +1177,36 @@ export function computeAllCollectiveStats(
           else if (ce.tipo === 'Doble_Amarilla') doblesAmarillas++;
         }
       });
+
+      // Tally substitutions
+      if (m.substitutionEvents) {
+        m.substitutionEvents.forEach(se => {
+          if (se.teamId === team.id) {
+            totalSubs++;
+            sumSubMinutes += se.minuto;
+            subEventsTeam.push({ ...se, jornada: se.jornada || m.jornada });
+
+            if (se.minuto < 35) {
+              subs1T++;
+              if (se.minuto <= 15) subFranjas['1-15']++;
+              else subFranjas['16-34']++;
+            } else if (se.minuto === 35 || se.periodo === 'Descanso') {
+              subsDescanso++;
+              subFranjas['35 (Descanso)']++;
+            } else {
+              subs2T++;
+              if (se.minuto <= 50) subFranjas['36-50']++;
+              else if (se.minuto <= 65) subFranjas['51-65']++;
+              else subFranjas['66-70']++;
+            }
+
+            if (se.minuto < minSubMinuto) {
+              minSubMinuto = se.minuto;
+              minSubJornada = m.jornada;
+            }
+          }
+        });
+      }
     });
 
     const dg = gf - gc;
@@ -1041,6 +1248,29 @@ export function computeAllCollectiveStats(
     const promedioPorPartido = pj > 0 ? parseFloat((totalTarjetas / pj).toFixed(2)) : 0;
     const puntosFairPlay = amarillas * 1 + doblesAmarillas * 3 + rojasDirectas * 5;
 
+    // Substitution aggregates
+    const promedioSubsPorPartido = pj > 0 ? parseFloat((totalSubs / pj).toFixed(2)) : 0;
+    const minutoMedioCambios = totalSubs > 0 ? parseFloat((sumSubMinutes / totalSubs).toFixed(1)) : 0;
+    const pct1T = totalSubs > 0 ? Math.round((subs1T / totalSubs) * 100) : 0;
+    const pctDescanso = totalSubs > 0 ? Math.round((subsDescanso / totalSubs) * 100) : 0;
+    const pct2T = totalSubs > 0 ? Math.round((subs2T / totalSubs) * 100) : 0;
+
+    const substitutions: TeamSubstitutionStats = {
+      totalCambios: totalSubs,
+      promedioPorPartido: promedioSubsPorPartido,
+      cambiosPrimeraParte: subs1T,
+      porcentajePrimeraParte: pct1T,
+      cambiosDescanso: subsDescanso,
+      porcentajeDescanso: pctDescanso,
+      cambiosSegundaParte: subs2T,
+      porcentajeSegundaParte: pct2T,
+      minutoPrimerCambio: minSubMinuto < Infinity ? minSubMinuto : null,
+      minutoPrimerCambioJornada: minSubJornada,
+      minutoMedioCambios,
+      distribucionFranjas: subFranjas,
+      eventos: subEventsTeam.sort((a, b) => (a.jornada || 0) - (b.jornada || 0) || a.minuto - b.minuto)
+    };
+
     return {
       team,
       pos: 1,
@@ -1076,7 +1306,8 @@ export function computeAllCollectiveStats(
         masTardioMarcado: maxFavorRecord,
         masRapidoEncajado: minContraRecord,
         masTardioEncajado: maxContraRecord
-      }
+      },
+      substitutions
     };
   });
 

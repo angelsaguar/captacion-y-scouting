@@ -25,6 +25,17 @@ export interface CollectiveCardEvent {
   tipo: 'Amarilla' | 'Roja_Directa' | 'Doble_Amarilla';
 }
 
+export type SubstitutionPeriod = '1ª Parte' | 'Descanso' | '2ª Parte';
+
+export interface CollectiveSubstitutionEvent {
+  id: string;
+  matchId: string;
+  teamId: string;
+  minuto: number;
+  periodo: SubstitutionPeriod;
+  jornada?: number;
+}
+
 export interface RivalMatchCollective {
   id: string;
   jornada: number;
@@ -39,6 +50,7 @@ export interface RivalMatchCollective {
   actaCerrada: boolean;
   goalEvents: CollectiveGoalEvent[];
   cardEvents: CollectiveCardEvent[];
+  substitutionEvents?: CollectiveSubstitutionEvent[];
 }
 
 export interface IntervalStats {
@@ -71,6 +83,29 @@ export interface GoalTimingStats {
   masTardioMarcado: GoalTimingRecord | null;
   masRapidoEncajado: GoalTimingRecord | null;
   masTardioEncajado: GoalTimingRecord | null;
+}
+
+export interface TeamSubstitutionStats {
+  totalCambios: number;
+  promedioPorPartido: number;
+  cambiosPrimeraParte: number;      // 1' - 34'
+  porcentajePrimeraParte: number;
+  cambiosDescanso: number;          // 35' (Descanso)
+  porcentajeDescanso: number;
+  cambiosSegundaParte: number;      // 36' - 70'
+  porcentajeSegundaParte: number;
+  minutoPrimerCambio: number | null;
+  minutoPrimerCambioJornada?: number;
+  minutoMedioCambios: number;
+  distribucionFranjas: {
+    '1-15': number;
+    '16-34': number;
+    '35 (Descanso)': number;
+    '36-50': number;
+    '51-65': number;
+    '66-70': number;
+  };
+  eventos: CollectiveSubstitutionEvent[];
 }
 
 export interface TeamCollectiveStats {
@@ -125,4 +160,7 @@ export interface TeamCollectiveStats {
 
   // Cronometría arbitral de goles (más rápido / tardío)
   goalTiming: GoalTimingStats;
+
+  // Estadísticas de sustituciones y cambios (Actas RFFM)
+  substitutions: TeamSubstitutionStats;
 }

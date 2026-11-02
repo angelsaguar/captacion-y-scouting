@@ -141,6 +141,36 @@ export const RivalHeadToHead: React.FC<RivalHeadToHeadProps> = ({
       valA: `${teamA.discipline.totalTarjetas} tarj.`,
       valB: `${teamB.discipline.totalTarjetas} tarj.`,
       winner: teamA.discipline.totalTarjetas < teamB.discipline.totalTarjetas ? 'A' : teamA.discipline.totalTarjetas > teamB.discipline.totalTarjetas ? 'B' : 'draw'
+    },
+    {
+      label: 'Total Cambios Efectuados',
+      valA: `${teamA.substitutions.totalCambios} (${teamA.substitutions.promedioPorPartido}/p)`,
+      valB: `${teamB.substitutions.totalCambios} (${teamB.substitutions.promedioPorPartido}/p)`,
+      winner: 'draw'
+    },
+    {
+      label: 'Cambios en 1ª Parte (1-34\')',
+      valA: `${teamA.substitutions.cambiosPrimeraParte} (${teamA.substitutions.porcentajePrimeraParte}%)`,
+      valB: `${teamB.substitutions.cambiosPrimeraParte} (${teamB.substitutions.porcentajePrimeraParte}%)`,
+      winner: 'draw'
+    },
+    {
+      label: 'Cambios en Descanso (35\')',
+      valA: `${teamA.substitutions.cambiosDescanso} (${teamA.substitutions.porcentajeDescanso}%)`,
+      valB: `${teamB.substitutions.cambiosDescanso} (${teamB.substitutions.porcentajeDescanso}%)`,
+      winner: 'draw'
+    },
+    {
+      label: 'Minuto Primer Cambio',
+      valA: teamA.substitutions.minutoPrimerCambio ? `Minuto ${teamA.substitutions.minutoPrimerCambio}'` : 'N/D',
+      valB: teamB.substitutions.minutoPrimerCambio ? `Minuto ${teamB.substitutions.minutoPrimerCambio}'` : 'N/D',
+      winner: 'draw'
+    },
+    {
+      label: 'Minuto Medio de Sustituciones',
+      valA: `${teamA.substitutions.minutoMedioCambios}'`,
+      valB: `${teamB.substitutions.minutoMedioCambios}'`,
+      winner: 'draw'
     }
   ];
 
