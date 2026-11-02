@@ -164,3 +164,21 @@ export interface TeamCollectiveStats {
   // Estadísticas de sustituciones y cambios (Actas RFFM)
   substitutions: TeamSubstitutionStats;
 }
+
+export interface TeamTechnicalReport {
+  teamId: string;
+  teamName: string;
+  fechaInforme: string;
+  sistemaRival: string;
+  sistemaPropio: string;
+  objetivosOfensivos: string;
+  objetivosDefensivos: string;
+  puntosFuertesRival: string;
+  vulnerabilidadesRival: string;
+  balonParado: string;
+  charlaTecnica: string;
+  alineacionPrevista: string;
+  convocatoria: string[];
+  notasEntrenador: string;
+  ultimaModificacion: string;
+}

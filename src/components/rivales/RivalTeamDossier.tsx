@@ -19,7 +19,8 @@ import {
   ChevronLeft,
   Zap,
   Hourglass,
-  ArrowLeftRight
+  ArrowLeftRight,
+  FileText
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -28,13 +29,15 @@ interface RivalTeamDossierProps {
   initialTeamId?: string | null;
   onBack?: () => void;
   onSelectCompare?: (teamAId: string, teamBId: string) => void;
+  onPrepareReport?: (teamId: string) => void;
 }
 
 export const RivalTeamDossier: React.FC<RivalTeamDossierProps> = ({
   stats,
   initialTeamId,
   onBack,
-  onSelectCompare
+  onSelectCompare,
+  onPrepareReport
 }) => {
   const [selectedTeamId, setSelectedTeamId] = useState<string>(
     initialTeamId || stats.find(s => s.team.isMyTeam)?.team.id || stats[0]?.team.id
@@ -161,6 +164,17 @@ export const RivalTeamDossier: React.FC<RivalTeamDossierProps> = ({
               className="border-slate-800 hover:bg-slate-800 text-xs font-bold text-blue-400 rounded-xl h-10"
             >
               Comparar con AFE 'B'
+            </Button>
+          )}
+
+          {onPrepareReport && (
+            <Button
+              onClick={() => onPrepareReport(selectedTeamId)}
+              size="sm"
+              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black rounded-xl h-10 shadow-lg shadow-indigo-900/30 flex items-center gap-1.5 cursor-pointer"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Preparar Informe Técnico</span>
             </Button>
           )}
 

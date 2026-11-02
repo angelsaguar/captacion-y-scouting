@@ -15,7 +15,8 @@ import {
   ExternalLink,
   ChevronRight,
   Hourglass,
-  ArrowLeftRight
+  ArrowLeftRight,
+  FileText
 } from 'lucide-react';
 import { computeAllCollectiveStats, RIVAL_TEAMS } from '@/data/rivalStatsData';
 import { RivalAttributionBanner } from '@/components/rivales/RivalAttributionBanner';
@@ -28,14 +29,16 @@ import { RivalDisciplineChart } from '@/components/rivales/RivalDisciplineChart'
 import { RivalJornadasEvolution } from '@/components/rivales/RivalJornadasEvolution';
 import { RivalTeamDossier } from '@/components/rivales/RivalTeamDossier';
 import { RivalHeadToHead } from '@/components/rivales/RivalHeadToHead';
+import { RivalTechnicalReport } from '@/components/rivales/RivalTechnicalReport';
 import { RivalSyncModal } from '@/components/rivales/RivalSyncModal';
 import { toast } from 'sonner';
 
 type ActiveTab = 
   | 'general' 
   | 'rankings' 
-  | 'cronometria'
+  | 'informe'
   | 'cambios'
+  | 'cronometria'
   | 'franjas' 
   | 'disciplina' 
   | 'evolucion' 
@@ -66,6 +69,11 @@ export default function EstadisticasRivales() {
     setActiveTab('dossier');
   };
 
+  const handlePrepareReport = (teamId: string) => {
+    setSelectedTeamId(teamId);
+    setActiveTab('informe');
+  };
+
   const handleStartComparison = (teamA: string, teamB: string) => {
     setCompareTeamA(teamA);
     setCompareTeamB(teamB);
@@ -75,13 +83,14 @@ export default function EstadisticasRivales() {
   const tabsConfig = [
     { id: 'general', label: 'Tabla Colectiva', icon: Layers },
     { id: 'rankings', label: 'Rankings Top', icon: Award },
-    { id: 'cambios', label: 'Cambios & Sustituciones', icon: ArrowLeftRight },
-    { id: 'cronometria', label: 'Cronometría (Récords Minutos)', icon: Hourglass },
-    { id: 'franjas', label: 'Goles por Franjas (15m)', icon: Clock },
-    { id: 'disciplina', label: 'Tarjetas & Fair Play', icon: ShieldAlert },
-    { id: 'evolucion', label: 'Evolución Jornadas', icon: TrendingUp },
-    { id: 'dossier', label: 'Ficha Colectiva 360°', icon: Users },
-    { id: 'comparador', label: 'Comparador Cara a Cara', icon: Swords },
+    { id: 'informe', label: 'Informe Técnico', icon: FileText },
+    { id: 'cambios', label: 'Sustituciones', icon: ArrowLeftRight },
+    { id: 'cronometria', label: 'Cronometría', icon: Hourglass },
+    { id: 'franjas', label: 'Franjas (15\')', icon: Clock },
+    { id: 'disciplina', label: 'Disciplina', icon: ShieldAlert },
+    { id: 'evolucion', label: 'Evolución', icon: TrendingUp },
+    { id: 'dossier', label: 'Ficha 360°', icon: Users },
+    { id: 'comparador', label: 'Comparador', icon: Swords },
   ];
 
   return (
@@ -143,26 +152,29 @@ export default function EstadisticasRivales() {
         </div>
       </div>
 
-      {/* 3. Navigation Sub-Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none border-b border-slate-800">
-        {tabsConfig.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as ActiveTab)}
-              className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                isActive
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/30 font-black'
-                  : 'bg-slate-900/80 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800/80'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
+      {/* 3. Navigation Sub-Tabs: 100% visible on screen without scroll */}
+      <div className="bg-slate-900/90 border border-slate-800 p-1.5 rounded-2xl shadow-xl">
+        <div className="grid grid-cols-2 sm:grid-cols-5 xl:grid-cols-10 gap-1.5">
+          {tabsConfig.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as ActiveTab)}
+                title={tab.label}
+                className={`px-2.5 py-2 sm:py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 text-center cursor-pointer ${
+                  isActive
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40 font-black ring-1 ring-blue-400/40'
+                    : 'bg-slate-950/80 text-slate-400 hover:text-white hover:bg-slate-800/80 border border-slate-800/80'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="truncate">{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* 4. Active Tab Content */}
@@ -179,6 +191,14 @@ export default function EstadisticasRivales() {
           <RivalRankings
             stats={stats}
             onSelectTeam={handleSelectTeamFromTable}
+          />
+        )}
+
+        {activeTab === 'informe' && (
+          <RivalTechnicalReport
+            stats={stats}
+            initialTeamId={selectedTeamId}
+            onSelectTeamDossier={handleSelectTeamFromTable}
           />
         )}
 
@@ -224,6 +244,7 @@ export default function EstadisticasRivales() {
             initialTeamId={selectedTeamId}
             onBack={() => setActiveTab('general')}
             onSelectCompare={(tA, tB) => handleStartComparison(tA, tB)}
+            onPrepareReport={handlePrepareReport}
           />
         )}
 

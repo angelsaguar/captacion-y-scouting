@@ -26,6 +26,7 @@ import { createPortal } from 'react-dom';
 import { generateLocalTacticalAdvice, getTacticalAdvice } from '@/lib/tacticalAdvisor';
 import RivalBadge from '@/components/partidos/RivalBadge';
 import RivalCrestsManagerModal from '@/components/partidos/RivalCrestsManagerModal';
+import { RIVAL_TEAMS } from '@/data/rivalStatsData';
 
 interface Match {
   id: string;
@@ -292,6 +293,36 @@ export default function PlanPartido() {
     }
   };
 
+  const handleSelectRffmRival = (rivalId: string) => {
+    const rival = RIVAL_TEAMS.find(r => r.id === rivalId);
+    if (!rival) return;
+
+    // Check if a prepared technical report exists in localStorage
+    const storageKey = `technical_report_g50_${rival.id}`;
+    const saved = localStorage.getItem(storageKey);
+    let reportData: any = null;
+    if (saved) {
+      try {
+        reportData = JSON.parse(saved);
+      } catch (e) {}
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      rivalName: rival.shortName,
+      sistemaRival: reportData?.sistemaRival || prev.sistemaRival,
+      sistema: reportData?.sistemaPropio || prev.sistema,
+      objetivos_tacticos: reportData?.objetivosOfensivos 
+        ? `${reportData.objetivosOfensivos}\n\n${reportData.objetivosDefensivos || ''}`
+        : prev.objetivos_tacticos,
+      puntos_fuertes_rival: reportData?.puntosFuertesRival || prev.puntos_fuertes_rival,
+      balon_parado: reportData?.balonParado || prev.balon_parado,
+      alineacion_propuesta: reportData?.alineacionPrevista || prev.alineacion_propuesta
+    }));
+
+    toast.success(`Datos del rival ${rival.shortName} cargados desde Estadísticas RFFM.`);
+  };
+
   const handleCreatePlan = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.rivalName.trim()) {
@@ -552,6 +583,22 @@ export default function PlanPartido() {
                   onChange={(e) => setFormData({...formData, rivalName: e.target.value})}
                   className="flex-1 bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all font-bold"
                 />
+              </div>
+
+              {/* RFFM Grupo 50 Rival Fast Selector */}
+              <div className="mt-2">
+                <select
+                  onChange={(e) => {
+                    if (e.target.value) handleSelectRffmRival(e.target.value);
+                  }}
+                  defaultValue=""
+                  className="w-full bg-slate-950/80 border border-indigo-900/40 rounded-lg p-1.5 text-[11px] text-indigo-300 focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+                >
+                  <option value="" disabled>⚡ Importar Rival RFFM Grupo 50...</option>
+                  {RIVAL_TEAMS.filter(r => !r.isMyTeam).map(r => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
               </div>
             </div>
 
