@@ -7,8 +7,10 @@ import {
   Smile, 
   TrendingUp, 
   Award,
-  ChevronRight
+  ChevronRight,
+  Clock
 } from 'lucide-react';
+import { RivalGoalTimingChart } from './RivalGoalTimingChart';
 
 interface RivalRankingsProps {
   stats: TeamCollectiveStats[];
@@ -265,6 +267,12 @@ export const RivalRankings: React.FC<RivalRankingsProps> = ({ stats, onSelectTea
         </div>
 
       </div>
+
+      {/* Cronometría Arbitral • Récords de Minuto de Gol (Rápido/Tardío Marcado y Encajado) */}
+      <RivalGoalTimingChart 
+        stats={stats} 
+        onSelectTeam={onSelectTeam} 
+      />
     </div>
   );
 };

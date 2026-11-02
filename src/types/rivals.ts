@@ -60,6 +60,19 @@ export interface TeamDisciplineStats {
   puntosFairPlay: number; // 1 pt por amarilla, 3 pts por doble amarilla, 5 pts por roja directa
 }
 
+export interface GoalTimingRecord {
+  minuto: number;
+  jornada?: number;
+  rivalShortName?: string;
+}
+
+export interface GoalTimingStats {
+  masRapidoMarcado: GoalTimingRecord | null;
+  masTardioMarcado: GoalTimingRecord | null;
+  masRapidoEncajado: GoalTimingRecord | null;
+  masTardioEncajado: GoalTimingRecord | null;
+}
+
 export interface TeamCollectiveStats {
   team: RivalTeam;
   pos: number;
@@ -109,4 +122,7 @@ export interface TeamCollectiveStats {
   // Porterías a cero y partidos marcando
   porteriasCero: number;
   partidosSinMarcar: number;
+
+  // Cronometría arbitral de goles (más rápido / tardío)
+  goalTiming: GoalTimingStats;
 }

@@ -16,7 +16,9 @@ import {
   Smile, 
   Clock,
   Printer,
-  ChevronLeft
+  ChevronLeft,
+  Zap,
+  Hourglass
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -411,6 +413,69 @@ export const RivalTeamDossier: React.FC<RivalTeamDossierProps> = ({
           </p>
         </div>
 
+      </div>
+
+      {/* Cronometría Arbitral de Goles (Actas Oficiales RFFM) */}
+      <div className="bg-slate-950/80 border border-slate-850 rounded-2xl p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+            <Clock className="w-4 h-4 text-emerald-400" />
+            Cronometría Arbitral • Récords de Minuto de Gol (Actas Oficiales RFFM)
+          </h4>
+          <span className="text-[10px] text-slate-500 font-bold uppercase">
+            Duración 70 minutos
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3">
+            <span className="text-[9px] uppercase font-bold text-emerald-400 flex items-center gap-1">
+              <Zap className="w-3 h-3" /> Gol Más Rápido Metido
+            </span>
+            <div className="text-lg font-black text-white mt-1">
+              {teamStats.goalTiming.masRapidoMarcado ? `Minuto ${teamStats.goalTiming.masRapidoMarcado.minuto}'` : 'N/D'}
+            </div>
+            <span className="text-[10px] text-slate-400 block truncate mt-0.5">
+              {teamStats.goalTiming.masRapidoMarcado ? `J.${teamStats.goalTiming.masRapidoMarcado.jornada} vs ${teamStats.goalTiming.masRapidoMarcado.rivalShortName}` : 'Sin goles a favor'}
+            </span>
+          </div>
+
+          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3">
+            <span className="text-[9px] uppercase font-bold text-cyan-400 flex items-center gap-1">
+              <Hourglass className="w-3 h-3" /> Gol Más Tardío Metido
+            </span>
+            <div className="text-lg font-black text-white mt-1">
+              {teamStats.goalTiming.masTardioMarcado ? `Minuto ${teamStats.goalTiming.masTardioMarcado.minuto}'` : 'N/D'}
+            </div>
+            <span className="text-[10px] text-slate-400 block truncate mt-0.5">
+              {teamStats.goalTiming.masTardioMarcado ? `J.${teamStats.goalTiming.masTardioMarcado.jornada} vs ${teamStats.goalTiming.masTardioMarcado.rivalShortName}` : 'Sin goles a favor'}
+            </span>
+          </div>
+
+          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3">
+            <span className="text-[9px] uppercase font-bold text-amber-400 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" /> Gol Más Rápido Encajado
+            </span>
+            <div className="text-lg font-black text-white mt-1">
+              {teamStats.goalTiming.masRapidoEncajado ? `Minuto ${teamStats.goalTiming.masRapidoEncajado.minuto}'` : '0 goles'}
+            </div>
+            <span className="text-[10px] text-slate-400 block truncate mt-0.5">
+              {teamStats.goalTiming.masRapidoEncajado ? `J.${teamStats.goalTiming.masRapidoEncajado.jornada} vs ${teamStats.goalTiming.masRapidoEncajado.rivalShortName}` : 'Portería imbatida'}
+            </span>
+          </div>
+
+          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3">
+            <span className="text-[9px] uppercase font-bold text-rose-400 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" /> Gol Más Tardío Encajado
+            </span>
+            <div className="text-lg font-black text-white mt-1">
+              {teamStats.goalTiming.masTardioEncajado ? `Minuto ${teamStats.goalTiming.masTardioEncajado.minuto}'` : '0 goles'}
+            </div>
+            <span className="text-[10px] text-slate-400 block truncate mt-0.5">
+              {teamStats.goalTiming.masTardioEncajado ? `J.${teamStats.goalTiming.masTardioEncajado.jornada} vs ${teamStats.goalTiming.masTardioEncajado.rivalShortName}` : 'Portería imbatida'}
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Collective Tactical Strengths & Weaknesses (AI / Statistical Rules) */}

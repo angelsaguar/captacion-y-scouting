@@ -5,7 +5,9 @@ import {
   Franja15Min, 
   IntervalStats, 
   CollectiveGoalEvent, 
-  CollectiveCardEvent 
+  CollectiveCardEvent,
+  GoalTimingRecord,
+  GoalTimingStats
 } from '@/types/rivals';
 
 export const FRANJAS_15M: { franja: Franja15Min; label: string; periodo: '1ª Parte' | '2ª Parte' }[] = [
@@ -876,6 +878,17 @@ export function computeAllCollectiveStats(
       '66-70': { favor: 0, contra: 0 }
     };
 
+    // Referee match report goal timing records (minuto exacto en acta arbitral)
+    let minFavorMinuto = Infinity;
+    let minFavorRecord: GoalTimingRecord | null = null;
+    let maxFavorMinuto = -Infinity;
+    let maxFavorRecord: GoalTimingRecord | null = null;
+
+    let minContraMinuto = Infinity;
+    let minContraRecord: GoalTimingRecord | null = null;
+    let maxContraMinuto = -Infinity;
+    let maxContraRecord: GoalTimingRecord | null = null;
+
     // Discipline counters
     let amarillas = 0, rojasDirectas = 0, doblesAmarillas = 0;
 
@@ -949,13 +962,32 @@ export function computeAllCollectiveStats(
       if (opG === 0) porteriasCero++;
       if (myG === 0) partidosSinMarcar++;
 
-      // Tally goal intervals
+      const rivalId = isHome ? m.visitanteTeamId : m.localTeamId;
+      const rival = RIVAL_TEAMS.find(t => t.id === rivalId);
+
+      // Tally goal intervals & timing records according to referee sheets
       m.goalEvents.forEach(ge => {
         if (ge.teamId === team.id) {
           if (ge.esFavor) {
             intervalMap[ge.franja].favor++;
+            if (ge.minuto < minFavorMinuto) {
+              minFavorMinuto = ge.minuto;
+              minFavorRecord = { minuto: ge.minuto, jornada: m.jornada, rivalShortName: rival?.shortName };
+            }
+            if (ge.minuto > maxFavorMinuto) {
+              maxFavorMinuto = ge.minuto;
+              maxFavorRecord = { minuto: ge.minuto, jornada: m.jornada, rivalShortName: rival?.shortName };
+            }
           } else {
             intervalMap[ge.franja].contra++;
+            if (ge.minuto < minContraMinuto) {
+              minContraMinuto = ge.minuto;
+              minContraRecord = { minuto: ge.minuto, jornada: m.jornada, rivalShortName: rival?.shortName };
+            }
+            if (ge.minuto > maxContraMinuto) {
+              maxContraMinuto = ge.minuto;
+              maxContraRecord = { minuto: ge.minuto, jornada: m.jornada, rivalShortName: rival?.shortName };
+            }
           }
         }
       });
@@ -1038,7 +1070,13 @@ export function computeAllCollectiveStats(
       evolucionPuntos,
       evolucionTarjetas,
       porteriasCero,
-      partidosSinMarcar
+      partidosSinMarcar,
+      goalTiming: {
+        masRapidoMarcado: minFavorRecord,
+        masTardioMarcado: maxFavorRecord,
+        masRapidoEncajado: minContraRecord,
+        masTardioEncajado: maxContraRecord
+      }
     };
   });
 
