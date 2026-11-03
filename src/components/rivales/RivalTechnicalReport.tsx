@@ -382,42 +382,66 @@ _Cuerpo Técnico • S.A.D. Fundación Escuela de Fútbol AFE 'B'_`;
           </div>
         </div>
 
-        {/* Team Selector Row */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <label className="text-xs font-bold text-slate-400 whitespace-nowrap flex items-center gap-1">
-              <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
-              Equipo a Analizar:
-            </label>
-            <select
-              value={selectedTeamId}
-              onChange={(e) => setSelectedTeamId(e.target.value)}
-              className="bg-slate-950 border border-slate-700 text-sm font-black text-white rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-500 flex-1 max-w-md"
-            >
-              {stats.map(s => (
-                <option key={s.team.id} value={s.team.id}>
-                  {s.pos}º • {s.team.name} {s.team.isMyTeam ? '(Nuestro Equipo)' : ''}
-                </option>
-              ))}
-            </select>
+        {/* Team Selector Row - ALL 14 Teams of Grupo 50 */}
+        <div className="space-y-3 pt-1 border-t border-slate-800/80">
+          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <label className="text-xs font-bold text-slate-300 whitespace-nowrap flex items-center gap-1.5">
+                <SlidersHorizontal className="w-4 h-4 text-indigo-400" />
+                Equipo a Analizar:
+              </label>
+              <select
+                value={selectedTeamId}
+                onChange={(e) => setSelectedTeamId(e.target.value)}
+                className="bg-slate-950 border border-slate-700 text-sm font-black text-white rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 flex-1 max-w-lg cursor-pointer"
+              >
+                {stats.map(s => (
+                  <option key={s.team.id} value={s.team.id}>
+                    {s.pos}º • {s.team.name} {s.team.isMyTeam ? '(Nuestro Equipo)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 self-start md:self-auto text-xs text-slate-400 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800">
+              <span className="text-[10px] uppercase font-bold text-slate-500">Competición:</span>
+              <span className="font-black text-indigo-400">14 Equipos (Grupo 50)</span>
+            </div>
           </div>
 
-          {/* Quick pills */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-[11px]">
-            <span className="text-slate-500 font-bold uppercase text-[9px] mr-1">Rivales Directos:</span>
-            {stats.slice(0, 5).map(s => (
-              <button
-                key={s.team.id}
-                onClick={() => setSelectedTeamId(s.team.id)}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-all whitespace-nowrap cursor-pointer ${
-                  selectedTeamId === s.team.id
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
-                }`}
-              >
-                {s.pos}º {s.team.shortName}
-              </button>
-            ))}
+          {/* Quick Selection Buttons for ALL 14 Teams */}
+          <div className="space-y-1.5">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+              Seleccionar directamente por equipo ({stats.length} equipos federados):
+            </span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-1.5">
+              {stats.map(s => {
+                const isSelected = selectedTeamId === s.team.id;
+                return (
+                  <button
+                    key={s.team.id}
+                    onClick={() => setSelectedTeamId(s.team.id)}
+                    title={s.team.name}
+                    className={`px-2 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 justify-center truncate cursor-pointer ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50 ring-2 ring-indigo-400 font-black'
+                        : s.team.isMyTeam
+                        ? 'bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60 border border-emerald-500/40'
+                        : 'bg-slate-950/90 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800/80'
+                    }`}
+                  >
+                    <img 
+                      src={s.team.crestUrl} 
+                      alt="" 
+                      className="w-3.5 h-3.5 object-contain rounded flex-shrink-0"
+                    />
+                    <span className="truncate">
+                      {s.pos}º {s.team.shortName}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
