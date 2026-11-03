@@ -33,7 +33,8 @@ import {
   Layers,
   SlidersHorizontal,
   Home,
-  Plane
+  Plane,
+  BrainCircuit
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -41,12 +42,14 @@ interface RivalTechnicalReportProps {
   stats: TeamCollectiveStats[];
   initialTeamId?: string | null;
   onSelectTeamDossier?: (teamId: string) => void;
+  onOpenSimulator?: (teamId: string) => void;
 }
 
 export const RivalTechnicalReport: React.FC<RivalTechnicalReportProps> = ({
   stats,
   initialTeamId,
-  onSelectTeamDossier
+  onSelectTeamDossier,
+  onOpenSimulator
 }) => {
   // Find default team (prefer initial, or rival Retiro Sur, or first team)
   const defaultTeam = useMemo(() => {
@@ -344,6 +347,17 @@ _Cuerpo Técnico • S.A.D. Fundación Escuela de Fútbol AFE 'B'_`;
 
           {/* Action buttons */}
           <div className="flex flex-wrap items-center gap-2">
+            {onOpenSimulator && (
+              <button
+                onClick={() => onOpenSimulator(selectedTeamId)}
+                className="px-3 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Abrir en el Simulador Táctico Interactivo"
+              >
+                <BrainCircuit className="w-3.5 h-3.5 text-blue-400" />
+                <span>Simulador Táctico</span>
+              </button>
+            )}
+
             <button
               onClick={handleRegenerateAdvice}
               className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"

@@ -16,7 +16,9 @@ import {
   ChevronRight,
   Hourglass,
   ArrowLeftRight,
-  FileText
+  FileText,
+  BrainCircuit,
+  LayoutDashboard
 } from 'lucide-react';
 import { computeAllCollectiveStats, RIVAL_TEAMS } from '@/data/rivalStatsData';
 import { RivalAttributionBanner } from '@/components/rivales/RivalAttributionBanner';
@@ -30,15 +32,19 @@ import { RivalJornadasEvolution } from '@/components/rivales/RivalJornadasEvolut
 import { RivalTeamDossier } from '@/components/rivales/RivalTeamDossier';
 import { RivalHeadToHead } from '@/components/rivales/RivalHeadToHead';
 import { RivalTechnicalReport } from '@/components/rivales/RivalTechnicalReport';
+import { RivalTacticalSimulator } from '@/components/rivales/RivalTacticalSimulator';
+import { RivalComprehensiveDashboard } from '@/components/rivales/RivalComprehensiveDashboard';
 import { RivalSyncModal } from '@/components/rivales/RivalSyncModal';
 import { toast } from 'sonner';
 
 type ActiveTab = 
   | 'general' 
-  | 'rankings' 
+  | 'dashboard'
+  | 'simulador'
   | 'informe'
   | 'cambios'
   | 'cronometria'
+  | 'rankings' 
   | 'franjas' 
   | 'disciplina' 
   | 'evolucion' 
@@ -74,6 +80,16 @@ export default function EstadisticasRivales() {
     setActiveTab('informe');
   };
 
+  const handleOpenSimulator = (teamId: string) => {
+    setSelectedTeamId(teamId);
+    setActiveTab('simulador');
+  };
+
+  const handleOpenDashboard = (teamId: string) => {
+    setSelectedTeamId(teamId);
+    setActiveTab('dashboard');
+  };
+
   const handleStartComparison = (teamA: string, teamB: string) => {
     setCompareTeamA(teamA);
     setCompareTeamB(teamB);
@@ -82,10 +98,12 @@ export default function EstadisticasRivales() {
 
   const tabsConfig = [
     { id: 'general', label: 'Tabla Colectiva', icon: Layers },
-    { id: 'rankings', label: 'Rankings Top', icon: Award },
+    { id: 'dashboard', label: 'Dashboard Rival', icon: LayoutDashboard },
+    { id: 'simulador', label: 'Simulador Táctico', icon: BrainCircuit },
     { id: 'informe', label: 'Informe Técnico', icon: FileText },
     { id: 'cambios', label: 'Sustituciones', icon: ArrowLeftRight },
     { id: 'cronometria', label: 'Cronometría', icon: Hourglass },
+    { id: 'rankings', label: 'Rankings Top', icon: Award },
     { id: 'franjas', label: 'Franjas (15\')', icon: Clock },
     { id: 'disciplina', label: 'Disciplina', icon: ShieldAlert },
     { id: 'evolucion', label: 'Evolución', icon: TrendingUp },
@@ -154,7 +172,7 @@ export default function EstadisticasRivales() {
 
       {/* 3. Navigation Sub-Tabs: 100% visible on screen without scroll */}
       <div className="bg-slate-900/90 border border-slate-800 p-1.5 rounded-2xl shadow-xl">
-        <div className="grid grid-cols-2 sm:grid-cols-5 xl:grid-cols-10 gap-1.5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-1.5">
           {tabsConfig.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -163,7 +181,7 @@ export default function EstadisticasRivales() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as ActiveTab)}
                 title={tab.label}
-                className={`px-2.5 py-2 sm:py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 text-center cursor-pointer ${
+                className={`px-2 py-2 sm:py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 text-center cursor-pointer ${
                   isActive
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40 font-black ring-1 ring-blue-400/40'
                     : 'bg-slate-950/80 text-slate-400 hover:text-white hover:bg-slate-800/80 border border-slate-800/80'
@@ -187,6 +205,25 @@ export default function EstadisticasRivales() {
           />
         )}
 
+        {activeTab === 'dashboard' && (
+          <RivalComprehensiveDashboard
+            stats={stats}
+            initialTeamId={selectedTeamId}
+            onOpenSimulator={handleOpenSimulator}
+            onOpenReport={handlePrepareReport}
+            onOpenDossier={handleSelectTeamFromTable}
+          />
+        )}
+
+        {activeTab === 'simulador' && (
+          <RivalTacticalSimulator
+            stats={stats}
+            initialTeamId={selectedTeamId}
+            onOpenReport={handlePrepareReport}
+            onOpenDashboard={handleOpenDashboard}
+          />
+        )}
+
         {activeTab === 'rankings' && (
           <RivalRankings
             stats={stats}
@@ -199,6 +236,7 @@ export default function EstadisticasRivales() {
             stats={stats}
             initialTeamId={selectedTeamId}
             onSelectTeamDossier={handleSelectTeamFromTable}
+            onOpenSimulator={handleOpenSimulator}
           />
         )}
 
@@ -245,6 +283,7 @@ export default function EstadisticasRivales() {
             onBack={() => setActiveTab('general')}
             onSelectCompare={(tA, tB) => handleStartComparison(tA, tB)}
             onPrepareReport={handlePrepareReport}
+            onOpenSimulator={handleOpenSimulator}
           />
         )}
 

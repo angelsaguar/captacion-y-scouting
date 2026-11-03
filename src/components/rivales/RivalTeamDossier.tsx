@@ -20,7 +20,8 @@ import {
   Zap,
   Hourglass,
   ArrowLeftRight,
-  FileText
+  FileText,
+  BrainCircuit
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -30,6 +31,7 @@ interface RivalTeamDossierProps {
   onBack?: () => void;
   onSelectCompare?: (teamAId: string, teamBId: string) => void;
   onPrepareReport?: (teamId: string) => void;
+  onOpenSimulator?: (teamId: string) => void;
 }
 
 export const RivalTeamDossier: React.FC<RivalTeamDossierProps> = ({
@@ -37,7 +39,8 @@ export const RivalTeamDossier: React.FC<RivalTeamDossierProps> = ({
   initialTeamId,
   onBack,
   onSelectCompare,
-  onPrepareReport
+  onPrepareReport,
+  onOpenSimulator
 }) => {
   const [selectedTeamId, setSelectedTeamId] = useState<string>(
     initialTeamId || stats.find(s => s.team.isMyTeam)?.team.id || stats[0]?.team.id
@@ -175,6 +178,17 @@ export const RivalTeamDossier: React.FC<RivalTeamDossierProps> = ({
             >
               <FileText className="w-3.5 h-3.5" />
               <span>Preparar Informe Técnico</span>
+            </Button>
+          )}
+
+          {onOpenSimulator && (
+            <Button
+              onClick={() => onOpenSimulator(selectedTeamId)}
+              size="sm"
+              className="bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs font-black rounded-xl h-10 flex items-center gap-1.5 cursor-pointer"
+            >
+              <BrainCircuit className="w-3.5 h-3.5 text-blue-400" />
+              <span>Simulador Táctico</span>
             </Button>
           )}
 
