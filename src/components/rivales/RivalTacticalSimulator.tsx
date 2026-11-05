@@ -23,6 +23,7 @@ import {
   Copy, 
   Check, 
   ChevronRight, 
+  ChevronLeft,
   Swords, 
   Gauge, 
   SlidersHorizontal, 
@@ -599,55 +600,86 @@ ${selectedScenarioId !== 'custom'
           </div>
         </div>
 
-        {/* Rival Selector Bar (All 14 Teams of Grupo 50 accessible without scroll) */}
+        {/* Rival Selector Dropdown */}
         <div className="mt-5 pt-4 border-t border-slate-800/80">
-          <div className="flex items-center justify-between mb-2.5">
-            <span className="text-[11px] uppercase tracking-wider font-bold text-slate-400 flex items-center gap-1.5">
-              <Swords className="w-3.5 h-3.5 text-blue-400" />
-              Seleccionar Rival de Competición (14 Equipos RFFM Grupo 50):
-            </span>
-            <span className="text-[11px] font-bold text-blue-400">
-              Rival actual: {rivalStats.team.name} ({rivalStats.pos}º • {rivalStats.puntos} pts)
-            </span>
-          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950/80 border border-slate-800 rounded-2xl p-3 sm:p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 flex-shrink-0">
+                <Swords className="w-5 h-5" />
+              </div>
+              <div>
+                <label htmlFor="rival-select-simulator" className="text-xs font-bold text-white block">
+                  Seleccionar Rival de Competición:
+                </label>
+                <span className="text-[11px] text-slate-400">
+                  {stats.length} Equipos catalogados • RFFM Segunda Infantil Grupo 50
+                </span>
+              </div>
+            </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-1.5">
-            {stats.map((s) => {
-              const isSelected = s.team.id === selectedRivalId;
-              const isMine = s.team.isMyTeam;
-              return (
-                <button
-                  key={s.team.id}
-                  onClick={() => {
-                    setSelectedRivalId(s.team.id);
-                    setSelectedScenarioId('custom');
-                  }}
-                  className={`px-2 py-2 rounded-xl text-left transition-all border flex items-center gap-2 cursor-pointer ${
-                    isSelected
-                      ? 'bg-blue-600/20 border-blue-500 text-white ring-1 ring-blue-500/50 shadow-md'
-                      : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-800/60'
-                  }`}
-                >
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              {/* Previous Rival Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  const currentIndex = stats.findIndex(s => s.team.id === selectedRivalId);
+                  const newIndex = currentIndex > 0 ? currentIndex - 1 : stats.length - 1;
+                  setSelectedRivalId(stats[newIndex].team.id);
+                  setSelectedScenarioId('custom');
+                }}
+                className="w-10 h-10 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700/80 flex items-center justify-center cursor-pointer transition-all flex-shrink-0"
+                title="Rival anterior"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              {/* Styled Dropdown Container */}
+              <div className="relative flex-1 sm:w-96">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none flex items-center">
                   <img
-                    src={s.team.crestUrl}
-                    alt={s.team.shortName}
-                    className="w-5 h-5 rounded-full object-contain bg-white/5 p-0.5 flex-shrink-0"
+                    src={rivalStats.team.crestUrl}
+                    alt={rivalStats.team.shortName}
+                    className="w-5 h-5 rounded-full object-contain bg-white/10 p-0.5"
                     onError={(e) => {
                       (e.target as HTMLElement).style.display = 'none';
                     }}
                   />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400">#{s.pos}</span>
-                      {isMine && <span className="text-[8px] bg-emerald-500/30 text-emerald-300 px-1 rounded">AFE</span>}
-                    </div>
-                    <p className={`text-xs font-bold truncate ${isSelected ? 'text-blue-300' : 'text-slate-200'}`}>
-                      {s.team.shortName}
-                    </p>
-                  </div>
-                </button>
-              );
-            })}
+                </div>
+                <select
+                  id="rival-select-simulator"
+                  value={selectedRivalId}
+                  onChange={(e) => {
+                    setSelectedRivalId(e.target.value);
+                    setSelectedScenarioId('custom');
+                  }}
+                  className="w-full h-10 bg-slate-900 border-2 border-blue-500/60 hover:border-blue-400 text-white text-xs sm:text-sm font-bold rounded-xl pl-10 pr-9 shadow-inner focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer appearance-none transition-all truncate"
+                >
+                  {stats.map((s) => (
+                    <option key={s.team.id} value={s.team.id} className="bg-slate-950 text-white py-1">
+                      {s.pos}º {s.team.name} ({s.puntos} pts){s.team.isMyTeam ? ' ★ (AFE)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-blue-400">
+                  <ChevronDown className="w-4 h-4" />
+                </div>
+              </div>
+
+              {/* Next Rival Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  const currentIndex = stats.findIndex(s => s.team.id === selectedRivalId);
+                  const newIndex = currentIndex < stats.length - 1 ? currentIndex + 1 : 0;
+                  setSelectedRivalId(stats[newIndex].team.id);
+                  setSelectedScenarioId('custom');
+                }}
+                className="w-10 h-10 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700/80 flex items-center justify-center cursor-pointer transition-all flex-shrink-0"
+                title="Siguiente rival"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
