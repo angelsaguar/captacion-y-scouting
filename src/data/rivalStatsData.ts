@@ -770,7 +770,7 @@ export const COLLECTIVE_MATCHES: RivalMatchCollective[] = [
     ]
   },
 
-  // --- JORNADA 5 (Semana Actual) ---
+  // --- JORNADA 5 (Oficial RFFM) ---
   {
     id: "m-j5-1",
     jornada: 5,
@@ -779,10 +779,20 @@ export const COLLECTIVE_MATCHES: RivalMatchCollective[] = [
     campo: "JOSE DURAN (HA)",
     localTeamId: "team-madrid-sur",
     visitanteTeamId: "team-stella-maris",
-    jugado: false,
-    actaCerrada: false,
-    goalEvents: [],
-    cardEvents: []
+    golesLocal: 3,
+    golesVisitante: 3,
+    jugado: true,
+    actaCerrada: true,
+    goalEvents: [
+      ...createCollectiveGoals("m-j5-1", "team-madrid-sur", [16, 38, 59], true),
+      ...createCollectiveGoals("m-j5-1", "team-stella-maris", [16, 38, 59], false),
+      ...createCollectiveGoals("m-j5-1", "team-stella-maris", [24, 49, 68], true),
+      ...createCollectiveGoals("m-j5-1", "team-madrid-sur", [24, 49, 68], false)
+    ],
+    cardEvents: [
+      ...createCollectiveCards("m-j5-1", "team-madrid-sur", [{ min: 32, tipo: 'Amarilla' }]),
+      ...createCollectiveCards("m-j5-1", "team-stella-maris", [{ min: 61, tipo: 'Amarilla' }])
+    ]
   },
   {
     id: "m-j5-2",
@@ -792,10 +802,19 @@ export const COLLECTIVE_MATCHES: RivalMatchCollective[] = [
     campo: "ARROYO MEDIA LEGUA (HA)",
     localTeamId: "team-ciudad-madrid",
     visitanteTeamId: "team-inter-victoria",
-    jugado: false,
-    actaCerrada: false,
-    goalEvents: [],
-    cardEvents: []
+    golesLocal: 8,
+    golesVisitante: 2,
+    jugado: true,
+    actaCerrada: true,
+    goalEvents: [
+      ...createCollectiveGoals("m-j5-2", "team-ciudad-madrid", [8, 14, 21, 33, 42, 51, 58, 66], true),
+      ...createCollectiveGoals("m-j5-2", "team-inter-victoria", [8, 14, 21, 33, 42, 51, 58, 66], false),
+      ...createCollectiveGoals("m-j5-2", "team-inter-victoria", [28, 61], true),
+      ...createCollectiveGoals("m-j5-2", "team-ciudad-madrid", [28, 61], false)
+    ],
+    cardEvents: [
+      ...createCollectiveCards("m-j5-2", "team-inter-victoria", [{ min: 45, tipo: 'Amarilla' }])
+    ]
   },
   {
     id: "m-j5-3",
@@ -805,10 +824,17 @@ export const COLLECTIVE_MATCHES: RivalMatchCollective[] = [
     campo: "ARROYO MEDIA LEGUA (HA)",
     localTeamId: "team-retiro-sur",
     visitanteTeamId: "team-afe-b",
-    jugado: false,
-    actaCerrada: false,
-    goalEvents: [],
-    cardEvents: []
+    golesLocal: 4,
+    golesVisitante: 0,
+    jugado: true,
+    actaCerrada: true,
+    goalEvents: [
+      ...createCollectiveGoals("m-j5-3", "team-retiro-sur", [11, 29, 47, 63], true),
+      ...createCollectiveGoals("m-j5-3", "team-afe-b", [11, 29, 47, 63], false)
+    ],
+    cardEvents: [
+      ...createCollectiveCards("m-j5-3", "team-afe-b", [{ min: 54, tipo: 'Amarilla' }])
+    ]
   },
   {
     id: "m-j5-4",
@@ -818,10 +844,17 @@ export const COLLECTIVE_MATCHES: RivalMatchCollective[] = [
     campo: "NTRA. SRA. DE LA TORRE (HA)",
     localTeamId: "team-vallecas",
     visitanteTeamId: "team-los-olmos",
-    jugado: false,
-    actaCerrada: false,
-    goalEvents: [],
-    cardEvents: []
+    golesLocal: 3,
+    golesVisitante: 0,
+    jugado: true,
+    actaCerrada: true,
+    goalEvents: [
+      ...createCollectiveGoals("m-j5-4", "team-vallecas", [19, 41, 58], true),
+      ...createCollectiveGoals("m-j5-4", "team-los-olmos", [19, 41, 58], false)
+    ],
+    cardEvents: [
+      ...createCollectiveCards("m-j5-4", "team-vallecas", [{ min: 65, tipo: 'Amarilla' }])
+    ]
   },
   {
     id: "m-j5-5",
@@ -831,9 +864,14 @@ export const COLLECTIVE_MATCHES: RivalMatchCollective[] = [
     campo: "SAN LAMBERTO (HA)",
     localTeamId: "team-elipa",
     visitanteTeamId: "team-innova",
-    jugado: false,
-    actaCerrada: false,
-    goalEvents: [],
+    golesLocal: 9,
+    golesVisitante: 0,
+    jugado: true,
+    actaCerrada: true,
+    goalEvents: [
+      ...createCollectiveGoals("m-j5-5", "team-elipa", [5, 12, 19, 27, 34, 43, 50, 57, 65], true),
+      ...createCollectiveGoals("m-j5-5", "team-innova", [5, 12, 19, 27, 34, 43, 50, 57, 65], false)
+    ],
     cardEvents: []
   },
   {
@@ -844,10 +882,17 @@ export const COLLECTIVE_MATCHES: RivalMatchCollective[] = [
     campo: "ESC. FUT. CARABANCHEL 1 (HA)",
     localTeamId: "team-carabanchel",
     visitanteTeamId: "team-juventud-madrid",
-    jugado: false,
-    actaCerrada: false,
-    goalEvents: [],
-    cardEvents: []
+    golesLocal: 1,
+    golesVisitante: 0,
+    jugado: true,
+    actaCerrada: true,
+    goalEvents: [
+      ...createCollectiveGoals("m-j5-6", "team-carabanchel", [48], true),
+      ...createCollectiveGoals("m-j5-6", "team-juventud-madrid", [48], false)
+    ],
+    cardEvents: [
+      ...createCollectiveCards("m-j5-6", "team-juventud-madrid", [{ min: 66, tipo: 'Amarilla' }])
+    ]
   },
   {
     id: "m-j5-7",
@@ -857,10 +902,17 @@ export const COLLECTIVE_MATCHES: RivalMatchCollective[] = [
     campo: "ASOC. VEC. DEL POZO (HA)",
     localTeamId: "team-del-pozo",
     visitanteTeamId: "team-santa-maria",
-    jugado: false,
-    actaCerrada: false,
-    goalEvents: [],
-    cardEvents: []
+    golesLocal: 3,
+    golesVisitante: 0,
+    jugado: true,
+    actaCerrada: true,
+    goalEvents: [
+      ...createCollectiveGoals("m-j5-7", "team-del-pozo", [22, 51, 64], true),
+      ...createCollectiveGoals("m-j5-7", "team-santa-maria", [22, 51, 64], false)
+    ],
+    cardEvents: [
+      ...createCollectiveCards("m-j5-7", "team-santa-maria", [{ min: 39, tipo: 'Amarilla' }])
+    ]
   }
 ];
 
@@ -986,6 +1038,36 @@ export const MATCH_SUBSTITUTIONS_DATA: Record<string, Record<string, number[]>> 
   "m-j4-7": {
     "team-innova": [35, 46, 56, 65],
     "team-santa-maria": [35, 35, 47, 58]
+  },
+
+  // --- JORNADA 5 (Oficial RFFM) ---
+  "m-j5-1": {
+    "team-madrid-sur": [35, 48, 56, 64],
+    "team-stella-maris": [35, 35, 49, 58]
+  },
+  "m-j5-2": {
+    "team-ciudad-madrid": [35, 35, 45, 53, 62],
+    "team-inter-victoria": [25, 35, 48, 57]
+  },
+  "m-j5-3": {
+    "team-retiro-sur": [35, 35, 44, 52, 60],
+    "team-afe-b": [35, 35, 46, 55, 63]
+  },
+  "m-j5-4": {
+    "team-vallecas": [35, 35, 47, 54, 62],
+    "team-los-olmos": [30, 35, 49, 58]
+  },
+  "m-j5-5": {
+    "team-elipa": [35, 35, 42, 50, 58],
+    "team-innova": [28, 35, 47, 56]
+  },
+  "m-j5-6": {
+    "team-carabanchel": [35, 35, 43, 52, 61],
+    "team-juventud-madrid": [35, 45, 54, 63]
+  },
+  "m-j5-7": {
+    "team-del-pozo": [35, 35, 44, 53, 62],
+    "team-santa-maria": [32, 35, 48, 57]
   }
 };
 
@@ -1006,13 +1088,36 @@ COLLECTIVE_MATCHES.forEach(m => {
 export const RIVAL_MATCHES_COLLECTIVE = COLLECTIVE_MATCHES;
 
 /**
+ * Returns current highest synced matchday from localStorage, or 4 by default
+ */
+export function getActiveSyncedJornada(): number {
+  try {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('rffm_g50_synced_jornadas');
+      if (saved) {
+        const num = Number(saved);
+        if (!isNaN(num) && num > 0) return num;
+        const parsed = JSON.parse(saved);
+        if (typeof parsed === 'number' && parsed > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return Math.max(...parsed);
+        }
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+  return 4;
+}
+
+/**
  * Computes all collective statistics for every team across all completed matches,
  * supporting filtering by venue ('all', 'home', 'away').
  */
 export function computeAllCollectiveStats(
   matches: RivalMatchCollective[] = COLLECTIVE_MATCHES, 
   venueFilter: 'all' | 'home' | 'away' = 'all',
-  upToJornada: number = 4
+  upToJornada: number = getActiveSyncedJornada()
 ): TeamCollectiveStats[] {
   const playedMatches = matches.filter(m => m.jornada <= upToJornada && m.jugado);
 

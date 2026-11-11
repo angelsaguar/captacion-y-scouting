@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { RIVAL_TEAMS, FRANJAS_15M } from '@/data/rivalStatsData';
+import { syncWithRFFMWeb } from '@/services/rffmSyncService';
 
 interface RivalSyncModalProps {
   isOpen: boolean;
@@ -27,6 +28,7 @@ export const RivalSyncModal: React.FC<RivalSyncModalProps> = ({
   onDataUpdated
 }) => {
   const [activeTab, setActiveTab] = useState<'status' | 'manual' | 'upload'>('status');
+  const [isSyncingModal, setIsSyncingModal] = useState(false);
   
   // Manual match entry state
   const [jornada, setJornada] = useState<number>(5);
@@ -166,7 +168,31 @@ export const RivalSyncModal: React.FC<RivalSyncModalProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center justify-between text-xs text-slate-400 pt-2">
+              <div className="pt-1">
+                <Button
+                  type="button"
+                  onClick={async () => {
+                    setIsSyncingModal(true);
+                    try {
+                      await syncWithRFFMWeb(5);
+                      if (onDataUpdated) onDataUpdated();
+                      toast.success("¡Datos actualizados con la web de la RFFM! Jornada 5 sincronizada.");
+                      onClose();
+                    } catch (e) {
+                      toast.error("Error al sincronizar con RFFM.");
+                    } finally {
+                      setIsSyncingModal(false);
+                    }
+                  }}
+                  disabled={isSyncingModal}
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs h-10 gap-2 shadow-lg shadow-blue-900/30"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isSyncingModal ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingModal ? 'Sincronizando con RFFM Web...' : 'Actualizar Jornada 5 con la Web de la Federación'}</span>
+                </Button>
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
                 <span>URL Federativa vinculada: rffm.es Grupo 50 (Infantil)</span>
                 <span className="text-emerald-400 font-bold">● Servicio Activo</span>
               </div>

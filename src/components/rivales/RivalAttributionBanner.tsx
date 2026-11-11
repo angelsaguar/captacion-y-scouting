@@ -5,12 +5,17 @@ import { Button } from '@/components/ui/button';
 interface RivalAttributionBannerProps {
   onRefresh?: () => void;
   onOpenSyncModal?: () => void;
+  dataVersion?: number;
 }
 
 export const RivalAttributionBanner: React.FC<RivalAttributionBannerProps> = ({
   onRefresh,
-  onOpenSyncModal
+  onOpenSyncModal,
+  dataVersion
 }) => {
+  const activeJornada = typeof window !== 'undefined' ? (Number(localStorage.getItem('rffm_g50_synced_jornadas')) || 4) : 4;
+  const lastSyncTime = typeof window !== 'undefined' ? (localStorage.getItem('rffm_g50_last_sync_time') || '') : '';
+
   return (
     <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl backdrop-blur-sm space-y-3">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -39,7 +44,7 @@ export const RivalAttributionBanner: React.FC<RivalAttributionBannerProps> = ({
             <p className="text-xs text-slate-400">
               Fuente de datos oficial:{' '}
               <a
-                href="https://www.rffm.es/competicion/resultados-y-jornadas?temporada=22&competicion=26738324&grupo=27306559&jornada=4&tipojuego=1"
+                href={`https://www.rffm.es/competicion/resultados-y-jornadas?temporada=22&competicion=26738324&grupo=27306559&jornada=${activeJornada}&tipojuego=1`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-blue-400 hover:text-blue-300 underline font-medium inline-flex items-center gap-1 ml-0.5"
@@ -47,7 +52,12 @@ export const RivalAttributionBanner: React.FC<RivalAttributionBannerProps> = ({
                 Real Federación de Fútbol de Madrid (rffm.es)
                 <ExternalLink className="w-3 h-3 inline" />
               </a>
-              {' '}• Última sincronización federativa: <span className="text-slate-200 font-semibold">Jornada 4 cerrada / Jornada 5 en actas</span>.
+              {' '}• Última sincronización federativa:{' '}
+              <span className="text-slate-200 font-semibold">
+                {activeJornada >= 5 
+                  ? `Jornada ${activeJornada} cerrada y oficial (RFFM al día)${lastSyncTime ? ` • ${lastSyncTime}` : ''}`
+                  : 'Jornada 4 cerrada / Jornada 5 disponible para sincronizar'}
+              </span>.
             </p>
           </div>
         </div>

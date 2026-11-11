@@ -117,6 +117,7 @@ export default function EstadisticasRivales() {
       {/* 1. Official Attribution & Privacy Banner */}
       <RivalAttributionBanner 
         onOpenSyncModal={() => setIsSyncModalOpen(true)}
+        dataVersion={dataVersion}
       />
 
       {/* 2. Top Summary KPI Cards */}
@@ -202,6 +203,7 @@ export default function EstadisticasRivales() {
             stats={stats}
             onSelectTeam={handleSelectTeamFromTable}
             selectedTeamId={selectedTeamId}
+            onDataUpdated={() => setDataVersion(v => v + 1)}
           />
         )}
 
