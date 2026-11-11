@@ -108,6 +108,7 @@ export default function PlanPartido() {
     puntos_fuertes_rival: '',
     balon_parado: ''
   });
+  const [isCustomRival, setIsCustomRival] = useState<boolean>(false);
 
   // Load team matches, roster & game plans
   useEffect(() => {
@@ -352,6 +353,7 @@ export default function PlanPartido() {
     toast.success(`Plan de partido contra ${formData.rivalName} preparado con éxito.`);
 
     // Clear form
+    setIsCustomRival(false);
     setFormData({
       rivalName: '',
       fechaPartido: new Date().toISOString().split('T')[0],
@@ -399,6 +401,7 @@ export default function PlanPartido() {
     toast.success('Plan de partido modificado con éxito.');
 
     // Clear form
+    setIsCustomRival(false);
     setFormData({
       rivalName: '',
       fechaPartido: new Date().toISOString().split('T')[0],
@@ -520,7 +523,24 @@ export default function PlanPartido() {
           </Button>
 
           <Button 
-            onClick={() => setShowAddForm(!showAddForm)}
+            onClick={() => {
+              if (!showAddForm) {
+                setEditingPlanId(null);
+                setIsCustomRival(false);
+                setFormData({
+                  rivalName: '',
+                  fechaPartido: new Date().toISOString().split('T')[0],
+                  sistema: '1-4-3-3',
+                  sistemaRival: '1-4-4-2',
+                  convocatoria: [],
+                  objetivos_tacticos: '',
+                  alineacion_propuesta: '',
+                  puntos_fuertes_rival: '',
+                  balon_parado: ''
+                });
+              }
+              setShowAddForm(!showAddForm);
+            }}
             className="w-full sm:w-auto text-xs font-bold uppercase tracking-wider bg-orange-600 hover:bg-orange-500 flex items-center justify-center gap-2 rounded-xl shadow-md"
           >
             <Plus className="w-4 h-4" />
@@ -549,8 +569,11 @@ export default function PlanPartido() {
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Equipo Rival *</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Equipo Rival * (Grupo 50)</span>
+                </label>
                 {formData.rivalName.trim() && (
                   <button
                     type="button"
@@ -564,7 +587,8 @@ export default function PlanPartido() {
                   </button>
                 )}
               </div>
-              <div className="flex items-center gap-2 mt-1">
+
+              <div className="flex items-center gap-2">
                 {formData.rivalName.trim() && (
                   <RivalBadge 
                     rivalName={formData.rivalName} 
@@ -575,31 +599,83 @@ export default function PlanPartido() {
                     }}
                   />
                 )}
-                <input
-                  type="text"
-                  required
-                  placeholder="Ej. F.C. Arganda"
-                  value={formData.rivalName}
-                  onChange={(e) => setFormData({...formData, rivalName: e.target.value})}
-                  className="flex-1 bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all font-bold"
-                />
+                
+                <div className="relative flex-1">
+                  <select
+                    value={
+                      isCustomRival
+                        ? 'custom'
+                        : (RIVAL_TEAMS.find(r => 
+                            !r.isMyTeam && (
+                              r.shortName.toLowerCase() === formData.rivalName.toLowerCase() ||
+                              r.name.toLowerCase() === formData.rivalName.toLowerCase() ||
+                              r.id === formData.rivalName
+                            )
+                          )?.id || (formData.rivalName ? 'custom' : ''))
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (!val) {
+                        setIsCustomRival(false);
+                        setFormData(prev => ({ ...prev, rivalName: '' }));
+                      } else if (val === 'custom') {
+                        setIsCustomRival(true);
+                        setFormData(prev => ({ ...prev, rivalName: '' }));
+                      } else {
+                        setIsCustomRival(false);
+                        handleSelectRffmRival(val);
+                      }
+                    }}
+                    required={!isCustomRival}
+                    className="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-indigo-500 rounded-xl p-2.5 text-xs text-white focus:outline-none transition-all font-bold cursor-pointer"
+                  >
+                    <option value="" disabled>-- Selecciona el equipo rival del grupo --</option>
+                    <optgroup label="🏆 Rivales Oficiales RFFM (Segunda Infantil • Grupo 50)">
+                      {RIVAL_TEAMS.filter(r => !r.isMyTeam).map(r => (
+                        <option key={r.id} value={r.id}>
+                          {r.shortName} — {r.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="⚡ Otro / Amistoso">
+                      <option value="custom">✏️ Escribir otro rival manualmente...</option>
+                    </optgroup>
+                  </select>
+                </div>
               </div>
 
-              {/* RFFM Grupo 50 Rival Fast Selector */}
-              <div className="mt-2">
-                <select
-                  onChange={(e) => {
-                    if (e.target.value) handleSelectRffmRival(e.target.value);
-                  }}
-                  defaultValue=""
-                  className="w-full bg-slate-950/80 border border-indigo-900/40 rounded-lg p-1.5 text-[11px] text-indigo-300 focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
-                >
-                  <option value="" disabled>⚡ Importar Rival RFFM Grupo 50...</option>
-                  {RIVAL_TEAMS.filter(r => !r.isMyTeam).map(r => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </select>
-              </div>
+              {isCustomRival && (
+                <div className="mt-2 animate-in fade-in duration-150 bg-slate-950/80 p-2.5 rounded-xl border border-amber-500/40 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] text-amber-300 font-bold uppercase tracking-wider">
+                      Nombre de rival personalizado
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomRival(false);
+                        const firstRival = RIVAL_TEAMS.find(r => !r.isMyTeam);
+                        if (firstRival) handleSelectRffmRival(firstRival.id);
+                      }}
+                      className="text-[10px] text-blue-400 hover:underline font-bold"
+                    >
+                      Volver a lista del grupo
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    placeholder="Ej. Real Madrid Infantil B, Amistoso..."
+                    value={formData.rivalName}
+                    onChange={(e) => setFormData({ ...formData, rivalName: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-amber-400 font-bold placeholder:text-slate-500"
+                  />
+                  <p className="text-[9.5px] text-slate-400">
+                    Partidos amistosos o no federados en el Grupo 50.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div>
@@ -846,6 +922,14 @@ export default function PlanPartido() {
                   <Button 
                     onClick={() => {
                       setEditingPlanId(activePlan.id);
+                      const isGroupRival = RIVAL_TEAMS.some(r => 
+                        !r.isMyTeam && (
+                          r.shortName.toLowerCase() === activePlan.rivalName.toLowerCase() ||
+                          r.name.toLowerCase() === activePlan.rivalName.toLowerCase() ||
+                          r.id === activePlan.rivalName
+                        )
+                      );
+                      setIsCustomRival(!isGroupRival);
                       setFormData({
                         rivalName: activePlan.rivalName,
                         fechaPartido: activePlan.fechaPartido,

@@ -64,6 +64,7 @@ import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 import RivalBadge from '@/components/partidos/RivalBadge';
 import RivalCrestsManagerModal from '@/components/partidos/RivalCrestsManagerModal';
 import { Shield, Upload } from 'lucide-react';
+import { RIVAL_TEAMS } from '@/data/rivalStatsData';
 
 interface MatchPlayerStat {
   playerId: string;
@@ -1699,14 +1700,46 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                     }}
                   />
                 )}
-                <input 
-                  type="text" 
-                  required
-                  value={formData.rival}
-                  onChange={(e) => setFormData({...formData, rival: e.target.value})}
-                  className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all font-semibold"
-                  placeholder="Ej. A.D. Arganda"
-                />
+                <div className="flex-1 space-y-1.5">
+                  <select
+                    value={
+                      RIVAL_TEAMS.find(r => 
+                        !r.isMyTeam && (
+                          r.shortName.toLowerCase() === formData.rival.toLowerCase() ||
+                          r.name.toLowerCase() === formData.rival.toLowerCase()
+                        )
+                      )?.id || (formData.rival ? 'custom' : '')
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === 'custom') {
+                        // Keep current input
+                      } else if (val) {
+                        const found = RIVAL_TEAMS.find(r => r.id === val);
+                        if (found) setFormData({ ...formData, rival: found.shortName });
+                      }
+                    }}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-blue-500 font-bold cursor-pointer"
+                  >
+                    <option value="">-- Seleccionar Rival Grupo 50 --</option>
+                    <optgroup label="🏆 Rivales Oficiales RFFM (Grupo 50)">
+                      {RIVAL_TEAMS.filter(r => !r.isMyTeam).map(r => (
+                        <option key={r.id} value={r.id}>{r.shortName} — {r.name}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="⚡ Otro / Amistoso">
+                      <option value="custom">✏️ Escribir otro rival manualmente...</option>
+                    </optgroup>
+                  </select>
+                  <input 
+                    type="text" 
+                    required
+                    value={formData.rival}
+                    onChange={(e) => setFormData({...formData, rival: e.target.value})}
+                    className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-blue-500 transition-all font-semibold"
+                    placeholder="O escribe el nombre del rival..."
+                  />
+                </div>
               </div>
             </div>
 
@@ -4273,13 +4306,47 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                           }}
                         />
                       )}
-                      <input 
-                        type="text"
-                        value={planRivalName}
-                        onChange={(e) => setPlanRivalName(e.target.value)}
-                        placeholder="Ej. A.D. Arganda"
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-amber-500 font-bold"
-                      />
+                      <div className="flex-1 space-y-1.5">
+                        <select
+                          value={
+                            RIVAL_TEAMS.find(r => 
+                              !r.isMyTeam && (
+                                r.shortName.toLowerCase() === planRivalName.toLowerCase() ||
+                                r.name.toLowerCase() === planRivalName.toLowerCase()
+                              )
+                            )?.id || (planRivalName ? 'custom' : '')
+                          }
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === 'custom') {
+                              // allow custom typing
+                            } else if (val) {
+                              const found = RIVAL_TEAMS.find(r => r.id === val);
+                              if (found) setPlanRivalName(found.shortName);
+                            }
+                          }}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-amber-500 font-bold cursor-pointer"
+                        >
+                          <option value="">-- Seleccionar Rival Grupo 50 --</option>
+                          <optgroup label="🏆 Rivales Oficiales RFFM (Grupo 50)">
+                            {RIVAL_TEAMS.filter(r => !r.isMyTeam).map(r => (
+                              <option key={r.id} value={r.id}>
+                                {r.shortName} — {r.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="⚡ Otro / Amistoso">
+                            <option value="custom">✏️ Escribir otro rival manualmente...</option>
+                          </optgroup>
+                        </select>
+                        <input 
+                          type="text"
+                          value={planRivalName}
+                          onChange={(e) => setPlanRivalName(e.target.value)}
+                          placeholder="O escribe el nombre del rival..."
+                          className="w-full bg-slate-900/80 border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-amber-500 font-bold placeholder:text-slate-600"
+                        />
+                      </div>
                     </div>
                   </div>
 
