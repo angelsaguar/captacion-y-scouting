@@ -45,7 +45,9 @@ import {
   Activity,
   User,
   Flame,
-  CheckCircle2
+  CheckCircle2,
+  MessageSquareQuote,
+  Star
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { toPng } from 'html-to-image';
@@ -56,6 +58,7 @@ import { generateLocalTacticalAdvice, getTacticalAdvice } from '@/lib/tacticalAd
 import MatchStatsModal from '@/components/partidos/MatchStatsModal';
 import MatchdayPosterModal from '@/components/partidos/MatchdayPosterModal';
 import GroupStandingsModal from '@/components/partidos/GroupStandingsModal';
+import MatchPostFeedbackModal, { MatchPostFeedback } from '@/components/partidos/MatchPostFeedbackModal';
 import { cleanPhotoUrl, isPlayerMatch, normalizePlayerNameKey } from '@/lib/utils';
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 import RivalBadge from '@/components/partidos/RivalBadge';
@@ -103,6 +106,7 @@ interface Match {
   goles_favor?: number;
   goles_contra?: number;
   acta?: string;
+  feedback_post_partido?: MatchPostFeedback;
   convocatoria?: string[];
   hora_citacion?: string;
   lugar?: string;
@@ -118,6 +122,7 @@ interface Match {
     equipacion?: string;
     observaciones?: string;
     mensaje_motivacional?: string;
+    feedback_post_partido?: MatchPostFeedback;
   };
 }
 
@@ -190,8 +195,15 @@ export default function Partidos() {
     equipacion: '1ª Equipación Oficial (Camiseta Blanca, Pantalón Verde, Medias Verdes) + Chándal',
     goles_favor: 0,
     goles_contra: 0,
-    acta: ''
+    acta: '',
+    feedback_resumen: '',
+    feedback_valoracion: 'Muy Positivo' as MatchPostFeedback['valoracion_general'],
+    feedback_puntos_semana: '',
+    feedback_mensaje_vestuario: ''
   });
+
+  // Post-match feedback modal state
+  const [showFeedbackModalMatch, setShowFeedbackModalMatch] = useState<Match | null>(null);
 
   // Convocatoria & Corporate WhatsApp Modal state
   const [showConvocatoriaModal, setShowConvocatoriaModal] = useState<Match | null>(null);
@@ -1268,6 +1280,26 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
     }
   }, [showActaModal, players]);
 
+  const handleSavePostMatchFeedback = async (matchId: string, feedback: MatchPostFeedback) => {
+    const updated = matches.map(m => {
+      if (m.id === matchId) {
+        return {
+          ...m,
+          estado: 'Finalizado' as const,
+          feedback_post_partido: feedback,
+          estadisticas: {
+            ...(m.estadisticas || {}),
+            feedback_post_partido: feedback
+          }
+        };
+      }
+      return m;
+    });
+
+    await saveMatches(updated);
+    setShowFeedbackModalMatch(null);
+  };
+
   const saveMatches = async (updated: Match[]) => {
     setMatches(updated);
     localStorage.setItem(`team_matches_${selectedTeam}`, JSON.stringify(updated));
@@ -1283,7 +1315,8 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
           lugar: match.lugar || match.estadisticas?.lugar || '',
           equipacion: match.equipacion || match.estadisticas?.equipacion || '',
           observaciones: match.observaciones || match.estadisticas?.observaciones || '',
-          mensaje_motivacional: match.mensaje_motivacional || match.estadisticas?.mensaje_motivacional || ''
+          mensaje_motivacional: match.mensaje_motivacional || match.estadisticas?.mensaje_motivacional || '',
+          feedback_post_partido: match.feedback_post_partido || match.estadisticas?.feedback_post_partido || null
         };
 
         const payload = {
@@ -1297,6 +1330,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
           goles_favor: match.goles_favor ?? null,
           goles_contra: match.goles_contra ?? null,
           acta: match.acta ?? null,
+          feedback_post_partido: match.feedback_post_partido ?? null,
           estadisticas: statsToSave
         };
 
@@ -1379,6 +1413,21 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
     const defaultLugar = formData.lugar?.trim() || (formData.tipo === 'Local' ? 'Campo Municipal (Principal)' : `Campo Municipal del Rival (${formData.rival})`);
     const defaultEquip = formData.equipacion?.trim() || '1ª Equipación Oficial (Camiseta Blanca, Pantalón Verde, Medias Verdes) + Chándal';
 
+    const initialFeedback: MatchPostFeedback | undefined = (formData.estado === 'Finalizado' && (formData.feedback_resumen?.trim() || formData.acta?.trim())) ? {
+      valoracion_general: formData.feedback_valoracion || 'Muy Positivo',
+      puntuacion_general: formData.feedback_valoracion === 'Excelente' ? 5 : formData.feedback_valoracion === 'Muy Positivo' ? 4 : 3,
+      resumen_mister: formData.feedback_resumen?.trim() || formData.acta || '',
+      fase_ofensiva: { valoracion: 4, aspectos_positivos: '', aspectos_a_mejorar: '' },
+      fase_defensiva: { valoracion: 4, aspectos_positivos: '', aspectos_a_mejorar: '' },
+      transiciones_y_abp: { valoracion: 3, comentarios: '' },
+      actitud_y_competitividad: { valoracion: 4, comentarios: '' },
+      puntos_clave_proximo_entrenamiento: formData.feedback_puntos_semana ? formData.feedback_puntos_semana.split('\n').map(s => s.replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean) : [],
+      jugadores_destacados: [],
+      mensaje_vestuario: formData.feedback_mensaje_vestuario || '',
+      fecha_registro: new Date().toLocaleDateString('es-ES'),
+      autor: 'Cuerpo Técnico'
+    } : undefined;
+
     const newMatch: Match = {
       id: crypto.randomUUID(),
       rival: formData.rival,
@@ -1393,10 +1442,12 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       goles_favor: formData.estado === 'Finalizado' ? formData.goles_favor : undefined,
       goles_contra: formData.estado === 'Finalizado' ? formData.goles_contra : undefined,
       acta: formData.estado === 'Finalizado' ? formData.acta : undefined,
+      feedback_post_partido: initialFeedback,
       estadisticas: {
         hora_citacion: calculatedCitacion,
         lugar: defaultLugar,
-        equipacion: defaultEquip
+        equipacion: defaultEquip,
+        feedback_post_partido: initialFeedback
       }
     };
 
@@ -1417,7 +1468,11 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       equipacion: '1ª Equipación Oficial (Camiseta Blanca, Pantalón Verde, Medias Verdes) + Chándal',
       goles_favor: 0,
       goles_contra: 0,
-      acta: ''
+      acta: '',
+      feedback_resumen: '',
+      feedback_valoracion: 'Muy Positivo',
+      feedback_puntos_semana: '',
+      feedback_mensaje_vestuario: ''
     });
     setShowAddForm(false);
   };
@@ -1739,37 +1794,143 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
           </div>
 
           {formData.estado === 'Finalizado' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-850 pt-4 animate-in fade-in duration-200">
-              <div>
-                <label className="text-xs font-bold text-slate-200 uppercase tracking-wider">Goles a Favor</label>
-                <input 
-                  type="number" 
-                  min="0"
-                  value={formData.goles_favor}
-                  onChange={(e) => setFormData({...formData, goles_favor: parseInt(e.target.value) || 0})}
-                  className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1"
-                />
+            <div className="space-y-4 border-t border-slate-800 pt-5 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300">
+                    <MessageSquareQuote className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-black uppercase text-white tracking-wider">
+                      Espacio de Feedback Técnico Post-Partido
+                    </h5>
+                    <p className="text-[11px] text-slate-400">
+                      Evaluación del encuentro, sensaciones del cuerpo técnico y plan para la semana
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const gf = formData.goles_favor;
+                    const gc = formData.goles_contra;
+                    if (gf > gc) {
+                      setFormData({
+                        ...formData,
+                        acta: `Victoria por ${gf}-${gc} frente a ${formData.rival || 'el rival'}. Gran trabajo en presión y efectividad.`,
+                        feedback_valoracion: 'Muy Positivo',
+                        feedback_resumen: `Victoria ${gf}-${gc} frente a ${formData.rival || 'el rival'}. El equipo mostró solidez, compromiso colectivo y buena efectividad en las áreas.`,
+                        feedback_puntos_semana: `• Salida limpia de balón ante presión alta rival\n• Finalización rápida en transiciones 3 contra 2\n• Defensa en zona de córners y faltas`,
+                        feedback_mensaje_vestuario: `👏 ¡ENHORABUENA EQUIPO! Gran trabajo de todos hoy en el partido contra ${formData.rival || 'el rival'}. Orgullo de vuestro esfuerzo, actitud y ganas de competir. ¡A seguir trabajando con ganas! 💪⚽`
+                      });
+                    } else if (gf === gc) {
+                      setFormData({
+                        ...formData,
+                        acta: `Empate ${gf}-${gc} muy disputado ante ${formData.rival || 'el rival'}.`,
+                        feedback_valoracion: 'Ajustado',
+                        feedback_resumen: `Empate trabajado (${gf}-${gc}) frente a ${formData.rival || 'el rival'}. Partido muy disputado donde supimos competir y sobreponernos a fases difíciles.`,
+                        feedback_puntos_semana: `• Precisión del último pase en el área\n• Ajuste de marcas en la presión de inicio\n• Conservación de la posesión bajo presión`,
+                        feedback_mensaje_vestuario: `Buen punto trabajado hoy chicos/as contra ${formData.rival || 'el rival'}. Nos vaciamos en el campo y demostramos que no nos rendimos nunca. Toca corregir detalles esta semana. ¡A tope! ⚽🔥`
+                      });
+                    } else {
+                      setFormData({
+                        ...formData,
+                        acta: `Derrota ${gf}-${gc} ante ${formData.rival || 'el rival'}. Partido exigente de aprendizaje.`,
+                        feedback_valoracion: 'Exigente',
+                        feedback_resumen: `Partido de gran aprendizaje y exigencia frente a ${formData.rival || 'el rival'} (${gf}-${gc}). Nos sirve de referencia para ver en qué detalles debemos incidir durante la semana.`,
+                        feedback_puntos_semana: `• Comunicación y distancias entre líneas en fase defensiva\n• Temporización y duelos 1 contra 1\n• Salida rápida y apoyos de emergencia`,
+                        feedback_mensaje_vestuario: `Ánimo a todo el equipo tras el partido de hoy contra ${formData.rival || 'el rival'}. De estos partidos es de donde más se aprende. Cabeza alta, a seguir trabajando con ilusión en los entrenos. ¡Juntos siempre! 💙⚽`
+                      });
+                    }
+                    toast.success('Sugerencia técnica autocompletada con IA Táctica');
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-purple-300" />
+                  <span>Autocompletar con IA Táctica</span>
+                </button>
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-slate-200 uppercase tracking-wider">Goles en Contra</label>
-                <input 
-                  type="number" 
-                  min="0"
-                  value={formData.goles_contra}
-                  onChange={(e) => setFormData({...formData, goles_contra: parseInt(e.target.value) || 0})}
-                  className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1"
-                />
+              {/* Goles y Valoración General */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-slate-950/60 p-4 rounded-2xl border border-slate-850">
+                <div>
+                  <label className="text-xs font-bold text-slate-200 uppercase tracking-wider block mb-1">Goles a Favor</label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    value={formData.goles_favor}
+                    onChange={(e) => setFormData({...formData, goles_favor: parseInt(e.target.value) || 0})}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-200 uppercase tracking-wider block mb-1">Goles en Contra</label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    value={formData.goles_contra}
+                    onChange={(e) => setFormData({...formData, goles_contra: parseInt(e.target.value) || 0})}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all font-bold"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="text-xs font-bold text-slate-200 uppercase tracking-wider block mb-1">Valoración Global del Encuentro</label>
+                  <select
+                    value={formData.feedback_valoracion}
+                    onChange={(e) => setFormData({...formData, feedback_valoracion: e.target.value as any})}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-purple-500 transition-all font-semibold cursor-pointer"
+                  >
+                    <option value="Excelente">🌟 Excelente (Gran partido en todas las fases)</option>
+                    <option value="Muy Positivo">🟢 Muy Positivo (Objetivos cumplidos con buena dinámica)</option>
+                    <option value="Ajustado">🟡 Ajustado (Partido disputado con aspectos a corregir)</option>
+                    <option value="A Mejorar">🟠 A Mejorar (Por debajo de nuestro nivel habitual)</option>
+                    <option value="Exigente">🔴 Exigente (Duelo muy complicado con alto aprendizaje)</option>
+                  </select>
+                </div>
               </div>
 
+              {/* Balance del Míster */}
               <div>
-                <label className="text-xs font-bold text-slate-200 uppercase tracking-wider">Resumen del Acta / Comentarios</label>
+                <label className="text-xs font-bold text-slate-200 uppercase tracking-wider block mb-1">
+                  Balance & Conclusiones Técnicas del Míster
+                </label>
                 <textarea 
-                  value={formData.acta}
-                  onChange={(e) => setFormData({...formData, acta: e.target.value})}
-                  className="w-full bg-slate-950 border border-slate-850 hover:border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-all mt-1 h-11"
-                  placeholder="Escribe un breve resumen técnico..."
+                  value={formData.feedback_resumen}
+                  onChange={(e) => setFormData({...formData, feedback_resumen: e.target.value, acta: e.target.value})}
+                  className="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-purple-500 transition-all h-20 leading-relaxed"
+                  placeholder="Describe cómo se desarrolló el partido, aspectos clave del juego colectivo y sensaciones del cuerpo técnico..."
                 />
+              </div>
+
+              {/* Puntos para la semana y Mensaje al vestuario */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-200 uppercase tracking-wider block mb-1">
+                    🎯 Objetivos a Trabajar en los Entrenamientos
+                  </label>
+                  <textarea
+                    value={formData.feedback_puntos_semana}
+                    onChange={(e) => setFormData({...formData, feedback_puntos_semana: e.target.value})}
+                    rows={3}
+                    className="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-purple-500"
+                    placeholder="• Salida de balón ante presión alta&#10;• Transiciones defensivas y repliegue&#10;• Concentración en córners y faltas"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-200 uppercase tracking-wider block mb-1">
+                    💬 Mensaje para el Vestuario / Chat WhatsApp
+                  </label>
+                  <textarea
+                    value={formData.feedback_mensaje_vestuario}
+                    onChange={(e) => setFormData({...formData, feedback_mensaje_vestuario: e.target.value})}
+                    rows={3}
+                    className="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-purple-500"
+                    placeholder="Palabras de refuerzo positivo, reconocimiento del esfuerzo y motivación para los jugadores y familias..."
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -1890,6 +2051,44 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                   </div>
                 </div>
 
+                {/* Post-Match Feedback Snapshot Banner (if registered) */}
+                {match.feedback_post_partido && (
+                  <div className="bg-purple-950/20 border border-purple-500/20 rounded-2xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+                    <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+                      <div className="w-7 h-7 rounded-lg bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300 shrink-0">
+                        <MessageSquareQuote className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase text-purple-300 tracking-wider">
+                            Feedback Post-Partido:
+                          </span>
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-200">
+                            {match.feedback_post_partido.valoracion_general}
+                          </span>
+                          <span className="text-[10px] text-amber-300 font-bold flex items-center">
+                            {'★'.repeat(match.feedback_post_partido.puntuacion_general || 4)}
+                          </span>
+                        </div>
+                        {match.feedback_post_partido.resumen_mister && (
+                          <p className="text-[11px] text-slate-300 italic truncate max-w-md mt-0.5">
+                            "{match.feedback_post_partido.resumen_mister}"
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => setShowFeedbackModalMatch(match)}
+                        className="text-[11px] font-bold text-purple-300 hover:text-white underline cursor-pointer"
+                      >
+                        Ver Completo
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Match footer actions / Report display */}
                 <div className="border-t border-slate-900/60 pt-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
@@ -1934,6 +2133,32 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                           ✓
                         </span>
                       )}
+                    </Button>
+
+                    {/* Post-Match Feedback Button */}
+                    <Button
+                      onClick={() => setShowFeedbackModalMatch(match)}
+                      className={`text-[10px] font-black flex items-center gap-1.5 px-3 h-8 rounded-xl uppercase transition-all cursor-pointer shadow-md ${
+                        match.feedback_post_partido
+                          ? 'bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 hover:from-purple-600 hover:to-indigo-600 text-white border border-purple-400/40 shadow-purple-950/40'
+                          : match.estado === 'Finalizado'
+                          ? 'bg-purple-950/90 hover:bg-purple-900/90 text-purple-200 border border-purple-500/50 hover:border-purple-400'
+                          : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-750 border border-slate-700'
+                      }`}
+                      title={match.feedback_post_partido ? "Ver o editar el feedback técnico post-partido" : "Registrar feedback y debrief técnico post-partido"}
+                    >
+                      <MessageSquareQuote className="w-3.5 h-3.5 text-purple-300" />
+                      <span>Feedback Post-Partido</span>
+                      {match.feedback_post_partido ? (
+                        <span className="bg-emerald-500 text-slate-950 text-[9px] font-black px-1.5 py-0.2 rounded-md flex items-center gap-0.5">
+                          <Star className="w-2.5 h-2.5 fill-current" />
+                          {match.feedback_post_partido.puntuacion_general}/5
+                        </span>
+                      ) : match.estado === 'Finalizado' ? (
+                        <span className="bg-purple-500/30 text-purple-200 border border-purple-500/40 text-[9px] font-extrabold px-1.5 py-0.2 rounded-md">
+                          Pendiente
+                        </span>
+                      ) : null}
                     </Button>
 
                     {match.estado === 'Finalizado' && match.acta && (
@@ -2458,21 +2683,34 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
               </div>
             </div>
 
-            <div className="p-6 border-t border-slate-850 flex justify-end gap-2 bg-slate-950">
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={() => setShowActaModal(null)}
-                className="text-xs border-slate-850 text-slate-400 hover:text-white"
+            <div className="p-6 border-t border-slate-850 flex items-center justify-between gap-2 bg-slate-950 flex-wrap">
+              <Button
+                type="button"
+                onClick={() => {
+                  setShowFeedbackModalMatch(showActaModal);
+                }}
+                className="text-xs bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 font-bold uppercase flex items-center gap-1.5 cursor-pointer"
               >
-                Cancelar
+                <MessageSquareQuote className="w-3.5 h-3.5 text-purple-400" />
+                <span>{showActaModal.feedback_post_partido ? 'Ver / Editar Feedback' : '+ Añadir Feedback Post-Partido'}</span>
               </Button>
-              <Button 
-                type="submit" 
-                className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold uppercase"
-              >
-                Cerrar Acta e Guardar Estadísticas
-              </Button>
+
+              <div className="flex items-center gap-2">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setShowActaModal(null)}
+                  className="text-xs border-slate-850 text-slate-400 hover:text-white"
+                >
+                  Cancelar
+                </Button>
+                <Button 
+                  type="submit" 
+                  className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold uppercase"
+                >
+                  Cerrar Acta e Guardar Estadísticas
+                </Button>
+              </div>
             </div>
           </form>
         </div>
@@ -3897,6 +4135,36 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                   </div>
                 </div>
               )}
+
+              {/* Espacio para Feedback Post-Partido */}
+              <div className="bg-purple-950/20 border border-purple-500/30 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <MessageSquareQuote className="w-4 h-4 text-purple-400" />
+                    <span className="text-xs font-black uppercase text-white tracking-wider">
+                      Feedback y Análisis Post-Partido
+                    </span>
+                  </div>
+                  {editingMatch.feedback_post_partido && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      ✓ Registrado ({editingMatch.feedback_post_partido.valoracion_general})
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-300">
+                  Registra las sensaciones del míster, análisis de fases (ofensiva/defensiva), objetivos de entrenamiento semanal y mensaje para WhatsApp.
+                </p>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setShowFeedbackModalMatch(editingMatch);
+                  }}
+                  className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs h-9 rounded-xl gap-2 shadow-md cursor-pointer"
+                >
+                  <MessageSquareQuote className="w-4 h-4" />
+                  <span>{editingMatch.feedback_post_partido ? 'Editar Feedback Post-Partido Completo' : 'Crear Feedback Post-Partido'}</span>
+                </Button>
+              </div>
             </div>
 
             {/* Modal Footer */}
@@ -4298,6 +4566,18 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
           allMatches={matches}
           teamName={selectedTeam}
           players={players}
+        />
+      )}
+
+      {/* Post-Match Feedback Debrief Modal */}
+      {showFeedbackModalMatch && (
+        <MatchPostFeedbackModal
+          isOpen={!!showFeedbackModalMatch}
+          onClose={() => setShowFeedbackModalMatch(null)}
+          match={showFeedbackModalMatch}
+          teamName={selectedTeam}
+          playersList={players}
+          onSaveFeedback={handleSavePostMatchFeedback}
         />
       )}
 
