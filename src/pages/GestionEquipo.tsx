@@ -29,6 +29,8 @@ import PlanPartido from './gestion/PlanPartido';
 import PruebasFisicas from './gestion/PruebasFisicas';
 import Antropometria from './gestion/Antropometria';
 import EstadisticasRivales from '@/pages/EstadisticasRivales';
+import CompeticionesRivales from './gestion/CompeticionesRivales';
+import { Globe } from 'lucide-react';
 
 type ModuleKey = 
   | 'plantilla' 
@@ -36,6 +38,7 @@ type ModuleKey =
   | 'partidos' 
   | 'estadisticas' 
   | 'estadisticas_rivales'
+  | 'competiciones_rivales'
   | 'pizarra' 
   | 'videoteca' 
   | 'lesionados' 
@@ -96,11 +99,20 @@ export default function GestionEquipo() {
     {
       key: 'estadisticas_rivales',
       title: 'ESTADÍSTICAS RIVALES',
-      subtext: 'RFFM GRUPO 50',
+      subtext: 'ANÁLISIS GRUPAL RFFM',
       icon: Swords,
       color: 'text-indigo-400',
       bgColor: 'bg-indigo-500/10',
       borderColor: 'border-indigo-500/20'
+    },
+    {
+      key: 'competiciones_rivales',
+      title: 'COMPETICIONES & RIVALES',
+      subtext: 'URLS Y CATEGORÍAS RFFM',
+      icon: Globe,
+      color: 'text-cyan-400',
+      bgColor: 'bg-cyan-500/10',
+      borderColor: 'border-cyan-500/20'
     },
     {
       key: 'pizarra',
@@ -170,6 +182,8 @@ export default function GestionEquipo() {
         return <Estadisticas />;
       case 'estadisticas_rivales':
         return <EstadisticasRivales />;
+      case 'competiciones_rivales':
+        return <CompeticionesRivales />;
       case 'pizarra':
         return <PizarraTactica />;
       case 'videoteca':

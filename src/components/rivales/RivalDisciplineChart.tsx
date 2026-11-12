@@ -7,7 +7,10 @@ import {
   AlertOctagon, 
   Layers, 
   ChevronRight,
-  TrendingDown
+  TrendingDown,
+  ExternalLink,
+  FileText,
+  CheckCircle2
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -19,14 +22,17 @@ import {
   ResponsiveContainer,
   Legend
 } from 'recharts';
+import { getTeamActasData } from '@/lib/actasArbitrales';
 
 interface RivalDisciplineChartProps {
   stats: TeamCollectiveStats[];
+  selectedClubTeam?: string;
   onSelectTeam: (teamId: string) => void;
 }
 
 export const RivalDisciplineChart: React.FC<RivalDisciplineChartProps> = ({
   stats,
+  selectedClubTeam,
   onSelectTeam
 }) => {
   const [sortMode, setSortMode] = useState<'fairplay' | 'total' | 'promedio'>('fairplay');
@@ -268,6 +274,103 @@ export const RivalDisciplineChart: React.FC<RivalDisciplineChartProps> = ({
           </tbody>
         </table>
       </div>
+
+      {/* Detail from Official Referee Match Reports (Actas RFFM) */}
+      {(() => {
+        const teamActasDb = getTeamActasData(selectedClubTeam || 'Fundación AFE B');
+        const rivalsActaList = Object.values(teamActasDb.rivalsSummary || {});
+        const actasList = teamActasDb.actas || [];
+
+        return (
+          <div className="space-y-4 pt-4 border-t border-slate-800">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-amber-400" />
+                  <span>Amonestaciones, Sanciones y Goleadores de Rivales Extraídos de Actas Oficiales (RFFM)</span>
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Registro nominativo de jugadores rivales amonestados y goleadores extraído directamente de los informes arbitrales federativos.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {rivalsActaList.map((rival) => (
+                <div key={rival.name} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-white truncate">{rival.shortName}</span>
+                    <div className="flex items-center gap-1.5 text-xs font-black">
+                      <span className="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30">
+                        🟨 {rival.amarillas}
+                      </span>
+                      <span className="bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded-full border border-rose-500/30">
+                        🟥 {rival.rojas}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] space-y-1">
+                    <strong className="text-amber-400 font-bold block uppercase text-[9px]">⚠️ Jugadores rivales amonestados:</strong>
+                    {rival.jugadoresAmonestados.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {rival.jugadoresAmonestados.map((a, i) => (
+                          <span key={i} className="bg-slate-900 border border-slate-800 px-2 py-0.5 rounded text-slate-300">
+                            {a.esRoja ? '🟥' : '🟨'} {a.nombre} (J{a.jornada}, {a.minuto}')
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-slate-500 italic">Sin amonestaciones registradas en actas.</span>
+                    )}
+                  </div>
+
+                  <div className="text-[10px] space-y-1">
+                    <strong className="text-emerald-400 font-bold block uppercase text-[9px]">🎯 Goleadores identificados en actas:</strong>
+                    {rival.goleadores.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {rival.goleadores.map((g, i) => (
+                          <span key={i} className="bg-slate-900 border border-slate-800 px-2 py-0.5 rounded text-slate-300">
+                            ⚽ {g.nombre} (J{g.jornada}, {g.minuto}')
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-slate-500 italic">Sin goles registrados en actas.</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Actas List */}
+            {actasList.length > 0 && (
+              <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 space-y-2">
+                <span className="text-[10px] font-black uppercase text-slate-400 block tracking-wider">
+                  Actas Federativas Oficiales de la Categoría ({teamActasDb.categoryName})
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {actasList.map((acta) => (
+                    <a
+                      key={acta.codacta}
+                      href={acta.actaUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-amber-500/40 p-2.5 rounded-xl transition-all flex items-center justify-between text-xs"
+                    >
+                      <div className="truncate pr-2">
+                        <span className="font-bold text-white block truncate">J{acta.jornada}: {acta.local} vs {acta.visitante}</span>
+                        <span className="text-[10px] text-slate-400">{acta.fecha} • {acta.golesLocal}-{acta.golesVisitante}</span>
+                      </div>
+                      <ExternalLink className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 };

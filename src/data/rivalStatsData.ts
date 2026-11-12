@@ -1117,11 +1117,13 @@ export function getActiveSyncedJornada(): number {
 export function computeAllCollectiveStats(
   matches: RivalMatchCollective[] = COLLECTIVE_MATCHES, 
   venueFilter: 'all' | 'home' | 'away' = 'all',
-  upToJornada: number = getActiveSyncedJornada()
+  upToJornada: number = getActiveSyncedJornada(),
+  customTeams?: RivalTeam[]
 ): TeamCollectiveStats[] {
   const playedMatches = matches.filter(m => m.jornada <= upToJornada && m.jugado);
+  const targetTeams = customTeams && customTeams.length > 0 ? customTeams : RIVAL_TEAMS;
 
-  const results: TeamCollectiveStats[] = RIVAL_TEAMS.map(team => {
+  const results: TeamCollectiveStats[] = targetTeams.map((team, teamIndex) => {
     // Basic counters
     let pj = 0, pg = 0, pe = 0, pp = 0, gf = 0, gc = 0, puntos = 0;
     
@@ -1245,7 +1247,7 @@ export function computeAllCollectiveStats(
       if (myG === 0) partidosSinMarcar++;
 
       const rivalId = isHome ? m.visitanteTeamId : m.localTeamId;
-      const rival = RIVAL_TEAMS.find(t => t.id === rivalId);
+      const rival = targetTeams.find(t => t.id === rivalId) || RIVAL_TEAMS.find(t => t.id === rivalId);
 
       // Tally goal intervals & timing records according to referee sheets
       m.goalEvents.forEach(ge => {

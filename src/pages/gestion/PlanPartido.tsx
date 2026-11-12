@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { CLUB_TEAMS } from '@/types';
 import { supabase } from '@/lib/supabase';
 import { 
@@ -18,7 +18,10 @@ import {
   Zap,
   Volume2,
   MessageCircle,
-  Shield
+  Shield,
+  Globe,
+  ExternalLink,
+  Settings
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -27,6 +30,14 @@ import { generateLocalTacticalAdvice, getTacticalAdvice } from '@/lib/tacticalAd
 import RivalBadge from '@/components/partidos/RivalBadge';
 import RivalCrestsManagerModal from '@/components/partidos/RivalCrestsManagerModal';
 import { RIVAL_TEAMS } from '@/data/rivalStatsData';
+import { getTeamCompetitionConfig, getTeamRivals, COMPETITION_UPDATED_EVENT } from '@/lib/teamCompetitions';
+import TeamCompetitionManagerModal from '@/components/competitions/TeamCompetitionManagerModal';
+import { 
+  getPlayerActaStats, 
+  getRivalActaStats, 
+  ACTAS_DATA_UPDATED, 
+  getTeamActasData 
+} from '@/lib/actasArbitrales';
 
 interface Match {
   id: string;
@@ -86,6 +97,27 @@ export default function PlanPartido() {
   const [showRivalManager, setShowRivalManager] = useState(false);
   const [selectedRivalForManager, setSelectedRivalForManager] = useState<string | undefined>(undefined);
 
+  // Competition & URLs manager modal
+  const [showCompModal, setShowCompModal] = useState(false);
+  const [compVersion, setCompVersion] = useState(0);
+
+  useEffect(() => {
+    const handleCompUpdated = () => setCompVersion(v => v + 1);
+    window.addEventListener(COMPETITION_UPDATED_EVENT, handleCompUpdated);
+    return () => window.removeEventListener(COMPETITION_UPDATED_EVENT, handleCompUpdated);
+  }, []);
+
+  const currentConfig = useMemo(() => getTeamCompetitionConfig(selectedTeam), [selectedTeam, compVersion]);
+  const currentRivals = useMemo(() => getTeamRivals(selectedTeam), [selectedTeam, compVersion]);
+
+  const [actasVersion, setActasVersion] = useState(0);
+
+  useEffect(() => {
+    const handleActasUpdated = () => setActasVersion(v => v + 1);
+    window.addEventListener(ACTAS_DATA_UPDATED, handleActasUpdated);
+    return () => window.removeEventListener(ACTAS_DATA_UPDATED, handleActasUpdated);
+  }, []);
+
   useEffect(() => {
     const handleAfterPrint = () => {
       setPrintMode(null);
@@ -109,6 +141,16 @@ export default function PlanPartido() {
     balon_parado: ''
   });
   const [isCustomRival, setIsCustomRival] = useState<boolean>(false);
+
+  const rivalActaData = useMemo(() => {
+    if (!formData.rivalName) return null;
+    return getRivalActaStats(selectedTeam, formData.rivalName);
+  }, [selectedTeam, formData.rivalName, actasVersion]);
+
+  const activePlanRivalActa = useMemo(() => {
+    if (!activePlan?.rivalName) return null;
+    return getRivalActaStats(selectedTeam, activePlan.rivalName);
+  }, [selectedTeam, activePlan?.rivalName, actasVersion]);
 
   // Load team matches, roster & game plans
   useEffect(() => {
@@ -295,7 +337,7 @@ export default function PlanPartido() {
   };
 
   const handleSelectRffmRival = (rivalId: string) => {
-    const rival = RIVAL_TEAMS.find(r => r.id === rivalId);
+    const rival = currentRivals.find(r => r.id === rivalId) || RIVAL_TEAMS.find(r => r.id === rivalId);
     if (!rival) return;
 
     // Check if a prepared technical report exists in localStorage
@@ -440,8 +482,17 @@ export default function PlanPartido() {
   };
 
   const togglePlayerInConvocation = (playerId: string) => {
+    const player = roster.find(p => p.id === playerId);
+    const pStats = player ? getPlayerActaStats(selectedTeam, player) : null;
+    const isSelected = formData.convocatoria.includes(playerId);
+
+    if (!isSelected && pStats?.estaSancionado) {
+      toast.warning(`⚠️ ATENCIÓN: ${player?.nombre} está sancionado (${pStats.partidosSancion} part. por ${pStats.motivoSancion}). Riesgo de alineación indebida.`, {
+        duration: 5000
+      });
+    }
+
     setFormData(prev => {
-      const isSelected = prev.convocatoria.includes(playerId);
       const updated = isSelected 
         ? prev.convocatoria.filter(id => id !== playerId)
         : [...prev.convocatoria, playerId];
@@ -494,21 +545,54 @@ export default function PlanPartido() {
   return (
     <div className="space-y-6">
       {/* Selector & Actions */}
-      <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-slate-900/60 border border-slate-900 p-4 rounded-2xl print:hidden">
-        <div className="w-full sm:w-auto flex flex-col gap-1.5">
-          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Equipo Activo</label>
-          <select 
-            value={selectedTeam} 
-            onChange={(e) => setSelectedTeam(e.target.value)}
-            className="bg-slate-950 text-white font-bold text-sm border border-slate-800 rounded-xl px-4 py-2 focus:outline-none focus:border-blue-500 transition-all cursor-pointer"
-          >
-            {CLUB_TEAMS.map(team => (
-              <option key={team} value={team}>{team}</option>
-            ))}
-          </select>
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between bg-slate-900/60 border border-slate-900 p-4 rounded-2xl print:hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
+          <div className="w-full sm:w-auto flex flex-col gap-1.5">
+            <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Equipo Activo</label>
+            <select 
+              value={selectedTeam} 
+              onChange={(e) => setSelectedTeam(e.target.value)}
+              className="bg-slate-950 text-white font-bold text-sm border border-slate-800 rounded-xl px-4 py-2 focus:outline-none focus:border-blue-500 transition-all cursor-pointer"
+            >
+              {CLUB_TEAMS.map(team => (
+                <option key={team} value={team}>{team}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="pt-1 sm:pt-4">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-cyan-950/50 border border-cyan-800/40 text-cyan-300">
+                🏆 {currentConfig.categoryName} ({currentConfig.temporada})
+              </span>
+              {currentConfig.urlClasificacion && (
+                <a
+                  href={currentConfig.urlClasificacion}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1 hover:underline"
+                  title="Abrir enlace oficial de clasificación y resultados"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  <span>Web RFFM</span>
+                </a>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <Button 
+            type="button"
+            variant="outline"
+            onClick={() => setShowCompModal(true)}
+            className="w-full sm:w-auto text-xs font-bold uppercase tracking-wider border-slate-800 bg-slate-950/80 hover:bg-slate-800 text-cyan-300 flex items-center justify-center gap-2 rounded-xl"
+            title="Configurar URLs de resultados, temporadas y rivales para este equipo"
+          >
+            <Globe className="w-4 h-4 text-cyan-400" />
+            <span>Calendario & Rivales RFFM</span>
+          </Button>
+
           <Button 
             type="button"
             variant="outline"
@@ -572,7 +656,7 @@ export default function PlanPartido() {
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                   <Shield className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Equipo Rival * (Grupo 50)</span>
+                  <span>Equipo Rival * ({currentConfig.categoryName})</span>
                 </label>
                 {formData.rivalName.trim() && (
                   <button
@@ -605,7 +689,7 @@ export default function PlanPartido() {
                     value={
                       isCustomRival
                         ? 'custom'
-                        : (RIVAL_TEAMS.find(r => 
+                        : (currentRivals.find(r => 
                             !r.isMyTeam && (
                               r.shortName.toLowerCase() === formData.rivalName.toLowerCase() ||
                               r.name.toLowerCase() === formData.rivalName.toLowerCase() ||
@@ -629,9 +713,9 @@ export default function PlanPartido() {
                     required={!isCustomRival}
                     className="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-indigo-500 rounded-xl p-2.5 text-xs text-white focus:outline-none transition-all font-bold cursor-pointer"
                   >
-                    <option value="" disabled>-- Selecciona el equipo rival del grupo --</option>
-                    <optgroup label="🏆 Rivales Oficiales RFFM (Segunda Infantil • Grupo 50)">
-                      {RIVAL_TEAMS.filter(r => !r.isMyTeam).map(r => (
+                    <option value="" disabled>-- Selecciona un rival de {selectedTeam} --</option>
+                    <optgroup label={`🏆 Rivales Oficiales (${currentConfig.categoryName})`}>
+                      {currentRivals.filter(r => !r.isMyTeam).map(r => (
                         <option key={r.id} value={r.id}>
                           {r.shortName} — {r.name}
                         </option>
@@ -654,7 +738,7 @@ export default function PlanPartido() {
                       type="button"
                       onClick={() => {
                         setIsCustomRival(false);
-                        const firstRival = RIVAL_TEAMS.find(r => !r.isMyTeam);
+                        const firstRival = currentRivals.find(r => !r.isMyTeam);
                         if (firstRival) handleSelectRffmRival(firstRival.id);
                       }}
                       className="text-[10px] text-blue-400 hover:underline font-bold"
@@ -672,7 +756,7 @@ export default function PlanPartido() {
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-amber-400 font-bold placeholder:text-slate-500"
                   />
                   <p className="text-[9.5px] text-slate-400">
-                    Partidos amistosos o no federados en el Grupo 50.
+                    Partidos amistosos o no federados en {currentConfig.categoryName}.
                   </p>
                 </div>
               )}
@@ -733,24 +817,64 @@ export default function PlanPartido() {
               </span>
               <p className="text-[10px] text-slate-500">Haz clic sobre {isFemaleTeam ? 'las jugadoras' : 'los jugadores'} del equipo para {isFemaleTeam ? 'convocarlas' : 'convocarlos'} al encuentro.</p>
               
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 pt-1">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 pt-1">
                 {roster.map(p => {
                   const isSelected = formData.convocatoria.includes(p.id);
+                  const pStats = getPlayerActaStats(selectedTeam, p);
+                  const amarillas = pStats?.amarillas ?? 0;
+                  const goles = pStats?.goles ?? 0;
+                  const minutos = pStats?.minutos ?? 0;
+                  const estaSancionado = pStats?.estaSancionado ?? false;
+                  const esApercibido = pStats?.esApercibido ?? false;
+
                   return (
                     <button
                       key={p.id}
                       type="button"
                       onClick={() => togglePlayerInConvocation(p.id)}
-                      className={`p-2 rounded-xl text-[11px] text-left border transition-all flex items-center justify-between font-bold ${
+                      className={`p-2.5 rounded-xl text-[11px] text-left border transition-all flex flex-col justify-between font-bold cursor-pointer ${
                         isSelected 
-                          ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400' 
-                          : 'bg-slate-900 border-slate-850 text-slate-400 hover:border-slate-700'
+                          ? 'bg-emerald-500/15 border-emerald-500 text-white shadow-sm ring-1 ring-emerald-500/50' 
+                          : estaSancionado
+                            ? 'bg-red-950/20 border-red-900/50 hover:border-red-700 text-slate-300'
+                            : 'bg-slate-900 border-slate-850 text-slate-300 hover:border-slate-700'
                       }`}
                     >
-                      <span className="truncate">
-                        {p.dorsal ? `#${p.dorsal} ` : ''}{(p.apodo && p.apodo.trim()) ? p.apodo.trim() : p.nombre}
-                      </span>
-                      <span className="text-[8px] opacity-60 ml-1 uppercase">{p.posicion.substring(0,3)}</span>
+                      <div className="flex items-center justify-between w-full">
+                        <span className="truncate font-black text-xs text-white">
+                          {p.dorsal ? `#${p.dorsal} ` : ''}{(p.apodo && p.apodo.trim()) ? p.apodo.trim() : p.nombre}
+                        </span>
+                        <span className="text-[8px] opacity-70 uppercase font-mono px-1 rounded bg-slate-800 text-slate-300">{p.posicion.substring(0,3)}</span>
+                      </div>
+
+                      {/* Disciplinary & Acta Stats Row */}
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1.5 pt-1 border-t border-slate-800/80 text-[9px]">
+                        {estaSancionado ? (
+                          <span className="bg-red-500/30 text-red-300 px-1 py-0.2 rounded font-black text-[8px] animate-pulse">
+                            ⛔ SANCIONADO ({pStats?.partidosSancion || 1}p)
+                          </span>
+                        ) : esApercibido ? (
+                          <span className="bg-amber-500/20 text-amber-300 px-1 py-0.2 rounded font-black text-[8px]">
+                            ⚠️ APERCIBIDO (4🟨)
+                          </span>
+                        ) : (
+                          <span className={`px-1 py-0.2 rounded font-black text-[8px] ${amarillas > 0 ? 'bg-yellow-500/15 text-yellow-300' : 'bg-slate-800/60 text-slate-400'}`}>
+                            🟨 {amarillas}
+                          </span>
+                        )}
+
+                        {goles > 0 && (
+                          <span className="bg-emerald-500/20 text-emerald-300 px-1 py-0.2 rounded font-black text-[8px]">
+                            ⚽ {goles}
+                          </span>
+                        )}
+
+                        {minutos > 0 && (
+                          <span className="bg-blue-500/15 text-blue-300 px-1 py-0.2 rounded font-bold text-[8px]">
+                            ⏱️ {minutos}'
+                          </span>
+                        )}
+                      </div>
                     </button>
                   );
                 })}
@@ -761,6 +885,67 @@ export default function PlanPartido() {
                 )}
               </div>
             </div>
+
+            {/* Rival Acta Intelligence Box */}
+            {rivalActaData && (
+              <div className="col-span-full bg-slate-950 border border-amber-500/30 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+                    <span className="text-xs font-black text-amber-300 uppercase tracking-wider">
+                      ⚖️ Informe de Actas Arbitrales RFFM: {rivalActaData.shortName}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const note = `[ACTAS RFFM ${rivalActaData.shortName}]: ${rivalActaData.amarillas} 🟨 amarillas, ${rivalActaData.rojas} 🟥 rojas acumuladas. Goleadores: ${rivalActaData.goleadores.map(g => `${g.nombre} (${g.minuto}')`).join(', ') || 'Sin goles'}. Amonestados: ${rivalActaData.jugadoresAmonestados.map(a => `${a.nombre} (J${a.jornada})`).join(', ') || 'Ninguno'}.`;
+                      setFormData(prev => ({
+                        ...prev,
+                        puntos_fuertes_rival: prev.puntos_fuertes_rival ? `${prev.puntos_fuertes_rival}\n\n${note}` : note
+                      }));
+                      toast.success('Datos de actas volcados a los puntos clave del rival.');
+                    }}
+                    className="text-[10px] font-black text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                  >
+                    ⚡ Volcar al Informe Táctico
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div className="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
+                    <span className="text-[9px] text-slate-500 block uppercase font-bold">Tarjetas Amarillas</span>
+                    <span className="text-sm font-black text-amber-400">🟨 {rivalActaData.amarillas}</span>
+                  </div>
+                  <div className="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
+                    <span className="text-[9px] text-slate-500 block uppercase font-bold">Expulsiones / Rojas</span>
+                    <span className="text-sm font-black text-rose-400">🟥 {rivalActaData.rojas}</span>
+                  </div>
+                  <div className="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
+                    <span className="text-[9px] text-slate-500 block uppercase font-bold">Goles en Actas</span>
+                    <span className="text-sm font-black text-emerald-400">⚽ {rivalActaData.golesFavor} GF / {rivalActaData.golesContra} GC</span>
+                  </div>
+                  <div className="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
+                    <span className="text-[9px] text-slate-500 block uppercase font-bold">Partidos en Actas</span>
+                    <span className="text-sm font-black text-white">{rivalActaData.partidosJugados} PJ</span>
+                  </div>
+                </div>
+
+                {rivalActaData.goleadores.length > 0 && (
+                  <div className="text-[10px] text-slate-300 bg-slate-900/60 p-2 rounded-xl border border-slate-800">
+                    <strong className="text-emerald-400 font-bold block mb-0.5">🎯 Goleadores identificados en actas:</strong>
+                    <span>{rivalActaData.goleadores.map(g => `${g.nombre} (${g.minuto}')`).join(' • ')}</span>
+                  </div>
+                )}
+
+                {rivalActaData.jugadoresAmonestados.length > 0 && (
+                  <div className="text-[10px] text-slate-300 bg-slate-900/60 p-2 rounded-xl border border-slate-800">
+                    <strong className="text-amber-400 font-bold block mb-0.5">⚠️ Jugadores amonestados en actas:</strong>
+                    <span>{rivalActaData.jugadoresAmonestados.map(a => `${a.nombre} (J${a.jornada}, ${a.minuto}')`).join(' • ')}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -1383,6 +1568,13 @@ export default function PlanPartido() {
           setSelectedRivalForManager(undefined);
         }}
         preselectedRival={selectedRivalForManager}
+      />
+
+      {/* Modal for managing team competition & URLs */}
+      <TeamCompetitionManagerModal
+        isOpen={showCompModal}
+        onClose={() => setShowCompModal(false)}
+        initialTeamName={selectedTeam}
       />
     </div>
   );

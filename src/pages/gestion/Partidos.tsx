@@ -63,8 +63,16 @@ import { cleanPhotoUrl, isPlayerMatch, normalizePlayerNameKey } from '@/lib/util
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 import RivalBadge from '@/components/partidos/RivalBadge';
 import RivalCrestsManagerModal from '@/components/partidos/RivalCrestsManagerModal';
-import { Shield, Upload } from 'lucide-react';
+import { Shield, Upload, Globe } from 'lucide-react';
 import { RIVAL_TEAMS } from '@/data/rivalStatsData';
+import { getTeamCompetitionConfig, getTeamRivals, COMPETITION_UPDATED_EVENT } from '@/lib/teamCompetitions';
+import TeamCompetitionManagerModal from '@/components/competitions/TeamCompetitionManagerModal';
+import { 
+  getPlayerActaStats, 
+  getRivalActaStats, 
+  ACTAS_DATA_UPDATED, 
+  getTeamActasData 
+} from '@/lib/actasArbitrales';
 
 interface MatchPlayerStat {
   playerId: string;
@@ -177,6 +185,19 @@ export default function Partidos() {
   const [showActaModal, setShowActaModal] = useState<Match | null>(null);
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [deletingMatch, setDeletingMatch] = useState<Match | null>(null);
+
+  // Competition & URLs manager modal
+  const [showCompModal, setShowCompModal] = useState(false);
+  const [compVersion, setCompVersion] = useState(0);
+
+  useEffect(() => {
+    const handleCompUpdated = () => setCompVersion(v => v + 1);
+    window.addEventListener(COMPETITION_UPDATED_EVENT, handleCompUpdated);
+    return () => window.removeEventListener(COMPETITION_UPDATED_EVENT, handleCompUpdated);
+  }, []);
+
+  const currentConfig = useMemo(() => getTeamCompetitionConfig(selectedTeam), [selectedTeam, compVersion]);
+  const currentRivals = useMemo(() => getTeamRivals(selectedTeam), [selectedTeam, compVersion]);
   
   // Interactive statistics editor inside closure modal
   const [matchPlayerStats, setMatchPlayerStats] = useState<MatchPlayerStat[]>([]);
@@ -291,6 +312,14 @@ export default function Partidos() {
     }
   };
 
+  const [actasVersion, setActasVersion] = useState(0);
+
+  useEffect(() => {
+    const handleActasUpdated = () => setActasVersion(v => v + 1);
+    window.addEventListener(ACTAS_DATA_UPDATED, handleActasUpdated);
+    return () => window.removeEventListener(ACTAS_DATA_UPDATED, handleActasUpdated);
+  }, []);
+
   // Comprehensive calculation of player League statistics & disciplinary status
   const playerLeagueStatsMap = useMemo(() => {
     const map: Record<string, {
@@ -300,6 +329,7 @@ export default function Partidos() {
       convocatorias: number;
       titularidades: number;
       suplencias: number;
+      goles: number;
       estaSancionado: boolean;
       partidosSancion: number;
       motivoSancion: string;
@@ -326,15 +356,19 @@ export default function Partidos() {
     } catch {}
 
     players.forEach((p, idx) => {
-      let amarillas = 0;
-      let rojas = 0;
-      let minutosLiga = 0;
-      let convocatorias = 0;
-      let titularidades = 0;
-      let suplencias = 0;
+      // Check official referee report (actas) first
+      const actaStats = getPlayerActaStats(selectedTeam, p);
+
+      let amarillas = actaStats ? actaStats.amarillas : 0;
+      let rojas = actaStats ? actaStats.rojas : 0;
+      let minutosLiga = actaStats ? actaStats.minutos : 0;
+      let convocatorias = actaStats ? actaStats.convocatorias : 0;
+      let titularidades = actaStats ? actaStats.titularidades : 0;
+      let suplencias = actaStats ? actaStats.suplencias : 0;
+      let goles = actaStats ? actaStats.goles : 0;
       let hadRedInLastMatch = false;
 
-      // Scan sourceMatches
+      // Scan sourceMatches for app-entered closed matches if not covered by actas
       let foundInMatches = false;
       sourceMatches.forEach((m, mIdx) => {
         const statsList: MatchPlayerStat[] = m.estadisticas?.jugadoras_stats || [];
@@ -349,12 +383,12 @@ export default function Partidos() {
 
         const isConvocado = convList.includes(p.id) || !!pStat;
 
-        if (isConvocado) {
+        if (isConvocado && !actaStats) {
           foundInMatches = true;
           convocatorias += 1;
         }
 
-        if (pStat) {
+        if (pStat && !actaStats) {
           foundInMatches = true;
           if (pStat.titular) titularidades += 1;
           if (pStat.suplente) suplencias += 1;
@@ -364,6 +398,7 @@ export default function Partidos() {
           minutosLiga += matchMin;
           amarillas += (pStat.tarjetas_amarillas || 0);
           rojas += (pStat.tarjetas_rojas || 0);
+          goles += (pStat.goles_metidos || 0);
 
           if (mIdx === 0 && (pStat.tarjetas_rojas || 0) > 0) {
             hadRedInLastMatch = true;
@@ -371,8 +406,8 @@ export default function Partidos() {
         }
       });
 
-      // If not populated from closed match acts, check player profile fields or seed
-      if (!foundInMatches || convocatorias === 0) {
+      // If no actas and no source matches found, check player profile fields
+      if (!actaStats && (!foundInMatches || convocatorias === 0)) {
         if (p.partidos_jugados || p.minutos_jugados || p.tarjetas_amarillas !== undefined) {
           convocatorias = p.convocatorias ?? p.partidos_jugados ?? 0;
           titularidades = p.titularidades ?? (convocatorias > 0 ? Math.round(convocatorias * 0.75) : 0);
@@ -380,28 +415,7 @@ export default function Partidos() {
           minutosLiga = p.minutos_jugados ?? (titularidades * matchDuration.totalMinutes + suplencias * matchDuration.halfMinutes);
           amarillas = p.tarjetas_amarillas ?? p.amarillas ?? 0;
           rojas = p.tarjetas_rojas ?? p.rojas ?? 0;
-        } else {
-          // Realistic seed for youth league (Infantil B / Grupo 50 / teams)
-          const dorsalNum = parseInt(p.dorsal) || (idx + 1);
-          const isGk = (p.posicion || '').toLowerCase().includes('porter');
-          const isDef = (p.posicion || '').toLowerCase().includes('defens') || (p.posicion || '').toLowerCase().includes('lateral') || (p.posicion || '').toLowerCase().includes('central');
-          
-          convocatorias = isGk ? 4 : (dorsalNum <= 11 ? 4 : 3);
-          titularidades = isGk ? 4 : (dorsalNum <= 11 ? (dorsalNum % 3 === 0 ? 3 : 4) : 1);
-          suplencias = Math.max(0, convocatorias - titularidades);
-          minutosLiga = (titularidades * (matchDuration.totalMinutes - 10)) + (suplencias * matchDuration.halfMinutes);
-
-          if (dorsalNum === 4 || (p.nombre && p.nombre.toUpperCase().includes('AIMAR'))) {
-            amarillas = 4; // Apercibido (4 amarillas)
-          } else if (dorsalNum === 8 || dorsalNum === 10) {
-            amarillas = 5; // Sancionado por ciclo de 5 amarillas
-          } else if (isDef) {
-            amarillas = (dorsalNum % 3 === 1) ? 2 : 1;
-          } else if (isGk) {
-            amarillas = 0;
-          } else {
-            amarillas = (dorsalNum % 4 === 0) ? 3 : (dorsalNum % 2 === 0 ? 1 : 0);
-          }
+          goles = p.goles ?? 0;
         }
       }
 
@@ -413,10 +427,10 @@ export default function Partidos() {
         amarillas = playerSanction.amarillasManuales;
       }
 
-      let estaSancionado = false;
-      let partidosSancion = 0;
-      let motivoSancion = '';
-      const esApercibido = (amarillas > 0 && amarillas % 5 === 4);
+      let estaSancionado = actaStats?.estaSancionado ?? false;
+      let partidosSancion = actaStats?.partidosSancion ?? 0;
+      let motivoSancion = actaStats?.motivoSancion ?? '';
+      const esApercibido = actaStats?.esApercibido ?? (amarillas > 0 && amarillas % 5 === 4);
 
       if (playerSanction && typeof playerSanction.partidos === 'number' && playerSanction.partidos > 0) {
         estaSancionado = true;
@@ -443,6 +457,7 @@ export default function Partidos() {
         convocatorias,
         titularidades,
         suplencias,
+        goles,
         estaSancionado,
         partidosSancion,
         motivoSancion,
@@ -451,7 +466,7 @@ export default function Partidos() {
     });
 
     return map;
-  }, [matches, players, selectedTeam, matchDuration, teamSanctions]);
+  }, [matches, players, selectedTeam, matchDuration, teamSanctions, actasVersion]);
 
 
   // Plan de Partido & IA Táctica Modal state
@@ -1612,26 +1627,37 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-          {isInfantilB && (
-            <Button 
-              onClick={() => setShowStandingsModal(true)}
+          {currentConfig.urlClasificacion && (
+            <a
+              href={currentConfig.urlClasificacion}
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-xs font-black uppercase tracking-wider bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white flex items-center justify-center gap-2 h-10 px-4 rounded-xl cursor-pointer shadow-lg shadow-emerald-950/40 border border-emerald-400/40"
-              title="Ver Clasificación Oficial RFFM - 2ª Infantil Grupo 50 (www.rffm.es)"
+              title={`Ver Clasificación Oficial en Web RFFM (${currentConfig.categoryName})`}
             >
               <Trophy className="w-4 h-4 text-amber-300" />
-              <span>Clasificación Grupo 50 (RFFM)</span>
-            </Button>
+              <span>Clasificación RFFM ({currentConfig.categoryName.length > 22 ? currentConfig.categoryName.substring(0, 22) + '...' : currentConfig.categoryName}) ↗</span>
+            </a>
           )}
+
+          <Button 
+            onClick={() => setShowCompModal(true)}
+            className="text-xs font-black uppercase tracking-wider bg-gradient-to-r from-cyan-900/60 to-blue-900/60 hover:from-cyan-800/80 hover:to-blue-800/80 border border-cyan-500/40 text-cyan-300 flex items-center justify-center gap-2 h-10 px-4 rounded-xl cursor-pointer shadow-md"
+            title="Configurar URLs de resultados, clasificaciones y rivales para este equipo"
+          >
+            <Globe className="w-4 h-4 text-cyan-400" />
+            <span>Competición & URLs RFFM</span>
+          </Button>
 
           <Button 
             onClick={() => {
               setCrestModalTargetRival('');
               setShowRivalCrestsModal(true);
             }}
-            className="text-xs font-black uppercase tracking-wider bg-gradient-to-r from-cyan-900/60 to-blue-900/60 hover:from-cyan-800/80 hover:to-blue-800/80 border border-cyan-500/40 text-cyan-300 flex items-center justify-center gap-2 h-10 px-4 rounded-xl cursor-pointer shadow-md"
+            className="text-xs font-black uppercase tracking-wider bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 flex items-center justify-center gap-2 h-10 px-4 rounded-xl cursor-pointer shadow-md"
             title="Administrar o subir escudos de los equipos rivales"
           >
-            <Shield className="w-4 h-4 text-cyan-400" />
+            <Shield className="w-4 h-4 text-amber-400" />
             <span>Escudos Rivales</span>
           </Button>
 
@@ -1703,7 +1729,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                 <div className="flex-1 space-y-1.5">
                   <select
                     value={
-                      RIVAL_TEAMS.find(r => 
+                      currentRivals.find(r => 
                         !r.isMyTeam && (
                           r.shortName.toLowerCase() === formData.rival.toLowerCase() ||
                           r.name.toLowerCase() === formData.rival.toLowerCase()
@@ -1715,15 +1741,15 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                       if (val === 'custom') {
                         // Keep current input
                       } else if (val) {
-                        const found = RIVAL_TEAMS.find(r => r.id === val);
+                        const found = currentRivals.find(r => r.id === val);
                         if (found) setFormData({ ...formData, rival: found.shortName });
                       }
                     }}
                     className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-blue-500 font-bold cursor-pointer"
                   >
-                    <option value="">-- Seleccionar Rival Grupo 50 --</option>
-                    <optgroup label="🏆 Rivales Oficiales RFFM (Grupo 50)">
-                      {RIVAL_TEAMS.filter(r => !r.isMyTeam).map(r => (
+                    <option value="">-- Seleccionar Rival ({currentConfig.categoryName}) --</option>
+                    <optgroup label={`🏆 Rivales Oficiales (${currentConfig.categoryName})`}>
+                      {currentRivals.filter(r => !r.isMyTeam).map(r => (
                         <option key={r.id} value={r.id}>{r.shortName} — {r.name}</option>
                       ))}
                     </optgroup>
@@ -2204,6 +2230,27 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                         <span>Ver Acta</span>
                       </Button>
                     )}
+
+                    {(() => {
+                      const rivalClean = (match.rival || '').toLowerCase();
+                      const federatedActa = (currentConfig.matches || []).find(m => 
+                        (m.local && m.local.toLowerCase().includes(rivalClean)) || 
+                        (m.visitante && m.visitante.toLowerCase().includes(rivalClean))
+                      );
+                      if (!federatedActa?.actaUrl) return null;
+                      return (
+                        <a
+                          href={federatedActa.actaUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] font-black text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 flex items-center gap-1 px-2.5 h-8 rounded-xl uppercase transition-all shadow-sm"
+                          title="Abrir Acta Arbitral Oficial de la Federación (RFFM)"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Acta RFFM ↗</span>
+                        </a>
+                      );
+                    })()}
 
                     {match.estado === 'Programado' && (
                       <Button
@@ -3636,7 +3683,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                                     </button>
                                   </div>
 
-                                  {/* Line 3: 5 Métricas Clave (Tarjetas Amarillas, Minutos Liga, Convocatorias, Titularidades, Suplencias) */}
+                                  {/* Line 3: 5 Métricas Clave (Tarjetas Amarillas, Goles Actas, Minutos Liga, Convocatorias, Titularidades) */}
                                   <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                                     {/* Tarjetas Amarillas */}
                                     <span 
@@ -3649,10 +3696,20 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                                               ? 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30' 
                                               : 'bg-slate-800/60 text-slate-400 border-slate-700/60'
                                       }`}
-                                      title={`${stats.amarillas} tarjetas amarillas acumuladas en Liga`}
+                                      title={`${stats.amarillas} tarjetas amarillas acumuladas en Liga / Actas RFFM`}
                                     >
                                       <span>🟨 {stats.amarillas} {stats.amarillas === 1 ? 'amarilla' : 'amarillas'}</span>
                                     </span>
+
+                                    {/* Goles Oficiales en Actas */}
+                                    {stats.goles > 0 && (
+                                      <span 
+                                        className="inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded border bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                                        title={`${stats.goles} goles anotados en actas oficiales federativas`}
+                                      >
+                                        <span>⚽ {stats.goles} {stats.goles === 1 ? 'gol' : 'goles'}</span>
+                                      </span>
+                                    )}
 
                                     {/* Minutos jugados en Liga */}
                                     <span 
@@ -4309,7 +4366,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                       <div className="flex-1 space-y-1.5">
                         <select
                           value={
-                            RIVAL_TEAMS.find(r => 
+                            currentRivals.find(r => 
                               !r.isMyTeam && (
                                 r.shortName.toLowerCase() === planRivalName.toLowerCase() ||
                                 r.name.toLowerCase() === planRivalName.toLowerCase()
@@ -4321,15 +4378,15 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                             if (val === 'custom') {
                               // allow custom typing
                             } else if (val) {
-                              const found = RIVAL_TEAMS.find(r => r.id === val);
+                              const found = currentRivals.find(r => r.id === val);
                               if (found) setPlanRivalName(found.shortName);
                             }
                           }}
                           className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-amber-500 font-bold cursor-pointer"
                         >
-                          <option value="">-- Seleccionar Rival Grupo 50 --</option>
-                          <optgroup label="🏆 Rivales Oficiales RFFM (Grupo 50)">
-                            {RIVAL_TEAMS.filter(r => !r.isMyTeam).map(r => (
+                          <option value="">-- Seleccionar Rival ({currentConfig.categoryName}) --</option>
+                          <optgroup label={`🏆 Rivales Oficiales (${currentConfig.categoryName})`}>
+                            {currentRivals.filter(r => !r.isMyTeam).map(r => (
                               <option key={r.id} value={r.id}>
                                 {r.shortName} — {r.name}
                               </option>
@@ -4855,6 +4912,13 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
           </div>
         );
       })()}
+
+      {/* Modal for managing team competition & URLs */}
+      <TeamCompetitionManagerModal
+        isOpen={showCompModal}
+        onClose={() => setShowCompModal(false)}
+        initialTeamName={selectedTeam}
+      />
     </div>
   );
 }

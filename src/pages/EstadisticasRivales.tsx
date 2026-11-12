@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Trophy, 
   BarChart3, 
@@ -18,9 +18,14 @@ import {
   ArrowLeftRight,
   FileText,
   BrainCircuit,
-  LayoutDashboard
+  LayoutDashboard,
+  Globe
 } from 'lucide-react';
-import { computeAllCollectiveStats, RIVAL_TEAMS } from '@/data/rivalStatsData';
+import { computeAllCollectiveStats, RIVAL_TEAMS, COLLECTIVE_MATCHES } from '@/data/rivalStatsData';
+import { CLUB_TEAMS } from '@/types';
+import { getTeamCompetitionConfig, getTeamRivals, COMPETITION_UPDATED_EVENT } from '@/lib/teamCompetitions';
+import TeamCompetitionManagerModal from '@/components/competitions/TeamCompetitionManagerModal';
+import { Button } from '@/components/ui/button';
 import { RivalAttributionBanner } from '@/components/rivales/RivalAttributionBanner';
 import { RivalGeneralTable } from '@/components/rivales/RivalGeneralTable';
 import { RivalRankings } from '@/components/rivales/RivalRankings';
@@ -53,16 +58,45 @@ type ActiveTab =
 
 export default function EstadisticasRivales() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('general');
+  const [selectedClubTeam, setSelectedClubTeam] = useState<string>(CLUB_TEAMS[0]);
+  const [showCompModal, setShowCompModal] = useState(false);
+  const [compVersion, setCompVersion] = useState(0);
+
+  useEffect(() => {
+    const handleCompUpdated = () => setCompVersion(v => v + 1);
+    window.addEventListener(COMPETITION_UPDATED_EVENT, handleCompUpdated);
+    return () => window.removeEventListener(COMPETITION_UPDATED_EVENT, handleCompUpdated);
+  }, []);
+
+  const currentConfig = useMemo(() => getTeamCompetitionConfig(selectedClubTeam), [selectedClubTeam, compVersion]);
+  const currentRivals = useMemo(() => getTeamRivals(selectedClubTeam), [selectedClubTeam, compVersion]);
+
   const [selectedTeamId, setSelectedTeamId] = useState<string>('team-afe-b');
   const [compareTeamA, setCompareTeamA] = useState<string>('team-afe-b');
   const [compareTeamB, setCompareTeamB] = useState<string>('team-retiro-sur');
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [dataVersion, setDataVersion] = useState(0);
 
-  // Re-compute all stats whenever dataVersion updates
+  // Sync selectedTeamId with active club team
+  useEffect(() => {
+    const myTeam = currentRivals.find(r => r.isMyTeam);
+    const firstRival = currentRivals.find(r => !r.isMyTeam);
+    if (myTeam) {
+      setSelectedTeamId(myTeam.id);
+      setCompareTeamA(myTeam.id);
+    } else if (currentRivals[0]) {
+      setSelectedTeamId(currentRivals[0].id);
+      setCompareTeamA(currentRivals[0].id);
+    }
+    if (firstRival) {
+      setCompareTeamB(firstRival.id);
+    }
+  }, [selectedClubTeam, currentRivals]);
+
+  // Re-compute all stats whenever dataVersion or currentRivals updates
   const stats = useMemo(() => {
-    return computeAllCollectiveStats();
-  }, [dataVersion]);
+    return computeAllCollectiveStats(COLLECTIVE_MATCHES, 'all', undefined, currentRivals);
+  }, [dataVersion, currentRivals]);
 
   const totalGfGrupo = useMemo(() => stats.reduce((acc, s) => acc + s.gf, 0), [stats]);
   const totalPjGrupo = useMemo(() => stats.reduce((acc, s) => acc + s.pj, 0) / 2, [stats]);
@@ -114,6 +148,58 @@ export default function EstadisticasRivales() {
   return (
     <div className="max-w-7xl mx-auto space-y-6 p-2 sm:p-4">
       
+      {/* 0. Selector de Equipo del Club y Competición Activa */}
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between bg-slate-900/80 border border-slate-800 p-4 rounded-2xl shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
+          <div className="w-full sm:w-auto flex flex-col gap-1.5">
+            <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+              Equipo del Club a Examinar
+            </label>
+            <select
+              value={selectedClubTeam}
+              onChange={(e) => setSelectedClubTeam(e.target.value)}
+              className="bg-slate-950 text-cyan-300 font-black text-sm border border-cyan-800/40 rounded-xl px-4 py-2 focus:outline-none focus:border-cyan-400 transition-all cursor-pointer"
+            >
+              {CLUB_TEAMS.map(team => (
+                <option key={team} value={team}>{team}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="pt-1 sm:pt-4">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold px-3 py-1 rounded-xl bg-cyan-950/60 border border-cyan-800/40 text-cyan-300">
+                🏆 {currentConfig.categoryName} ({currentConfig.temporada})
+              </span>
+              {currentConfig.urlClasificacion && (
+                <a
+                  href={currentConfig.urlClasificacion}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1 hover:underline"
+                  title="Abrir enlace oficial en web de la federación"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Web RFFM ↗</span>
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Button
+            type="button"
+            onClick={() => setShowCompModal(true)}
+            className="text-xs font-black uppercase tracking-wider bg-gradient-to-r from-cyan-900/70 to-blue-900/70 hover:from-cyan-800 hover:to-blue-800 border border-cyan-500/40 text-cyan-300 flex items-center gap-2 rounded-xl h-10 px-4 cursor-pointer shadow-md"
+            title="Configurar URLs de resultados, temporadas y rivales para este equipo"
+          >
+            <Globe className="w-4 h-4 text-cyan-400" />
+            <span>Calendario & Rivales RFFM</span>
+          </Button>
+        </div>
+      </div>
+
       {/* 1. Official Attribution & Privacy Banner */}
       <RivalAttributionBanner 
         onOpenSyncModal={() => setIsSyncModalOpen(true)}
@@ -267,6 +353,7 @@ export default function EstadisticasRivales() {
         {activeTab === 'disciplina' && (
           <RivalDisciplineChart
             stats={stats}
+            selectedClubTeam={selectedClubTeam}
             onSelectTeam={handleSelectTeamFromTable}
           />
         )}
@@ -307,6 +394,13 @@ export default function EstadisticasRivales() {
         isOpen={isSyncModalOpen}
         onClose={() => setIsSyncModalOpen(false)}
         onDataUpdated={() => setDataVersion(v => v + 1)}
+      />
+
+      {/* 6. Competition & URLs Manager Modal */}
+      <TeamCompetitionManagerModal
+        isOpen={showCompModal}
+        onClose={() => setShowCompModal(false)}
+        initialTeamName={selectedClubTeam}
       />
 
     </div>

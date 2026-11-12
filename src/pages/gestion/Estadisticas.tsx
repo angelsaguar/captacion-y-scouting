@@ -37,9 +37,19 @@ import {
   Check,
   RefreshCw,
   SlidersHorizontal,
-  Table as TableIcon
+  Table as TableIcon,
+  ExternalLink,
+  FileText,
+  CheckCircle2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { 
+  getTeamActasData, 
+  getPlayerActaStats, 
+  ACTAS_DATA_UPDATED, 
+  syncTeamActasFromFederation 
+} from '@/lib/actasArbitrales';
+import { getTeamCompetitionConfig } from '@/lib/teamCompetitions';
 
 interface TeamPlayer {
   id: string;
@@ -124,11 +134,23 @@ interface AggregatedPlayerStat {
   corners_contra: number;
   faltas_favor: number;
   faltas_contra: number;
+  estaSancionado?: boolean;
+  partidosSancion?: number;
+  motivoSancion?: string;
+  esApercibido?: boolean;
 }
 
 export default function Estadisticas() {
   const [selectedTeam, setSelectedTeam] = useState<string>(CLUB_TEAMS[0]);
-  const [activeTab, setActiveTab] = useState<'resumen' | 'juego' | 'tabla' | 'asistencia'>('resumen');
+  const [activeTab, setActiveTab] = useState<'resumen' | 'juego' | 'tabla' | 'asistencia' | 'actas_disciplina'>('resumen');
+  const [actasVersion, setActasVersion] = useState(0);
+  const [isSyncingActas, setIsSyncingActas] = useState(false);
+
+  useEffect(() => {
+    const handleActasUpdated = () => setActasVersion(v => v + 1);
+    window.addEventListener(ACTAS_DATA_UPDATED, handleActasUpdated);
+    return () => window.removeEventListener(ACTAS_DATA_UPDATED, handleActasUpdated);
+  }, []);
   
   // Data states
   const [totalPlayers, setTotalPlayers] = useState(0);
@@ -411,6 +433,24 @@ export default function Estadisticas() {
           pStat.faltas_favor += st.faltas_favor || 0;
           pStat.faltas_contra += st.faltas_contra || 0;
         });
+      }
+    });
+
+    // Merge Official Referee Match Reports (Actas RFFM)
+    Object.keys(accumulatedStats).forEach(key => {
+      const p = accumulatedStats[key];
+      const actaStats = getPlayerActaStats(selectedTeam, p);
+      if (actaStats) {
+        p.amarillas = actaStats.amarillas;
+        p.rojas = actaStats.rojas;
+        p.goles = Math.max(p.goles, actaStats.goles);
+        p.minutos = Math.max(p.minutos, actaStats.minutos);
+        p.partidosJugados = Math.max(p.partidosJugados, actaStats.convocatorias);
+        p.titularidades = Math.max(p.titularidades, actaStats.titularidades);
+        p.estaSancionado = actaStats.estaSancionado;
+        p.partidosSancion = actaStats.partidosSancion;
+        p.motivoSancion = actaStats.motivoSancion;
+        p.esApercibido = actaStats.esApercibido;
       }
     });
 
@@ -719,6 +759,18 @@ export default function Estadisticas() {
           >
             <Activity className="w-3.5 h-3.5" />
             <span>Asistencias</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('actas_disciplina')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeTab === 'actas_disciplina'
+                ? 'bg-amber-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-amber-300" />
+            <span>Actas & Disciplina RFFM</span>
           </button>
         </div>
       </div>
@@ -1479,6 +1531,9 @@ export default function Estadisticas() {
                       <ArrowUpDown className="w-3 h-3" />
                     </div>
                   </th>
+                  <th className="p-3 text-center">
+                    <span>Estado RFFM</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-850">
@@ -1526,6 +1581,21 @@ export default function Estadisticas() {
                           <span className="text-amber-400">{p.amarillas}</span>
                           <span className="text-slate-600 mx-1">/</span>
                           <span className="text-red-500">{p.rojas}</span>
+                        </td>
+                        <td className="p-3 text-center">
+                          {p.estaSancionado ? (
+                            <span className="text-[9px] font-black bg-red-500/20 text-red-300 border border-red-500/40 px-2 py-0.5 rounded shadow-sm animate-pulse whitespace-nowrap">
+                              ⛔ Sancionado
+                            </span>
+                          ) : p.esApercibido ? (
+                            <span className="text-[9px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded whitespace-nowrap">
+                              ⚠️ Apercibido (4🟨)
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded whitespace-nowrap">
+                              🟢 Limpio
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -1652,6 +1722,302 @@ export default function Estadisticas() {
 
         </div>
       )}
+
+      {/* TAB 5: ACTAS ARBITRALES & DISCIPLINA RFFM */}
+      {activeTab === 'actas_disciplina' && (() => {
+        const teamActasDb = getTeamActasData(selectedTeam);
+        const playersActaList = Object.values(teamActasDb.playersSummary || {}).sort((a, b) => {
+          if (b.amarillas !== a.amarillas) return b.amarillas - a.amarillas;
+          if (b.goles !== a.goles) return b.goles - a.goles;
+          return (parseInt(a.dorsal) || 99) - (parseInt(b.dorsal) || 99);
+        });
+
+        const totalAmarillasActas = playersActaList.reduce((acc, p) => acc + p.amarillas, 0);
+        const totalRojasActas = playersActaList.reduce((acc, p) => acc + p.rojas, 0);
+        const totalGolesActas = playersActaList.reduce((acc, p) => acc + p.goles, 0);
+        const actasList = teamActasDb.actas || [];
+
+        const handleSyncNow = async () => {
+          setIsSyncingActas(true);
+          try {
+            const compCfg = getTeamCompetitionConfig(selectedTeam);
+            const calUrl = compCfg.urlCalendario || 'https://www.rffm.es/competicion/calendario?temporada=22&competicion=26738324&grupo=27306559';
+            await syncTeamActasFromFederation(selectedTeam, calUrl);
+            toast.success('Actas arbitrales y disciplina federativa sincronizadas con éxito');
+          } catch (err: any) {
+            toast.error(err.message || 'Error sincronizando actas de la federación');
+          } finally {
+            setIsSyncingActas(false);
+          }
+        };
+
+        return (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            {/* Top Control Header */}
+            <div className="bg-slate-900 border border-amber-500/30 rounded-3xl p-5 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5 text-amber-400" />
+                  <h3 className="text-lg font-black text-white uppercase tracking-tight">
+                    Registro Oficial de Actas Arbitrales y Disciplina Federativa
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">
+                  Datos extraídos directamente de los informes arbitrales de la Real Federación de Fútbol de Madrid ({teamActasDb.categoryName}).
+                </p>
+                <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-2">
+                  <span>Última sincronización: {new Date(teamActasDb.updatedAt).toLocaleString('es-ES')}</span>
+                  <span>•</span>
+                  <span>{actasList.length} actas oficiales registradas</span>
+                </div>
+              </div>
+
+              <Button
+                onClick={handleSyncNow}
+                disabled={isSyncingActas}
+                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-lg shadow-amber-950/40 cursor-pointer"
+              >
+                <RefreshCw className={`w-4 h-4 ${isSyncingActas ? 'animate-spin' : ''}`} />
+                <span>{isSyncingActas ? 'Sincronizando Actas...' : 'Actualizar con Web RFFM'}</span>
+              </Button>
+            </div>
+
+            {/* 4 Summary KPI Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Tarjetas Amarillas</span>
+                <div className="text-2xl font-black text-amber-400 mt-1 flex items-center gap-2">
+                  <span>🟨</span>
+                  <span>{totalAmarillasActas}</span>
+                </div>
+                <span className="text-[10px] text-slate-500 mt-1 block">Acumuladas en actas</span>
+              </div>
+
+              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Tarjetas Rojas</span>
+                <div className="text-2xl font-black text-rose-500 mt-1 flex items-center gap-2">
+                  <span>🟥</span>
+                  <span>{totalRojasActas}</span>
+                </div>
+                <span className="text-[10px] text-slate-500 mt-1 block">Expulsiones directas / doble A</span>
+              </div>
+
+              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Goles Oficiales RFFM</span>
+                <div className="text-2xl font-black text-emerald-400 mt-1 flex items-center gap-2">
+                  <span>⚽</span>
+                  <span>{totalGolesActas}</span>
+                </div>
+                <span className="text-[10px] text-slate-500 mt-1 block">En actas arbitrales</span>
+              </div>
+
+              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Partidos con Acta</span>
+                <div className="text-2xl font-black text-blue-400 mt-1 flex items-center gap-2">
+                  <span>📋</span>
+                  <span>{actasList.length}</span>
+                </div>
+                <span className="text-[10px] text-slate-500 mt-1 block">Jornadas disputadas</span>
+              </div>
+            </div>
+
+            {/* Official Disciplinary Board (Table) */}
+            <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-5 space-y-4 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                <div>
+                  <h4 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
+                    <span>⚖️ Control Disciplinario y Ciclo de 5 Tarjetas (RFFM)</span>
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Seguimiento oficial de ciclo federativo: al acumular 5 amarillas se cumple sanción de 1 partido; 4 amarillas entra en estado de apercibido.
+                  </p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto rounded-2xl border border-slate-800">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-950/90 text-[10px] font-black uppercase text-slate-400 border-b border-slate-800">
+                      <th className="p-3 text-center w-12">Dorsal</th>
+                      <th className="p-3">Jugador / Nombre en Acta</th>
+                      <th className="p-3 text-center">Convocatorias</th>
+                      <th className="p-3 text-center">Titularidades</th>
+                      <th className="p-3 text-center">Minutos</th>
+                      <th className="p-3 text-center text-emerald-400">Goles ⚽</th>
+                      <th className="p-3 text-center text-amber-400">Amarillas 🟨</th>
+                      <th className="p-3 text-center text-rose-500">Rojas 🟥</th>
+                      <th className="p-3 text-center">Ciclo 5 Tarjetas</th>
+                      <th className="p-3 text-center">Estado Disciplinario</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-850">
+                    {playersActaList.map((p) => {
+                      const cicloCount = p.amarillas % 5;
+                      return (
+                        <tr key={p.nombreCompleto} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="p-3 text-center font-mono font-black text-slate-300">#{p.dorsal}</td>
+                          <td className="p-3 font-bold text-white whitespace-nowrap">
+                            <div className="flex flex-col">
+                              <span>{p.nombreCorto}</span>
+                              <span className="text-[10px] text-slate-400 font-normal">{p.nombreCompleto}</span>
+                            </div>
+                          </td>
+                          <td className="p-3 text-center font-bold text-slate-300">{p.convocatorias}</td>
+                          <td className="p-3 text-center font-bold text-slate-300">{p.titularidades}</td>
+                          <td className="p-3 text-center font-bold text-blue-300">{p.minutos}'</td>
+                          <td className="p-3 text-center font-black text-emerald-400">
+                            {p.goles > 0 ? `⚽ ${p.goles}` : '0'}
+                          </td>
+                          <td className="p-3 text-center font-black text-amber-400">
+                            {p.amarillas > 0 ? (
+                              <span className="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30">
+                                🟨 {p.amarillas}
+                              </span>
+                            ) : (
+                              <span className="text-slate-500">0</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center font-black text-rose-500">
+                            {p.rojas > 0 ? (
+                              <span className="bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded-full border border-rose-500/30">
+                                🟥 {p.rojas}
+                              </span>
+                            ) : (
+                              <span className="text-slate-500">0</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              {[1, 2, 3, 4, 5].map((slot) => (
+                                <span
+                                  key={slot}
+                                  className={`w-3.5 h-4.5 rounded-xs inline-block border ${
+                                    slot <= cicloCount
+                                      ? 'bg-amber-400 border-amber-500 shadow-sm'
+                                      : 'bg-slate-800 border-slate-700'
+                                  }`}
+                                  title={`Tarjeta ${slot} de 5`}
+                                />
+                              ))}
+                              <span className="text-[9px] font-mono text-slate-400 ml-1">({cicloCount}/5)</span>
+                            </div>
+                          </td>
+                          <td className="p-3 text-center">
+                            {p.estaSancionado ? (
+                              <span className="text-[9px] font-black bg-red-500/20 text-red-300 border border-red-500/40 px-2 py-1 rounded-full shadow-sm animate-pulse inline-flex items-center gap-1">
+                                <span>⛔</span>
+                                <span>Sancionado ({p.partidosSancion} part.)</span>
+                              </span>
+                            ) : p.esApercibido ? (
+                              <span className="text-[9px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-1 rounded-full inline-flex items-center gap-1">
+                                <span>⚠️</span>
+                                <span>Apercibido (4 🟨)</span>
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-1 rounded-full inline-flex items-center gap-1">
+                                <span>🟢</span>
+                                <span>Limpio / Disponible</span>
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Official Match Reports Log */}
+            <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-5 space-y-4 shadow-xl">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div>
+                  <h4 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-blue-400" />
+                    <span>Actas Arbitrales Oficiales RFFM (Jornadas Disputadas)</span>
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Detalle oficial de goles y tarjetas registrados en cada jornada de la competición.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {actasList.map((acta) => (
+                  <div key={acta.codacta} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center justify-between text-xs border-b border-slate-850 pb-2">
+                      <span className="font-black text-blue-400 uppercase tracking-wider">Jornada {acta.jornada}</span>
+                      <span className="text-slate-400">{acta.fecha} • {acta.hora} h</span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-1">
+                      <div className="flex-1 text-right pr-3">
+                        <span className="font-bold text-xs text-white block">{acta.local}</span>
+                      </div>
+                      <div className="bg-slate-900 border border-slate-800 px-3 py-1 rounded-xl text-center">
+                        <span className="text-base font-black text-white">{acta.golesLocal} - {acta.golesVisitante}</span>
+                      </div>
+                      <div className="flex-1 text-left pl-3">
+                        <span className="font-bold text-xs text-white block">{acta.visitante}</span>
+                      </div>
+                    </div>
+
+                    <div className="text-[10px] text-slate-400 space-y-1 bg-slate-900/60 p-2.5 rounded-xl border border-slate-850">
+                      <div><strong className="text-slate-300 font-semibold">Campo:</strong> {acta.campo}</div>
+                      <div><strong className="text-slate-300 font-semibold">Árbitro:</strong> {acta.arbitro}</div>
+                    </div>
+
+                    {/* Goals */}
+                    {acta.goles.length > 0 && (
+                      <div className="text-[10px] space-y-1">
+                        <strong className="text-emerald-400 font-bold block uppercase text-[9px]">⚽ Goles del Acta:</strong>
+                        <div className="space-y-0.5">
+                          {acta.goles.map((g, idx) => (
+                            <div key={idx} className="flex items-center justify-between text-slate-300 bg-slate-900/40 px-2 py-0.5 rounded">
+                              <span>{g.nombreJugador} {g.dorsal ? `(#${g.dorsal})` : ''} ({g.equipo})</span>
+                              <span className="font-mono text-emerald-400">{g.minuto}'</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Cards */}
+                    {acta.tarjetas.length > 0 && (
+                      <div className="text-[10px] space-y-1">
+                        <strong className="text-amber-400 font-bold block uppercase text-[9px]">🟨 Tarjetas del Acta:</strong>
+                        <div className="space-y-0.5">
+                          {acta.tarjetas.map((t, idx) => (
+                            <div key={idx} className="flex items-center justify-between text-slate-300 bg-slate-900/40 px-2 py-0.5 rounded">
+                              <span className="flex items-center gap-1">
+                                <span>{t.tipo === 'amarilla' ? '🟨' : '🟥'}</span>
+                                <span>{t.nombreJugador} {t.dorsal ? `(#${t.dorsal})` : ''} ({t.equipo})</span>
+                              </span>
+                              <span className="font-mono text-amber-400">{t.minuto}'</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="pt-1">
+                      <a
+                        href={acta.actaUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] font-black text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 flex items-center justify-center gap-1.5 py-1.5 rounded-xl transition-all"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Abrir Acta Oficial Federativa (RFFM.es) ↗</span>
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );
