@@ -3,6 +3,13 @@ import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { fileURLToPath } from 'url';
+import {
+  extractCalendarData,
+  fetchClasificacionData,
+  fetchResultadosData,
+  fetchSingleActaDetail,
+  syncActasDetailedData
+} from "./src/lib/rffmServerLogic";
 
 let myFilename = "";
 let myDirname = "";
@@ -47,24 +54,14 @@ async function startServer() {
   // Official RFFM Classification Proxy
   app.get("/api/rffm/clasificacion", async (req, res) => {
     try {
-      const temporada = req.query.temporada || "22";
-      const competicion = req.query.competicion || "26738324";
-      const grupo = req.query.grupo || "27306559";
-      const jornada = req.query.jornada || "4";
-      const tipojuego = req.query.tipojuego || "1";
-
-      const targetUrl = `https://www.rffm.es/competicion/clasificaciones?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&jornada=${jornada}&tipojuego=${tipojuego}`;
-      const response = await fetch(targetUrl, {
-        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
+      const standings = await fetchClasificacionData({
+        temporada: req.query.temporada?.toString() || "22",
+        competicion: req.query.competicion?.toString() || "26738324",
+        grupo: req.query.grupo?.toString() || "27306559",
+        jornada: req.query.jornada?.toString() || "4",
+        tipojuego: req.query.tipojuego?.toString() || "1"
       });
-      const html = await response.text();
-      const match = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-      if (!match) {
-        return res.status(502).json({ error: "No se pudieron obtener los datos de la RFFM." });
-      }
-      const json = JSON.parse(match[1]);
-      const standings = json.props?.pageProps?.standings;
-      res.json(standings || {});
+      res.json(standings);
     } catch (err: any) {
       console.error("Error fetching RFFM clasificacion:", err);
       res.status(500).json({ error: err.message });
@@ -74,24 +71,14 @@ async function startServer() {
   // Official RFFM Resultados & Jornadas Proxy
   app.get("/api/rffm/resultados", async (req, res) => {
     try {
-      const temporada = req.query.temporada || "22";
-      const competicion = req.query.competicion || "26738324";
-      const grupo = req.query.grupo || "27306559";
-      const jornada = req.query.jornada || "4";
-      const tipojuego = req.query.tipojuego || "1";
-
-      const targetUrl = `https://www.rffm.es/competicion/resultados-y-jornadas?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&jornada=${jornada}&tipojuego=${tipojuego}`;
-      const response = await fetch(targetUrl, {
-        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
+      const results = await fetchResultadosData({
+        temporada: req.query.temporada?.toString() || "22",
+        competicion: req.query.competicion?.toString() || "26738324",
+        grupo: req.query.grupo?.toString() || "27306559",
+        jornada: req.query.jornada?.toString() || "4",
+        tipojuego: req.query.tipojuego?.toString() || "1"
       });
-      const html = await response.text();
-      const match = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-      if (!match) {
-        return res.status(502).json({ error: "No se pudieron obtener los datos de la RFFM." });
-      }
-      const json = JSON.parse(match[1]);
-      const results = json.props?.pageProps?.results;
-      res.json(results || {});
+      res.json(results);
     } catch (err: any) {
       console.error("Error fetching RFFM resultados:", err);
       res.status(500).json({ error: err.message });
@@ -101,208 +88,19 @@ async function startServer() {
   // Extract all competition, teams, rankings and match actas arbitrales from a single Calendar URL
   const handleExtractCalendar = async (req: express.Request, res: express.Response) => {
     try {
-      const calendarUrl = (req.body?.calendarUrl || req.query?.calendarUrl || req.body?.url || req.query?.url || "").toString().trim();
-      let temporada = (req.body?.temporada || req.query?.temporada || "").toString().trim();
-      let competicion = (req.body?.competicion || req.query?.competicion || "").toString().trim();
-      let grupo = (req.body?.grupo || req.query?.grupo || "").toString().trim();
-      const targetTeamName = (req.body?.teamName || req.query?.teamName || "").toString().trim();
-
-      // Extract params from calendarUrl if provided
-      if (calendarUrl) {
-        try {
-          const parsed = new URL(calendarUrl.startsWith("http") ? calendarUrl : `https://${calendarUrl}`);
-          temporada = parsed.searchParams.get("temporada") || parsed.searchParams.get("cod_temporada") || temporada;
-          competicion = parsed.searchParams.get("competicion") || parsed.searchParams.get("cod_competicion") || competicion;
-          grupo = parsed.searchParams.get("grupo") || parsed.searchParams.get("cod_grupo") || grupo;
-        } catch {
-          const tMatch = calendarUrl.match(/(?:temporada|cod_temporada)=(\d+)/i);
-          const cMatch = calendarUrl.match(/(?:competicion|cod_competicion)=(\d+)/i);
-          const gMatch = calendarUrl.match(/(?:grupo|cod_grupo)=(\d+)/i);
-          if (tMatch) temporada = tMatch[1];
-          if (cMatch) competicion = cMatch[1];
-          if (gMatch) grupo = gMatch[1];
-        }
-      }
-
-      if (!temporada) temporada = "22"; // 2026-2027 default on RFFM
-      if (!competicion || !grupo) {
-        return res.status(400).json({ 
-          error: "No se pudieron identificar los parámetros de 'competicion' y 'grupo' en la URL proporcionada. Asegúrate de pegar la URL completa del calendario de la RFFM (ej. https://www.rffm.es/competicion/calendario?temporada=22&competicion=26738324&grupo=27306559)." 
-        });
-      }
-
-      // 1. Fetch official standings & teams from clasificaciones
-      const clasifUrl = `https://www.rffm.es/competicion/clasificaciones?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&jornada=1&tipojuego=1`;
-      const clasifResp = await fetch(clasifUrl, {
-        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
+      const extractedData = await extractCalendarData({
+        calendarUrl: (req.body?.calendarUrl || req.query?.calendarUrl || req.body?.url || req.query?.url || "").toString(),
+        temporada: (req.body?.temporada || req.query?.temporada || "").toString(),
+        competicion: (req.body?.competicion || req.query?.competicion || "").toString(),
+        grupo: (req.body?.grupo || req.query?.grupo || "").toString(),
+        tipojuego: (req.body?.tipojuego || req.query?.tipojuego || "").toString(),
+        teamName: (req.body?.teamName || req.query?.teamName || "").toString()
       });
-      const clasifHtml = await clasifResp.text();
-      const clasifMatch = clasifHtml.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-      if (!clasifMatch) {
-        return res.status(502).json({ error: "No se pudo leer la información de la Federación para esta URL de calendario." });
-      }
-      const clasifJson = JSON.parse(clasifMatch[1]);
-      const standings = clasifJson.props?.pageProps?.standings;
-
-      const compName = standings?.competicion ? standings.competicion.trim() : "Competición Federada";
-      const grupoName = standings?.grupo ? standings.grupo.trim() : `Grupo ${grupo}`;
-      const categoryName = `${compName} - ${grupoName}`;
-
-      const rawTeams = standings?.clasificacion || [];
-      const rivals = rawTeams.map((t: any, idx: number) => {
-        const rawName = (t.nombre || `Equipo ${idx + 1}`).trim().toUpperCase();
-        
-        // Clean short name
-        let short = rawName
-          .replace(/^C\.D\.\s*/i, '')
-          .replace(/^S\.A\.D\.\s*/i, '')
-          .replace(/^A\.D\.\s*/i, '')
-          .replace(/^E\.F\.\s*/i, '')
-          .replace(/^CLUB\s*/i, '')
-          .replace(/^ASOCIACION\s*/i, '')
-          .replace(/^SECCION\s+DEPORTIVA\s+DEL\s*/i, 'S.D. Del ')
-          .replace(/^ESCUELA\s+DE\s+FUTBOL\s*/i, 'E.F. ')
-          .trim();
-
-        if (short.length > 22) {
-          short = short.substring(0, 22).trim();
-        }
-
-        const isMine = rawName.includes("AFE") || 
-          (targetTeamName && rawName.includes(targetTeamName.toUpperCase())) ||
-          rawName.includes("FUNDACION ESCUELA DE FUTBOL AFE");
-
-        const crestUrl = t.url_img 
-          ? (t.url_img.startsWith("http") ? t.url_img : `https://appweb.rffm.es${t.url_img}`) 
-          : "";
-
-        return {
-          id: `rffm-team-${t.codequipo || idx + 1}`,
-          codequipo: t.codequipo,
-          name: rawName,
-          shortName: short || rawName,
-          crestUrl,
-          position: parseInt(t.posicion) || (idx + 1),
-          points: parseInt(t.puntos) || 0,
-          matchesPlayed: parseInt(t.jugados) || 0,
-          won: parseInt(t.ganados) || 0,
-          drawn: parseInt(t.empatados) || 0,
-          lost: parseInt(t.perdidos) || 0,
-          goalsFor: parseInt(t.goles_a_favor) || 0,
-          goalsAgainst: parseInt(t.goles_en_contra) || 0,
-          isMyTeam: isMine
-        };
-      });
-
-      // 2. Discover all jornadas that have occurred or are scheduled
-      let pastJornadaNumbers = [1, 2, 3, 4, 5];
-      try {
-        const j1Resp = await fetch(
-          `https://www.rffm.es/competicion/resultados-y-jornadas?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&jornada=1&tipojuego=1`,
-          { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" } }
-        );
-        const j1Html = await j1Resp.text();
-        const j1Match = j1Html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-        if (j1Match) {
-          const j1Json = JSON.parse(j1Match[1]);
-          const list = j1Json.props?.pageProps?.results?.listado_jornadas?.[0]?.jornadas || [];
-          if (list.length > 0) {
-            const now = new Date();
-            const detected: number[] = [];
-            for (const jItem of list) {
-              const parts = (jItem.fecha_jornada || "").split("-");
-              if (parts.length === 3) {
-                // DD-MM-YYYY
-                const jDate = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]), 23, 59, 59);
-                if (jDate <= now) {
-                  detected.push(parseInt(jItem.codjornada));
-                }
-              }
-            }
-            if (detected.length > 0) {
-              pastJornadaNumbers = detected;
-            }
-          }
-        }
-      } catch (err) {
-        console.warn("Could not auto-detect past jornadas, using fallback:", err);
-      }
-
-      // Fetch match fixtures & actas arbitrales for all detected past jornadas
-      const fetchJornadaPartidos = async (jNum: number) => {
-        try {
-          const resJornada = await fetch(
-            `https://www.rffm.es/competicion/resultados-y-jornadas?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&jornada=${jNum}&tipojuego=1`,
-            { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" } }
-          );
-          const html = await resJornada.text();
-          const match = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-          if (!match) return [];
-          const parsed = JSON.parse(match[1]);
-          const partidos = parsed.props?.pageProps?.results?.partidos || [];
-          return partidos.map((p: any) => {
-            const hasScore = p.Goles_casa !== "" && p.Goles_casa !== null && p.Goles_casa !== undefined;
-            return {
-              id: `acta-${p.codacta || `${jNum}-${p.CodEquipo_local}-${p.CodEquipo_visitante}`}`,
-              jornada: jNum,
-              fecha: p.fecha || "",
-              hora: p.hora || "",
-              campo: p.campojuego || "",
-              codigoCampo: p.codigo_campo || "",
-              arbitro: p.arbitro || "",
-              local: p.Nombre_equipo_local || "",
-              visitante: p.Nombre_equipo_visitante || "",
-              escudoLocal: p.url_img_local ? (p.url_img_local.startsWith("http") ? p.url_img_local : `https://appweb.rffm.es${p.url_img_local}`) : "",
-              escudoVisitante: p.url_img_visitante ? (p.url_img_visitante.startsWith("http") ? p.url_img_visitante : `https://appweb.rffm.es${p.url_img_visitante}`) : "",
-              golesLocal: p.Goles_casa ?? "",
-              golesVisitante: p.Goles_visitante ?? "",
-              codacta: p.codacta || "",
-              actaUrl: p.codacta ? `https://www.rffm.es/competiciones/acta?codacta=${p.codacta}` : "",
-              actaOficialUrl: p.codacta ? `https://appweb.rffm.es/pnfg/NPcd/NFG_CmpActa1?cod_primaria=1000122&CodActa=${p.codacta}` : "",
-              estado: p.estado || "1",
-              disputado: hasScore || p.acta_cerrada === "1"
-            };
-          });
-        } catch {
-          return [];
-        }
-      };
-
-      const jornadaResults = await Promise.all(pastJornadaNumbers.map(fetchJornadaPartidos));
-      const allMatches = jornadaResults.flat();
-
-      // Collect all unique jornadas that have been disputed (have scores or actas)
-      const disputedSet = new Set<number>();
-      allMatches.forEach((m: any) => {
-        if (m.disputado || (m.golesLocal !== "" && m.golesLocal !== null && m.golesLocal !== undefined) || m.codacta) {
-          disputedSet.add(m.jornada);
-        }
-      });
-      const jornadasDisputadas = Array.from(disputedSet).sort((a, b) => a - b);
-
-      const extractedData = {
-        ok: true,
-        categoryName,
-        temporada: "2026-2027",
-        temporadaId: temporada,
-        competicionId: competicion,
-        grupoId: grupo,
-        urlCalendario: calendarUrl || `https://www.rffm.es/competicion/calendario?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}`,
-        urlClasificacion: `https://www.rffm.es/competicion/clasificaciones?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}`,
-        urlResultados: `https://www.rffm.es/competicion/resultados-y-jornadas?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}`,
-        urlActas: "https://www.rffm.es/competiciones/acta",
-        federationName: "Real Federación de Fútbol de Madrid (RFFM)",
-        rivals,
-        matches: allMatches,
-        jornadasDisputadas,
-        lastSync: new Date().toISOString()
-      };
-
-
       res.json(extractedData);
     } catch (err: any) {
       console.error("Error in /api/rffm/extract-calendar:", err);
-      res.status(500).json({ error: err.message || "Error al extraer los datos de la federación." });
+      const status = err?.statusCode || 500;
+      res.status(status).json({ error: err.message || "Error al extraer los datos de la federación." });
     }
   };
 
@@ -312,20 +110,11 @@ async function startServer() {
   // Single Acta Arbitral proxy
   app.get("/api/rffm/acta-detail", async (req, res) => {
     try {
-      const codacta = req.query.codacta;
+      const codacta = (req.query.codacta || "").toString().trim();
       if (!codacta) {
         return res.status(400).json({ error: "Parámetro codacta requerido" });
       }
-      const response = await fetch(`https://www.rffm.es/acta-partido/${codacta}`, {
-        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
-      });
-      const html = await response.text();
-      const match = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-      if (!match) {
-        return res.status(502).json({ error: "No se pudo leer el acta arbitral de la RFFM." });
-      }
-      const json = JSON.parse(match[1]);
-      const game = json.props?.pageProps?.game;
+      const game = await fetchSingleActaDetail(codacta);
       res.json({ ok: true, game });
     } catch (err: any) {
       console.error("Error fetching single acta:", err);
@@ -336,270 +125,14 @@ async function startServer() {
   // Sync all actas arbitrales in the category and extract all player disciplinary stats & rival metrics
   app.post("/api/rffm/sync-actas-detailed", async (req, res) => {
     try {
-      const calendarUrl = (req.body?.calendarUrl || "").toString().trim();
-      let temporada = (req.body?.temporada || "").toString().trim();
-      let competicion = (req.body?.competicion || "").toString().trim();
-      let grupo = (req.body?.grupo || "").toString().trim();
-      const targetTeamName = (req.body?.teamName || "INFANTIL B").toString().trim();
-
-      if (calendarUrl) {
-        try {
-          const parsed = new URL(calendarUrl.startsWith("http") ? calendarUrl : `https://${calendarUrl}`);
-          temporada = parsed.searchParams.get("temporada") || parsed.searchParams.get("cod_temporada") || temporada;
-          competicion = parsed.searchParams.get("competicion") || parsed.searchParams.get("cod_competicion") || competicion;
-          grupo = parsed.searchParams.get("grupo") || parsed.searchParams.get("cod_grupo") || grupo;
-        } catch {
-          const tMatch = calendarUrl.match(/(?:temporada|cod_temporada)=(\d+)/i);
-          const cMatch = calendarUrl.match(/(?:competicion|cod_competicion)=(\d+)/i);
-          const gMatch = calendarUrl.match(/(?:grupo|cod_grupo)=(\d+)/i);
-          if (tMatch) temporada = tMatch[1];
-          if (cMatch) competicion = cMatch[1];
-          if (gMatch) grupo = gMatch[1];
-        }
-      }
-
-      if (!temporada) temporada = "22";
-      if (!competicion) competicion = "26738324";
-      if (!grupo) grupo = "27306559";
-
-      // 1. Discover played jornadas
-      let pastJornadaNumbers = [1, 2, 3, 4, 5];
-      try {
-        const j1Resp = await fetch(
-          `https://www.rffm.es/competicion/resultados-y-jornadas?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&jornada=1&tipojuego=1`,
-          { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" } }
-        );
-        const j1Html = await j1Resp.text();
-        const j1Match = j1Html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-        if (j1Match) {
-          const j1Json = JSON.parse(j1Match[1]);
-          const list = j1Json.props?.pageProps?.results?.listado_jornadas?.[0]?.jornadas || [];
-          if (list.length > 0) {
-            const now = new Date();
-            const detected: number[] = [];
-            for (const jItem of list) {
-              const parts = (jItem.fecha_jornada || "").split("-");
-              if (parts.length === 3) {
-                const jDate = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]), 23, 59, 59);
-                if (jDate <= now) {
-                  detected.push(parseInt(jItem.codjornada));
-                }
-              }
-            }
-            if (detected.length > 0) pastJornadaNumbers = detected;
-          }
-        }
-      } catch {}
-
-      // 2. Fetch matches for all past jornadas to find our team's matches and actas
-      const matchesToProcess: Array<{ codacta: string; jornada: number }> = [];
-
-      for (const jNum of pastJornadaNumbers) {
-        try {
-          const rj = await fetch(
-            `https://www.rffm.es/competicion/resultados-y-jornadas?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&jornada=${jNum}&tipojuego=1`,
-            { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" } }
-          );
-          const htmlj = await rj.text();
-          const match = htmlj.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-          if (match) {
-            const parsed = JSON.parse(match[1]);
-            const partidos = parsed.props?.pageProps?.results?.partidos || [];
-            partidos.forEach((p: any) => {
-              if (p.codacta) {
-                const isOurTeam = p.Nombre_equipo_local?.toUpperCase().includes("AFE") || 
-                  p.Nombre_equipo_visitante?.toUpperCase().includes("AFE") ||
-                  p.Nombre_equipo_local?.toUpperCase().includes(targetTeamName.toUpperCase()) ||
-                  p.Nombre_equipo_visitante?.toUpperCase().includes(targetTeamName.toUpperCase());
-                if (isOurTeam) {
-                  matchesToProcess.push({ codacta: p.codacta, jornada: jNum });
-                }
-              }
-            });
-          }
-        } catch {}
-      }
-
-      // 3. Sequential fetch of actas to prevent any rate limiting
-      const playersSummary: Record<string, any> = {};
-      const rivalsSummary: Record<string, any> = {};
-      const detailedActas: any[] = [];
-
-      for (const item of matchesToProcess) {
-        try {
-          const actaResp = await fetch(`https://www.rffm.es/acta-partido/${item.codacta}`, {
-            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
-          });
-          const actaHtml = await actaResp.text();
-          const actaMatch = actaHtml.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-          if (!actaMatch) continue;
-          const actaJson = JSON.parse(actaMatch[1]);
-          const g = actaJson.props?.pageProps?.game;
-          if (!g) continue;
-
-          const isLocalAfe = (g.equipo_local || "").toUpperCase().includes("AFE") || (g.equipo_local || "").toUpperCase().includes(targetTeamName.toUpperCase());
-          const rivalTeamName = isLocalAfe ? g.equipo_visitante : g.equipo_local;
-
-          const ourPlayers = isLocalAfe ? (g.jugadores_equipo_local || []) : (g.jugadores_equipo_visitante || []);
-          const ourCards = isLocalAfe ? (g.tarjetas_equipo_local || []) : (g.tarjetas_equipo_visitante || []);
-          const ourGoals = isLocalAfe ? (g.goles_equipo_local || []) : (g.goles_equipo_visitante || []);
-
-          const rivalCards = isLocalAfe ? (g.tarjetas_equipo_visitante || []) : (g.tarjetas_equipo_local || []);
-          const rivalGoals = isLocalAfe ? (g.goles_equipo_visitante || []) : (g.goles_equipo_local || []);
-
-          // Process our team players
-          for (const p of ourPlayers) {
-            const name = (p.nombre_jugador || "").trim().toUpperCase();
-            if (!name) continue;
-
-            // Generate clean short name
-            const parts = name.split(",");
-            let short = parts.length > 1 ? parts[1].trim() : name;
-            const firstName = short.split(" ")[0];
-
-            if (!playersSummary[name]) {
-              playersSummary[name] = {
-                nombreCompleto: name,
-                nombreCorto: firstName || short,
-                dorsal: p.dorsal || "",
-                convocatorias: 0,
-                titularidades: 0,
-                suplencias: 0,
-                minutos: 0,
-                goles: 0,
-                amarillas: 0,
-                rojas: 0,
-                estaSancionado: false,
-                partidosSancion: 0,
-                motivoSancion: "",
-                esApercibido: false,
-                partidos: []
-              };
-            }
-
-            playersSummary[name].convocatorias += 1;
-            const isTitular = p.titular === "1";
-            if (isTitular) {
-              playersSummary[name].titularidades += 1;
-              playersSummary[name].minutos += 70;
-            } else {
-              playersSummary[name].suplencias += 1;
-              playersSummary[name].minutos += 35;
-            }
-
-            playersSummary[name].partidos.push({
-              jornada: item.jornada,
-              rival: rivalTeamName,
-              fecha: g.fecha,
-              titular: isTitular,
-              minutos: isTitular ? 70 : 35,
-              goles: 0,
-              amarillas: 0,
-              rojas: 0,
-              codacta: item.codacta
-            });
-          }
-
-          // Process cards for our players
-          for (const c of ourCards) {
-            const name = (c.nombre_jugador || "").trim().toUpperCase();
-            if (playersSummary[name]) {
-              if (c.codigo_tipo_amonestacion === "100") {
-                playersSummary[name].amarillas += 1;
-              } else {
-                playersSummary[name].rojas += 1;
-              }
-            }
-          }
-
-          // Process goals for our players
-          for (const gl of ourGoals) {
-            const name = (gl.nombre_jugador || "").trim().toUpperCase();
-            if (playersSummary[name]) {
-              playersSummary[name].goles += 1;
-            }
-          }
-
-          // Process rival stats
-          if (!rivalsSummary[rivalTeamName]) {
-            rivalsSummary[rivalTeamName] = {
-              name: rivalTeamName,
-              shortName: rivalTeamName.replace(/^C\.D\.\s*|^S\.A\.D\.\s*|^A\.D\.\s*/i, '').substring(0, 22),
-              partidosJugados: 0,
-              amarillas: 0,
-              rojas: 0,
-              golesFavor: 0,
-              golesContra: 0,
-              jugadoresAmonestados: [],
-              goleadores: []
-            };
-          }
-          rivalsSummary[rivalTeamName].partidosJugados += 1;
-          rivalsSummary[rivalTeamName].amarillas += rivalCards.filter((c: any) => c.codigo_tipo_amonestacion === "100").length;
-          rivalsSummary[rivalTeamName].rojas += rivalCards.filter((c: any) => c.codigo_tipo_amonestacion !== "100").length;
-          rivalsSummary[rivalTeamName].golesFavor += rivalGoals.length;
-          rivalsSummary[rivalTeamName].golesContra += ourGoals.length;
-
-          rivalCards.forEach((c: any) => {
-            rivalsSummary[rivalTeamName].jugadoresAmonestados.push({
-              nombre: c.nombre_jugador,
-              jornada: item.jornada,
-              minuto: c.minuto || "",
-              esRoja: c.codigo_tipo_amonestacion !== "100"
-            });
-          });
-
-          rivalGoals.forEach((gl: any) => {
-            rivalsSummary[rivalTeamName].goleadores.push({
-              nombre: gl.nombre_jugador,
-              jornada: item.jornada,
-              minuto: gl.minuto || ""
-            });
-          });
-
-          detailedActas.push({
-            codacta: item.codacta,
-            jornada: item.jornada,
-            fecha: g.fecha,
-            hora: g.hora,
-            campo: g.campo,
-            arbitro: g.arbitro || (g.arbitros_partido?.[0]?.nombre_arbitro || ""),
-            local: g.equipo_local,
-            visitante: g.equipo_visitante,
-            golesLocal: parseInt(g.goles_local) || 0,
-            golesVisitante: parseInt(g.goles_visitante) || 0,
-            actaUrl: `https://www.rffm.es/competiciones/acta?codacta=${item.codacta}`
-          });
-        } catch (actaErr) {
-          console.warn(`Error processing acta ${item.codacta}:`, actaErr);
-        }
-      }
-
-      // Calculate disciplinary status (cycles of 5 cards, red cards)
-      Object.values(playersSummary).forEach((p: any) => {
-        if (p.rojas > 0) {
-          p.estaSancionado = true;
-          p.partidosSancion = 1;
-          p.motivoSancion = "Expulsión directa en acta arbitral";
-        } else if (p.amarillas >= 5) {
-          p.estaSancionado = true;
-          p.partidosSancion = 1;
-          p.motivoSancion = `Acumulación de ${p.amarillas} tarjetas amarillas (Ciclo RFFM)`;
-        } else if (p.amarillas === 4) {
-          p.esApercibido = true;
-        }
+      const databasePayload = await syncActasDetailedData({
+        calendarUrl: (req.body?.calendarUrl || "").toString(),
+        temporada: (req.body?.temporada || "").toString(),
+        competicion: (req.body?.competicion || "").toString(),
+        grupo: (req.body?.grupo || "").toString(),
+        tipojuego: (req.body?.tipojuego || "").toString(),
+        teamName: (req.body?.teamName || "INFANTIL B").toString()
       });
-
-      const databasePayload = {
-        teamName: targetTeamName,
-        categoryName: "Segunda Infantil - Grupo 50",
-        temporada: "2026-2027",
-        updatedAt: new Date().toISOString(),
-        playersSummary,
-        rivalsSummary,
-        actas: detailedActas
-      };
-
       res.json({ ok: true, data: databasePayload });
     } catch (err: any) {
       console.error("Error in /api/rffm/sync-actas-detailed:", err);

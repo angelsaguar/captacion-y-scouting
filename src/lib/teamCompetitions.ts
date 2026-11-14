@@ -149,8 +149,20 @@ export async function extractAndSyncFromCalendarUrl(
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Error del servidor federativo (${response.status}).`);
+    const rawText = await response.text().catch(() => '');
+    let errorData: any = {};
+    try {
+      errorData = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      errorData = {};
+    }
+    if (errorData.error) {
+      throw new Error(errorData.error);
+    }
+    if (response.status === 404) {
+      throw new Error('No se encontró el servicio de extracción RFFM (404). Recarga la aplicación o verifica la URL.');
+    }
+    throw new Error(`Error del servidor federativo (${response.status}).`);
   }
 
   const data = await response.json();

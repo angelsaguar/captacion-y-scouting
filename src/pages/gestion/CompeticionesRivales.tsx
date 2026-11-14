@@ -38,6 +38,7 @@ import {
   extractAndSyncFromCalendarUrl,
   COMPETITION_UPDATED_EVENT
 } from '@/lib/teamCompetitions';
+import { syncTeamActasFromFederation } from '@/lib/actasArbitrales';
 import RivalBadge from '@/components/partidos/RivalBadge';
 
 export default function CompeticionesRivales() {
@@ -121,13 +122,17 @@ export default function CompeticionesRivales() {
         }
         setAllConfigs(getAllTeamCompetitionConfigs());
         toast.success(
-          `¡Éxito! Se sincronizaron los 14 equipos y las actas arbitrales para todos los equipos del club.`,
+          `¡Éxito! Se sincronizaron los ${CLUB_TEAMS.length} equipos y las actas arbitrales para todos los equipos del club.`,
           { id: toastId }
         );
       } else {
         const updated = await extractAndSyncFromCalendarUrl(selectedTeam, calendarInput.trim());
         setConfig(updated);
         setAllConfigs(getAllTeamCompetitionConfigs());
+        // Best-effort sync of detailed actas (cards, goals, sanctions, minutes) for Estadísticas/Partidos/Rivales
+        await syncTeamActasFromFederation(selectedTeam, calendarInput.trim()).catch((e) => {
+          console.warn('Actas detailed sync skipped/partial:', e);
+        });
         toast.success(
           `¡Sincronizado! Se extrajo "${updated.categoryName}" con ${updated.rivals.length} equipos y ${updated.matches?.length || 0} actas arbitrales.`,
           { id: toastId }
@@ -458,7 +463,7 @@ export default function CompeticionesRivales() {
                 onClick={() => handleExtractFromCalendar(true)}
                 disabled={isExtracting}
                 className="text-xs font-bold border-blue-500/30 text-blue-300 hover:bg-blue-500/10 flex items-center justify-center gap-1.5 rounded-2xl py-3 px-4 cursor-pointer"
-                title="Aplica esta misma competición y rivales a los 17 equipos del club"
+                title={`Aplica esta misma competición y rivales a los ${CLUB_TEAMS.length} equipos del club`}
               >
                 <Layers className="w-3.5 h-3.5 text-blue-400" />
                 <span>Aplicar a Todos los Equipos del Club</span>
