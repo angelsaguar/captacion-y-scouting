@@ -270,26 +270,30 @@ export async function extractCalendarData(input: {
     throw err;
   }
 
-  // Fast parallel fetch of clasificaciones + calendario (1 round-trip instead of N+2)
+  // Fast parallel fetch of clasificaciones + calendario + active resultados-y-jornadas
   const fetchPairForType = async (tj: string) => {
     const clasifUrl = `https://www.rffm.es/competicion/clasificaciones?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&tipojuego=${tj}`;
     const calUrl = `https://www.rffm.es/competicion/calendario?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&tipojuego=${tj}`;
-    const [clasifProps, calProps] = await Promise.all([
+    const resUrl = `https://www.rffm.es/competicion/resultados-y-jornadas?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&tipojuego=${tj}`;
+    const [clasifProps, calProps, activeResProps] = await Promise.all([
       fetchRffmPageProps(clasifUrl),
-      fetchRffmPageProps(calUrl)
+      fetchRffmPageProps(calUrl),
+      fetchRffmPageProps(resUrl)
     ]);
     const st = clasifProps?.standings || null;
     const cal = calProps?.calendar || null;
+    const activeRes = activeResProps?.results || null;
     const hasStandings = !!(st && (st.clasificacion?.length > 0 || st.competicion));
     const hasCalendar = !!(cal && (cal.rounds?.length > 0 || cal.competicion));
-    return { tj, st, cal, hasStandings, hasCalendar };
+    const hasActiveRes = !!(activeRes && (activeRes.partidos?.length > 0 || activeRes.listado_jornadas?.length > 0 || activeRes.nombre_competicion));
+    return { tj, st, cal, activeRes, hasStandings, hasCalendar, hasActiveRes };
   };
 
   let primary = await fetchPairForType(tipojuego);
-  if (!primary.hasStandings && !primary.hasCalendar) {
+  if (!primary.hasStandings && !primary.hasCalendar && !primary.hasActiveRes) {
     const fallbacks = ['1', '2', '3'].filter((t) => t !== tipojuego);
     const fallbackResults = await Promise.all(fallbacks.map(fetchPairForType));
-    const winner = fallbackResults.find((r) => r.hasStandings || r.hasCalendar);
+    const winner = fallbackResults.find((r) => r.hasStandings || r.hasCalendar || r.hasActiveRes);
     if (winner) {
       primary = winner;
       tipojuego = winner.tj;
@@ -298,18 +302,7 @@ export async function extractCalendarData(input: {
 
   const standings = primary.hasStandings ? primary.st : null;
   const calendar = primary.hasCalendar ? primary.cal : null;
-
-  // Fallback to resultados-y-jornadas if calendar rounds weren't returned
-  let resultsPageData: any = null;
-  if (!calendar?.rounds?.length) {
-    const resProps = await fetchRffmPageProps(
-      `https://www.rffm.es/competicion/resultados-y-jornadas?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&jornada=1&tipojuego=${tipojuego}`
-    );
-    const resData = resProps?.results || null;
-    if (resData && (resData.nombre_competicion || resData.competicion || resData.partidos?.length > 0 || resData.listado_jornadas?.length > 0)) {
-      resultsPageData = resData;
-    }
-  }
+  const resultsPageData = primary.hasActiveRes ? primary.activeRes : null;
 
   if (!standings && !calendar && !resultsPageData) {
     const err: any = new Error(
@@ -356,7 +349,56 @@ export async function extractCalendarData(input: {
     };
   });
 
-  const now = new Date();
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
+
+  const activeResJornada = parseInt(resultsPageData?.jornada || '0', 10) || 0;
+  const maxStandingsJugados = rawTeams.reduce(
+    (max: number, t: any) => Math.max(max, parseInt(t.jugados, 10) || 0),
+    0
+  );
+  const latestTargetJornada = Math.max(activeResJornada, maxStandingsJugados);
+
+  // Build map of live resultados-y-jornadas starting with active jornada
+  const resultsByJornada = new Map<number, any[]>();
+  if (activeResJornada > 0 && Array.isArray(resultsPageData?.partidos)) {
+    resultsByJornada.set(activeResJornada, resultsPageData.partidos);
+  }
+
+  // Fetch missing-score jornadas from resultados-y-jornadas in parallel (when calendario lags behind)
+  if (calendar?.rounds?.length > 0 && latestTargetJornada > 0) {
+    const missingJornadas: number[] = [];
+    for (const round of calendar.rounds) {
+      const jNum = parseInt(round.codjornada, 10);
+      if (isNaN(jNum) || jNum <= 0 || jNum > latestTargetJornada) continue;
+      if (resultsByJornada.has(jNum)) continue;
+      const eqs = round.equipos || [];
+      const hasAnyScore = eqs.some(
+        (p: any) =>
+          (p.goles_casa !== '' && p.goles_casa !== null && p.goles_casa !== undefined) ||
+          (p.goles_visitante !== '' && p.goles_visitante !== null && p.goles_visitante !== undefined)
+      );
+      if (!hasAnyScore) {
+        missingJornadas.push(jNum);
+      }
+    }
+    if (missingJornadas.length > 0) {
+      const extraRes = await Promise.all(
+        missingJornadas.slice(-6).map(async (jNum) => {
+          const rProps = await fetchRffmPageProps(
+            `https://www.rffm.es/competicion/resultados-y-jornadas?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&jornada=${jNum}&tipojuego=${tipojuego}`
+          );
+          return { jNum, partidos: rProps?.results?.partidos || [] };
+        })
+      );
+      extraRes.forEach(({ jNum, partidos }) => {
+        if (Array.isArray(partidos) && partidos.length > 0) {
+          resultsByJornada.set(jNum, partidos);
+        }
+      });
+    }
+  }
+
   let allMatches: any[] = [];
   const disputedSet = new Set<number>();
 
@@ -365,35 +407,62 @@ export async function extractCalendarData(input: {
       const jNum = parseInt(round.codjornada, 10);
       if (isNaN(jNum)) continue;
       const roundDate = parseSpanishDate(round.jornada);
+      const liveRoundPartidos = resultsByJornada.get(jNum) || [];
+
       const roundMatches = (round.equipos || []).map((p: any) => {
+        const calLocal = (p.equipo_local || '').trim().toUpperCase();
+        const calVisit = (p.equipo_visitante || '').trim().toUpperCase();
+        const liveMatch = liveRoundPartidos.find(
+          (lp: any) =>
+            (p.codacta && lp.codacta && String(lp.codacta) === String(p.codacta)) ||
+            ((lp.Nombre_equipo_local || '').trim().toUpperCase() === calLocal &&
+              (lp.Nombre_equipo_visitante || '').trim().toUpperCase() === calVisit)
+        );
+
+        const rawGl =
+          p.goles_casa !== '' && p.goles_casa !== null && p.goles_casa !== undefined
+            ? p.goles_casa
+            : liveMatch?.Goles_casa ?? '';
+        const rawGv =
+          p.goles_visitante !== '' && p.goles_visitante !== null && p.goles_visitante !== undefined
+            ? p.goles_visitante
+            : liveMatch?.Goles_visitante ?? '';
+
         const hasScore =
-          (p.goles_casa !== '' && p.goles_casa !== null && p.goles_casa !== undefined) ||
-          (p.goles_visitante !== '' && p.goles_visitante !== null && p.goles_visitante !== undefined);
-        const matchDate = parseSpanishDate(p.fecha) || roundDate;
-        const isPastOrPlayed = hasScore || (matchDate !== null && matchDate <= now);
+          (rawGl !== '' && rawGl !== null && rawGl !== undefined) &&
+          (rawGv !== '' && rawGv !== null && rawGv !== undefined);
+
+        const matchDate = parseSpanishDate(liveMatch?.fecha || p.fecha) || roundDate;
+        const isPastOrPlayed =
+          hasScore ||
+          liveMatch?.acta_cerrada === '1' ||
+          jNum <= latestTargetJornada ||
+          (matchDate !== null && matchDate <= todayEnd);
+
+        const codacta = p.codacta || liveMatch?.codacta || '';
         return {
-          id: `acta-${p.codacta || `${jNum}-${p.codigo_equipo_local}-${p.codigo_equipo_visitante}`}`,
+          id: `acta-${codacta || `${jNum}-${p.codigo_equipo_local}-${p.codigo_equipo_visitante}`}`,
           jornada: jNum,
-          fecha: p.fecha || '',
-          hora: p.hora || '',
-          campo: p.campo || '',
-          codigoCampo: p.codigo_campo || '',
-          arbitro: '',
-          local: p.equipo_local || '',
-          visitante: p.equipo_visitante || '',
-          codEquipoLocal: p.codigo_equipo_local || '',
-          codEquipoVisitante: p.codigo_equipo_visitante || '',
-          escudoLocal: prefixRffmImg(p.escudo_equipo_local),
-          escudoVisitante: prefixRffmImg(p.escudo_equipo_visitante),
-          golesLocal: p.goles_casa ?? '',
-          golesVisitante: p.goles_visitante ?? '',
-          codacta: p.codacta || '',
-          actaUrl: p.codacta ? `https://www.rffm.es/acta-partido/${p.codacta}` : '',
-          actaOficialUrl: p.codacta
-            ? `https://appweb.rffm.es/pnfg/NPcd/NFG_CmpActa1?cod_primaria=1000122&CodActa=${p.codacta}`
+          fecha: liveMatch?.fecha || p.fecha || '',
+          hora: liveMatch?.hora || p.hora || '',
+          campo: liveMatch?.campojuego || p.campo || '',
+          codigoCampo: liveMatch?.codigo_campo || p.codigo_campo || '',
+          arbitro: liveMatch?.arbitro || '',
+          local: p.equipo_local || liveMatch?.Nombre_equipo_local || '',
+          visitante: p.equipo_visitante || liveMatch?.Nombre_equipo_visitante || '',
+          codEquipoLocal: p.codigo_equipo_local || liveMatch?.CodEquipo_local || '',
+          codEquipoVisitante: p.codigo_equipo_visitante || liveMatch?.CodEquipo_visitante || '',
+          escudoLocal: prefixRffmImg(p.escudo_equipo_local || liveMatch?.url_img_local),
+          escudoVisitante: prefixRffmImg(p.escudo_equipo_visitante || liveMatch?.url_img_visitante),
+          golesLocal: rawGl,
+          golesVisitante: rawGv,
+          codacta,
+          actaUrl: codacta ? `https://www.rffm.es/acta-partido/${codacta}` : '',
+          actaOficialUrl: codacta
+            ? `https://appweb.rffm.es/pnfg/NPcd/NFG_CmpActa1?cod_primaria=1000122&CodActa=${codacta}`
             : '',
-          estado: '1',
-          disputado: hasScore,
+          estado: liveMatch?.estado || '1',
+          disputado: hasScore || liveMatch?.acta_cerrada === '1',
           _include: isPastOrPlayed
         };
       });
@@ -441,56 +510,65 @@ export async function extractCalendarData(input: {
     if (list.length > 0) {
       for (const jItem of list) {
         const jDate = parseSpanishDate(jItem.fecha_jornada);
-        if (jDate && jDate <= now) {
-          const jCod = parseInt(jItem.codjornada, 10);
-          if (!isNaN(jCod)) pastJornadaNumbers.push(jCod);
+        const jCod = parseInt(jItem.codjornada, 10);
+        if (!isNaN(jCod) && ((jDate && jDate <= todayEnd) || jCod <= latestTargetJornada)) {
+          pastJornadaNumbers.push(jCod);
         }
       }
       if (pastJornadaNumbers.length === 0 && list[0]?.codjornada) {
         pastJornadaNumbers = [parseInt(list[0].codjornada, 10) || 1];
       }
     } else {
-      pastJornadaNumbers = [1];
+      pastJornadaNumbers = latestTargetJornada > 0
+        ? Array.from({ length: latestTargetJornada }, (_, i) => i + 1)
+        : [1];
     }
 
-    const batchResults = await Promise.all(
-      pastJornadaNumbers.slice(0, 12).map(async (jNum) => {
-        const rProps = await fetchRffmPageProps(
-          `https://www.rffm.es/competicion/resultados-y-jornadas?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&jornada=${jNum}&tipojuego=${tipojuego}`
-        );
-        const partidos = rProps?.results?.partidos || [];
-        return partidos.map((p: any) => {
-          const hasScore =
-            p.Goles_casa !== '' && p.Goles_casa !== null && p.Goles_casa !== undefined;
-          if (hasScore || p.codacta) disputedSet.add(jNum);
-          return {
-            id: `acta-${p.codacta || `${jNum}-${p.CodEquipo_local}-${p.CodEquipo_visitante}`}`,
-            jornada: jNum,
-            fecha: p.fecha || '',
-            hora: p.hora || '',
-            campo: p.campojuego || '',
-            codigoCampo: p.codigo_campo || '',
-            arbitro: p.arbitro || '',
-            local: p.Nombre_equipo_local || '',
-            visitante: p.Nombre_equipo_visitante || '',
-            codEquipoLocal: p.CodEquipo_local || '',
-            codEquipoVisitante: p.CodEquipo_visitante || '',
-            escudoLocal: prefixRffmImg(p.url_img_local),
-            escudoVisitante: prefixRffmImg(p.url_img_visitante),
-            golesLocal: p.Goles_casa ?? '',
-            golesVisitante: p.Goles_visitante ?? '',
-            codacta: p.codacta || '',
-            actaUrl: p.codacta ? `https://www.rffm.es/acta-partido/${p.codacta}` : '',
-            actaOficialUrl: p.codacta
-              ? `https://appweb.rffm.es/pnfg/NPcd/NFG_CmpActa1?cod_primaria=1000122&CodActa=${p.codacta}`
-              : '',
-            estado: p.estado || '1',
-            disputado: hasScore || p.acta_cerrada === '1'
-          };
-        });
-      })
-    );
-    allMatches = batchResults.flat();
+    const fetchedBatches: any[] = [];
+    for (let i = 0; i < pastJornadaNumbers.length; i += 8) {
+      const slice = pastJornadaNumbers.slice(i, i + 8);
+      const batch = await Promise.all(
+        slice.map(async (jNum) => {
+          const cachedPartidos = resultsByJornada.get(jNum);
+          const partidos = cachedPartidos || (
+            await fetchRffmPageProps(
+              `https://www.rffm.es/competicion/resultados-y-jornadas?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&jornada=${jNum}&tipojuego=${tipojuego}`
+            )
+          )?.results?.partidos || [];
+          return partidos.map((p: any) => {
+            const hasScore =
+              p.Goles_casa !== '' && p.Goles_casa !== null && p.Goles_casa !== undefined;
+            if (hasScore || p.codacta) disputedSet.add(jNum);
+            return {
+              id: `acta-${p.codacta || `${jNum}-${p.CodEquipo_local}-${p.CodEquipo_visitante}`}`,
+              jornada: jNum,
+              fecha: p.fecha || '',
+              hora: p.hora || '',
+              campo: p.campojuego || '',
+              codigoCampo: p.codigo_campo || '',
+              arbitro: p.arbitro || '',
+              local: p.Nombre_equipo_local || '',
+              visitante: p.Nombre_equipo_visitante || '',
+              codEquipoLocal: p.CodEquipo_local || '',
+              codEquipoVisitante: p.CodEquipo_visitante || '',
+              escudoLocal: prefixRffmImg(p.url_img_local),
+              escudoVisitante: prefixRffmImg(p.url_img_visitante),
+              golesLocal: p.Goles_casa ?? '',
+              golesVisitante: p.Goles_visitante ?? '',
+              codacta: p.codacta || '',
+              actaUrl: p.codacta ? `https://www.rffm.es/acta-partido/${p.codacta}` : '',
+              actaOficialUrl: p.codacta
+                ? `https://appweb.rffm.es/pnfg/NPcd/NFG_CmpActa1?cod_primaria=1000122&CodActa=${p.codacta}`
+                : '',
+              estado: p.estado || '1',
+              disputado: hasScore || p.acta_cerrada === '1'
+            };
+          });
+        })
+      );
+      fetchedBatches.push(...batch.flat());
+    }
+    allMatches = fetchedBatches;
   }
 
   // Fallback: if standings returned 0 teams, reconstruct teams from match fixtures
@@ -579,13 +657,26 @@ export async function syncActasDetailedData(input: {
   let tipojuego = parsed.tipojuego || '1';
   const targetTeamName = (input.teamName || 'INFANTIL B').toString().trim();
 
-  // Fetch calendario in 1 request to discover categoryName + all played actas for our team
+  // Fetch calendario + clasificaciones + active resultados-y-jornadas in parallel
   let calendar: any = null;
+  let activeResults: any = null;
+  let standingsData: any = null;
   const candidateGameTypes = Array.from(new Set([tipojuego, '1', '2', '3']));
 
-  const calFirst = await fetchRffmPageProps(
-    `https://www.rffm.es/competicion/calendario?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&tipojuego=${tipojuego}`
-  );
+  const [calFirst, stFirst, resFirst] = await Promise.all([
+    fetchRffmPageProps(
+      `https://www.rffm.es/competicion/calendario?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&tipojuego=${tipojuego}`
+    ),
+    fetchRffmPageProps(
+      `https://www.rffm.es/competicion/clasificaciones?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&tipojuego=${tipojuego}`
+    ),
+    fetchRffmPageProps(
+      `https://www.rffm.es/competicion/resultados-y-jornadas?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&tipojuego=${tipojuego}`
+    )
+  ]);
+  standingsData = stFirst?.standings || null;
+  activeResults = resFirst?.results || null;
+
   if (calFirst?.calendar?.rounds?.length > 0) {
     calendar = calFirst.calendar;
   } else {
@@ -609,6 +700,16 @@ export async function syncActasDetailedData(input: {
 
   let categoryName = 'Competición RFFM';
   const matchesToProcess: Array<{ codacta: string; jornada: number }> = [];
+  const seenCodactas = new Set<string>();
+
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
+  const activeResJornada = parseInt(activeResults?.jornada || '0', 10) || 0;
+  const maxStandingsJugados = (standingsData?.clasificacion || []).reduce(
+    (max: number, t: any) => Math.max(max, parseInt(t.jugados, 10) || 0),
+    0
+  );
+  const latestTargetJornada = Math.max(activeResJornada, maxStandingsJugados);
 
   if (calendar) {
     const compLabel = (calendar.competicion || '').trim();
@@ -617,7 +718,6 @@ export async function syncActasDetailedData(input: {
       categoryName = `${compLabel}${grpLabel ? ` - ${grpLabel}` : ''}`.trim();
     }
 
-    const now = new Date();
     for (const round of calendar.rounds || []) {
       const jNum = parseInt(round.codjornada, 10);
       if (isNaN(jNum)) continue;
@@ -628,13 +728,29 @@ export async function syncActasDetailedData(input: {
           (p.goles_casa !== '' && p.goles_casa !== null && p.goles_casa !== undefined) ||
           (p.goles_visitante !== '' && p.goles_visitante !== null && p.goles_visitante !== undefined);
         const matchDate = parseSpanishDate(p.fecha) || roundDate;
-        if (!hasScore && (!matchDate || matchDate > now)) continue;
+        const isEligible = hasScore || jNum <= latestTargetJornada || (matchDate !== null && matchDate <= todayEnd);
+        if (!isEligible) continue;
         const isOurTeam =
           isOurClubTeamName(p.equipo_local, targetTeamName) ||
           isOurClubTeamName(p.equipo_visitante, targetTeamName);
-        if (isOurTeam) {
+        if (isOurTeam && !seenCodactas.has(String(p.codacta))) {
+          seenCodactas.add(String(p.codacta));
           matchesToProcess.push({ codacta: p.codacta, jornada: jNum });
         }
+      }
+    }
+  }
+
+  // Also check activeResults.partidos in case calendar omitted codacta or latest jornada
+  if (activeResJornada > 0 && Array.isArray(activeResults?.partidos)) {
+    for (const p of activeResults.partidos) {
+      if (!p.codacta || seenCodactas.has(String(p.codacta))) continue;
+      const isOurTeam =
+        isOurClubTeamName(p.Nombre_equipo_local, targetTeamName) ||
+        isOurClubTeamName(p.Nombre_equipo_visitante, targetTeamName);
+      if (isOurTeam) {
+        seenCodactas.add(String(p.codacta));
+        matchesToProcess.push({ codacta: p.codacta, jornada: activeResJornada });
       }
     }
   }
@@ -653,7 +769,14 @@ export async function syncActasDetailedData(input: {
       batch.map(async (item) => {
         try {
           const g = await fetchSingleActaDetail(item.codacta);
-          return g && (g.equipo_local || g.equipo_visitante) ? { item, g } : null;
+          const hasMatchData =
+            g &&
+            (g.equipo_local || g.equipo_visitante) &&
+            (g.acta_cerrada === '1' ||
+              (g.goles_local !== '' && g.goles_local !== null && g.goles_local !== undefined) ||
+              (g.jugadores_equipo_local?.length > 0) ||
+              (g.jugadores_equipo_visitante?.length > 0));
+          return hasMatchData ? { item, g } : null;
         } catch (actaErr) {
           console.warn(`Error processing acta ${item.codacta}:`, actaErr);
           return null;

@@ -62,16 +62,18 @@ export const RivalGeneralTable: React.FC<RivalGeneralTableProps> = ({
 
   const jornadas = competitionConfig?.jornadasDisputadas || [];
   const latestJornada =
-    syncedInfo?.jornada ||
-    (jornadas.length > 0
+    jornadas.length > 0
       ? Math.max(...jornadas)
-      : (competitionConfig?.matches || []).reduce((max, m) => Math.max(max, m.jornada || 0), 0) || 5);
+      : (competitionConfig?.matches || []).reduce((max, m) => Math.max(max, m.jornada || 0), 0) ||
+        syncedInfo?.jornada ||
+        5;
 
   const lastSyncTime =
-    syncedInfo?.timestamp ||
     (competitionConfig?.lastSync
       ? new Date(competitionConfig.lastSync).toLocaleString('es-ES')
-      : (typeof window !== 'undefined' ? localStorage.getItem('rffm_g50_last_sync_time') || '' : ''));
+      : '') ||
+    syncedInfo?.timestamp ||
+    (typeof window !== 'undefined' ? localStorage.getItem('rffm_g50_last_sync_time') || '' : '');
 
   const handleSyncWithRFFM = async () => {
     setIsSyncing(true);
@@ -269,7 +271,10 @@ export const RivalGeneralTable: React.FC<RivalGeneralTableProps> = ({
       {/* Sync Summary Modal / Dialog */}
       {showSyncSummary && (() => {
         const latestMatches = (competitionConfig?.matches || []).filter(m => m.jornada === latestJornada);
-        const closedMatches = latestMatches.filter(m => m.golesLocal !== '' && m.golesLocal !== undefined);
+        const hasMatchScore = (m: any) =>
+          m.golesLocal !== '' && m.golesLocal !== null && m.golesLocal !== undefined &&
+          m.golesVisitante !== '' && m.golesVisitante !== null && m.golesVisitante !== undefined;
+        const closedMatches = latestMatches.filter(hasMatchScore);
         const totalGoalsAll = stats.reduce((acc, s) => acc + s.gf, 0);
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
@@ -341,7 +346,7 @@ export const RivalGeneralTable: React.FC<RivalGeneralTableProps> = ({
                             <span className="font-semibold text-white">{m.local}</span>
                           </div>
                           <div className="px-3 py-1 rounded-lg bg-slate-900 border border-slate-750 font-black text-amber-400 text-xs flex-shrink-0">
-                            {m.golesLocal !== '' && m.golesVisitante !== '' ? `${m.golesLocal} - ${m.golesVisitante}` : 'VS'}
+                            {hasMatchScore(m) ? `${m.golesLocal} - ${m.golesVisitante}` : 'Por jugar'}
                           </div>
                           <div className="flex-1 truncate pl-2 text-left">
                             <span className="font-semibold text-white">{m.visitante}</span>

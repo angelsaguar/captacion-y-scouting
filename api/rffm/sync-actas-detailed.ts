@@ -195,9 +195,20 @@ export default async function handler(req: any, res: any) {
     const targetTeamName = (body.teamName || query.teamName || 'INFANTIL B').toString().trim();
 
     let calendar: any = null;
-    const calFirst = await fetchRffmPageProps(
-      `https://www.rffm.es/competicion/calendario?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&tipojuego=${tipojuego}`
-    );
+    const [calFirst, stFirst, resFirst] = await Promise.all([
+      fetchRffmPageProps(
+        `https://www.rffm.es/competicion/calendario?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&tipojuego=${tipojuego}`
+      ),
+      fetchRffmPageProps(
+        `https://www.rffm.es/competicion/clasificaciones?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&tipojuego=${tipojuego}`
+      ),
+      fetchRffmPageProps(
+        `https://www.rffm.es/competicion/resultados-y-jornadas?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}&tipojuego=${tipojuego}`
+      )
+    ]);
+    const standingsData = stFirst?.standings || null;
+    const activeResults = resFirst?.results || null;
+
     if (calFirst?.calendar?.rounds?.length > 0) {
       calendar = calFirst.calendar;
     } else {
@@ -221,6 +232,16 @@ export default async function handler(req: any, res: any) {
 
     let categoryName = 'Competición RFFM';
     const matchesToProcess: Array<{ codacta: string; jornada: number }> = [];
+    const seenCodactas = new Set<string>();
+
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+    const activeResJornada = parseInt(activeResults?.jornada || '0', 10) || 0;
+    const maxStandingsJugados = (standingsData?.clasificacion || []).reduce(
+      (max: number, t: any) => Math.max(max, parseInt(t.jugados, 10) || 0),
+      0
+    );
+    const latestTargetJornada = Math.max(activeResJornada, maxStandingsJugados);
 
     if (calendar) {
       const compLabel = (calendar.competicion || '').trim();
@@ -228,7 +249,6 @@ export default async function handler(req: any, res: any) {
       if (compLabel || grpLabel) {
         categoryName = `${compLabel}${grpLabel ? ` - ${grpLabel}` : ''}`.trim();
       }
-      const now = new Date();
       for (const round of calendar.rounds || []) {
         const jNum = parseInt(round.codjornada, 10);
         if (isNaN(jNum)) continue;
@@ -239,10 +259,22 @@ export default async function handler(req: any, res: any) {
             (p.goles_casa !== '' && p.goles_casa !== null && p.goles_casa !== undefined) ||
             (p.goles_visitante !== '' && p.goles_visitante !== null && p.goles_visitante !== undefined);
           const matchDate = parseSpanishDate(p.fecha) || roundDate;
-          if (!hasScore && (!matchDate || matchDate > now)) continue;
-          if (isOurClubTeamName(p.equipo_local, targetTeamName) || isOurClubTeamName(p.equipo_visitante, targetTeamName)) {
+          const isEligible = hasScore || jNum <= latestTargetJornada || (matchDate !== null && matchDate <= todayEnd);
+          if (!isEligible) continue;
+          if ((isOurClubTeamName(p.equipo_local, targetTeamName) || isOurClubTeamName(p.equipo_visitante, targetTeamName)) && !seenCodactas.has(String(p.codacta))) {
+            seenCodactas.add(String(p.codacta));
             matchesToProcess.push({ codacta: p.codacta, jornada: jNum });
           }
+        }
+      }
+    }
+
+    if (activeResJornada > 0 && Array.isArray(activeResults?.partidos)) {
+      for (const p of activeResults.partidos) {
+        if (!p.codacta || seenCodactas.has(String(p.codacta))) continue;
+        if (isOurClubTeamName(p.Nombre_equipo_local, targetTeamName) || isOurClubTeamName(p.Nombre_equipo_visitante, targetTeamName)) {
+          seenCodactas.add(String(p.codacta));
+          matchesToProcess.push({ codacta: p.codacta, jornada: activeResJornada });
         }
       }
     }
@@ -261,7 +293,14 @@ export default async function handler(req: any, res: any) {
         batch.map(async (item) => {
           const props = await fetchRffmPageProps(`https://www.rffm.es/acta-partido/${item.codacta}`);
           const g = props?.game;
-          return g && (g.equipo_local || g.equipo_visitante) ? { item, g } : null;
+          const hasMatchData =
+            g &&
+            (g.equipo_local || g.equipo_visitante) &&
+            (g.acta_cerrada === '1' ||
+              (g.goles_local !== '' && g.goles_local !== null && g.goles_local !== undefined) ||
+              (g.jugadores_equipo_local?.length > 0) ||
+              (g.jugadores_equipo_visitante?.length > 0));
+          return hasMatchData ? { item, g } : null;
         })
       );
       batchGames.forEach((r) => {

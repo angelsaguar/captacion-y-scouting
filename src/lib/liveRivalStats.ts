@@ -176,16 +176,21 @@ export function computeLiveTeamCollectiveStats(
         visitanteTeamId: visitId,
         golesLocal: gl,
         golesVisitante: gv,
-        jugado: Boolean(hasScore || m.disputado),
-        actaCerrada: Boolean(hasScore || m.disputado),
+        jugado: Boolean(hasScore),
+        actaCerrada: Boolean(hasScore),
         goalEvents,
         cardEvents
       };
     })
     .filter((m): m is RivalMatchCollective => m !== null);
 
-  // Use base collective engine for home/away, clean sheets, evolution, goal timing
-  const computed = computeAllCollectiveStats(liveMatches, 'all', undefined, rivals);
+  // Use base collective engine with explicit maxJornada so all synced jornadas (6, 7, etc.) are included
+  const maxJornada = Math.max(
+    1,
+    ...(config.jornadasDisputadas || []),
+    ...liveMatches.map((m) => m.jornada || 0)
+  );
+  const computed = computeAllCollectiveStats(liveMatches, 'all', maxJornada, rivals);
 
   // Overlay official RFFM clasificacion totals & actas discipline counts so table always matches RFFM 100%
   const merged = computed.map((item) => {
