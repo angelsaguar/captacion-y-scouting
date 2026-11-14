@@ -4717,6 +4717,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       <GroupStandingsModal
         isOpen={showStandingsModal}
         onClose={() => setShowStandingsModal(false)}
+        selectedTeam={selectedTeam}
       />
 
       {/* Sanction & Disciplinary Management Modal */}

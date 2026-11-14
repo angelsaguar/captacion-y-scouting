@@ -46,10 +46,10 @@ import { Button } from '@/components/ui/button';
 import { 
   getTeamActasData, 
   getPlayerActaStats, 
-  ACTAS_DATA_UPDATED, 
-  syncTeamActasFromFederation 
+  ACTAS_DATA_UPDATED
 } from '@/lib/actasArbitrales';
-import { getTeamCompetitionConfig } from '@/lib/teamCompetitions';
+import { getTeamCompetitionConfig, COMPETITION_UPDATED_EVENT } from '@/lib/teamCompetitions';
+import { syncTeamWithFederationFull } from '@/lib/liveRivalStats';
 
 interface TeamPlayer {
   id: string;
@@ -149,7 +149,11 @@ export default function Estadisticas() {
   useEffect(() => {
     const handleActasUpdated = () => setActasVersion(v => v + 1);
     window.addEventListener(ACTAS_DATA_UPDATED, handleActasUpdated);
-    return () => window.removeEventListener(ACTAS_DATA_UPDATED, handleActasUpdated);
+    window.addEventListener(COMPETITION_UPDATED_EVENT, handleActasUpdated);
+    return () => {
+      window.removeEventListener(ACTAS_DATA_UPDATED, handleActasUpdated);
+      window.removeEventListener(COMPETITION_UPDATED_EVENT, handleActasUpdated);
+    };
   }, []);
   
   // Data states
@@ -437,10 +441,15 @@ export default function Estadisticas() {
     });
 
     // Merge Official Referee Match Reports (Actas RFFM)
+    const teamActasDb = getTeamActasData(selectedTeam);
+    const teamCompConfig = getTeamCompetitionConfig(selectedTeam);
+    const matchedActaKeys = new Set<string>();
+
     Object.keys(accumulatedStats).forEach(key => {
       const p = accumulatedStats[key];
       const actaStats = getPlayerActaStats(selectedTeam, p);
       if (actaStats) {
+        matchedActaKeys.add(actaStats.nombreCompleto);
         p.amarillas = actaStats.amarillas;
         p.rojas = actaStats.rojas;
         p.goles = Math.max(p.goles, actaStats.goles);
@@ -452,6 +461,41 @@ export default function Estadisticas() {
         p.motivoSancion = actaStats.motivoSancion;
         p.esApercibido = actaStats.esApercibido;
       }
+    });
+
+    // Include players from official RFFM actas even if local roster is empty/incomplete
+    Object.values(teamActasDb.playersSummary || {}).forEach((ap) => {
+      if (matchedActaKeys.has(ap.nombreCompleto)) return;
+      const parts = (ap.nombreCompleto || '').split(',');
+      const apellidos = parts.length > 1 ? parts[0].trim() : '';
+      const nombre = parts.length > 1 ? parts[1].trim() : (ap.nombreCorto || ap.nombreCompleto);
+      const actaKey = `acta-${ap.dorsal || ap.nombreCompleto}`;
+      accumulatedStats[actaKey] = {
+        id: actaKey,
+        nombre,
+        apellidos,
+        dorsal: ap.dorsal || '',
+        posicion: 'Campo',
+        partidosJugados: ap.convocatorias || 0,
+        titularidades: ap.titularidades || 0,
+        minutos: ap.minutos || 0,
+        goles: ap.goles || 0,
+        asistencias: 0,
+        goles_encajados: 0,
+        recuperaciones: 0,
+        perdidas: 0,
+        balanceBalon: 0,
+        amarillas: ap.amarillas || 0,
+        rojas: ap.rojas || 0,
+        corners_favor: 0,
+        corners_contra: 0,
+        faltas_favor: 0,
+        faltas_contra: 0,
+        estaSancionado: ap.estaSancionado,
+        partidosSancion: ap.partidosSancion,
+        motivoSancion: ap.motivoSancion,
+        esApercibido: ap.esApercibido
+      };
     });
 
     const accumulatedList = Object.values(accumulatedStats);
@@ -589,11 +633,48 @@ export default function Estadisticas() {
     const sumMatchPart = playerMatchRankList.reduce((acc, curr) => acc + curr.Participacion, 0);
     const avgMatchParticipation = playerMatchRankList.length > 0 ? Math.round(sumMatchPart / playerMatchRankList.length) : 0;
 
+    // Fallback/reconcile team-level goals & cards with live RFFM standings/actas
+    const rffmMyTeam = (teamCompConfig.rivals || []).find(r => r.isMyTeam);
+    const rffmActasList = teamActasDb.actas || [];
+    const rffmAmarillas = accumulatedList.reduce((acc, p) => acc + (p.amarillas || 0), 0);
+    const rffmRojas = accumulatedList.reduce((acc, p) => acc + (p.rojas || 0), 0);
+
+    let effectiveGamesCount = gamesWithData.length;
+    let effectiveGoalsScored = totalGoalsScored;
+    let effectiveGoalsConceded = totalGoalsConceded;
+
+    if (effectiveGamesCount === 0 && (rffmMyTeam?.matchesPlayed || rffmActasList.length > 0)) {
+      effectiveGamesCount = rffmMyTeam?.matchesPlayed || rffmActasList.length;
+      effectiveGoalsScored = rffmMyTeam?.goalsFor ?? 0;
+      effectiveGoalsConceded = rffmMyTeam?.goalsAgainst ?? 0;
+      setFinishedMatchesCount(effectiveGamesCount);
+
+      if (rffmActasList.length > 0) {
+        const myTeamNorm = (rffmMyTeam?.name || selectedTeam).toUpperCase();
+        const rffmGoalsChart = rffmActasList.map((a) => {
+          const isLocal = a.local.toUpperCase().includes('AFE') || a.local.toUpperCase().includes(myTeamNorm);
+          const rivalName = isLocal ? a.visitante : a.local;
+          const gf = isLocal ? a.golesLocal : a.golesVisitante;
+          const gc = isLocal ? a.golesVisitante : a.golesLocal;
+          if (!rffmMyTeam && effectiveGoalsScored === 0 && effectiveGoalsConceded === 0) {
+            effectiveGoalsScored += gf;
+            effectiveGoalsConceded += gc;
+          }
+          return {
+            name: `J${a.jornada} (${(rivalName || 'Rival').substring(0, 6)})`,
+            GolesFavor: gf,
+            GolesContra: gc
+          };
+        });
+        setMatchData(rffmGoalsChart);
+      }
+    }
+
     setOverallStats({
-      avgGoalsScored: gamesWithData.length > 0 ? parseFloat((totalGoalsScored / gamesWithData.length).toFixed(1)) : 0,
-      avgGoalsConceded: gamesWithData.length > 0 ? parseFloat((totalGoalsConceded / gamesWithData.length).toFixed(1)) : 0,
-      totalGoalsScored,
-      totalGoalsConceded,
+      avgGoalsScored: effectiveGamesCount > 0 ? parseFloat((effectiveGoalsScored / effectiveGamesCount).toFixed(1)) : 0,
+      avgGoalsConceded: effectiveGamesCount > 0 ? parseFloat((effectiveGoalsConceded / effectiveGamesCount).toFixed(1)) : 0,
+      totalGoalsScored: effectiveGoalsScored,
+      totalGoalsConceded: effectiveGoalsConceded,
       totalAsistencias: teamAsistencias,
       totalRecuperaciones: teamRecuperaciones,
       totalPerdidas: teamPerdidas,
@@ -601,10 +682,10 @@ export default function Estadisticas() {
       totalCornersContra: teamCornersContra,
       totalFaltasFavor: teamFaltasFavor,
       totalFaltasContra: teamFaltasContra,
-      totalAmarillas: teamAmarillas,
-      totalRojas: teamRojas,
+      totalAmarillas: Math.max(teamAmarillas, rffmAmarillas),
+      totalRojas: Math.max(teamRojas, rffmRojas),
       attendanceRate,
-      totalGames: gamesWithData.length,
+      totalGames: effectiveGamesCount,
       matchParticipationRate: avgMatchParticipation
     });
   };
@@ -619,11 +700,15 @@ export default function Estadisticas() {
 
     window.addEventListener('storage', handleUpdate);
     window.addEventListener('lapoveda_matches_updated', handleUpdate);
+    window.addEventListener(ACTAS_DATA_UPDATED, handleUpdate);
+    window.addEventListener(COMPETITION_UPDATED_EVENT, handleUpdate);
     return () => {
       window.removeEventListener('storage', handleUpdate);
       window.removeEventListener('lapoveda_matches_updated', handleUpdate);
+      window.removeEventListener(ACTAS_DATA_UPDATED, handleUpdate);
+      window.removeEventListener(COMPETITION_UPDATED_EVENT, handleUpdate);
     };
-  }, [selectedTeam]);
+  }, [selectedTeam, actasVersion]);
 
   // Export table to CSV
   const handleExportCSV = () => {
@@ -698,17 +783,40 @@ export default function Estadisticas() {
     <div className="space-y-6">
       {/* Top Header & Team Selector */}
       <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-slate-900/60 border border-slate-800 p-4 rounded-3xl shadow-xl">
-        <div className="w-full sm:w-auto flex flex-col gap-1.5">
-          <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">Equipo Activo</label>
-          <select 
-            value={selectedTeam} 
-            onChange={(e) => setSelectedTeam(e.target.value)}
-            className="bg-slate-950 text-white font-bold text-sm border border-slate-800 rounded-xl px-4 py-2 focus:outline-none focus:border-cyan-500 transition-all cursor-pointer"
+        <div className="w-full sm:w-auto flex flex-wrap items-end gap-2.5">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">Equipo Activo</label>
+            <select 
+              value={selectedTeam} 
+              onChange={(e) => setSelectedTeam(e.target.value)}
+              className="bg-slate-950 text-white font-bold text-sm border border-slate-800 rounded-xl px-4 py-2 focus:outline-none focus:border-cyan-500 transition-all cursor-pointer"
+            >
+              {CLUB_TEAMS.map(team => (
+                <option key={team} value={team}>{team}</option>
+              ))}
+            </select>
+          </div>
+          <Button
+            type="button"
+            onClick={async () => {
+              setIsSyncingActas(true);
+              try {
+                const res = await syncTeamWithFederationFull(selectedTeam);
+                setActasVersion(v => v + 1);
+                toast.success(`Estadísticas y actas de ${res.config.categoryName} (Jornada ${res.latestJornada}) actualizadas con la RFFM.`);
+              } catch (err: any) {
+                toast.error(err?.message || 'Error al actualizar con la RFFM.');
+              } finally {
+                setIsSyncingActas(false);
+              }
+            }}
+            disabled={isSyncingActas}
+            className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase px-3.5 py-2 h-9 rounded-xl flex items-center gap-1.5 shadow cursor-pointer"
+            title="Actualizar estadísticas y actas oficiales desde la URL de la RFFM"
           >
-            {CLUB_TEAMS.map(team => (
-              <option key={team} value={team}>{team}</option>
-            ))}
-          </select>
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncingActas ? 'animate-spin' : ''}`} />
+            <span>{isSyncingActas ? 'Actualizando...' : 'Actualizar con RFFM'}</span>
+          </Button>
         </div>
 
         {/* Tab Navigation */}
@@ -1740,10 +1848,9 @@ export default function Estadisticas() {
         const handleSyncNow = async () => {
           setIsSyncingActas(true);
           try {
-            const compCfg = getTeamCompetitionConfig(selectedTeam);
-            const calUrl = compCfg.urlCalendario || 'https://www.rffm.es/competicion/calendario?temporada=22&competicion=26738324&grupo=27306559';
-            await syncTeamActasFromFederation(selectedTeam, calUrl);
-            toast.success('Actas arbitrales y disciplina federativa sincronizadas con éxito');
+            const res = await syncTeamWithFederationFull(selectedTeam);
+            setActasVersion(v => v + 1);
+            toast.success(`Datos federativos y actas de ${res.config.categoryName} (Jornada ${res.latestJornada}) sincronizados con éxito`);
           } catch (err: any) {
             toast.error(err.message || 'Error sincronizando actas de la federación');
           } finally {

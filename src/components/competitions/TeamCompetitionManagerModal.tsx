@@ -32,6 +32,7 @@ import {
   resetTeamCompetitionConfig,
   extractAndSyncFromCalendarUrl
 } from '@/lib/teamCompetitions';
+import { syncTeamActasFromFederation } from '@/lib/actasArbitrales';
 import RivalBadge from '@/components/partidos/RivalBadge';
 
 interface Props {
@@ -117,8 +118,15 @@ export default function TeamCompetitionManagerModal({
     const toastId = toast.loading(`Extrayendo equipos, clasificación y actas de la RFFM para ${selectedTeam}...`);
 
     try {
-      const updated = await extractAndSyncFromCalendarUrl(selectedTeam, calendarInput.trim());
+      const url = calendarInput.trim();
+      const updated = await extractAndSyncFromCalendarUrl(selectedTeam, url);
       setConfig(updated);
+      setFilterJornada('all');
+      try {
+        await syncTeamActasFromFederation(selectedTeam, url);
+      } catch (actaErr) {
+        console.warn('Partial actas sync inside modal:', actaErr);
+      }
       toast.success(
         `¡Sincronizado! Se cargaron ${updated.rivals.length} equipos y ${updated.matches?.length || 0} actas arbitrales.`,
         { id: toastId }

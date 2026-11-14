@@ -109,6 +109,7 @@ export default function CompeticionesRivales() {
     );
 
     try {
+      setFilterJornada('all');
       if (applyToAll) {
         // Sync selected team first
         const updated = await extractAndSyncFromCalendarUrl(selectedTeam, calendarInput.trim());
@@ -120,6 +121,9 @@ export default function CompeticionesRivales() {
             await extractAndSyncFromCalendarUrl(team, calendarInput.trim());
           }
         }
+        await syncTeamActasFromFederation(selectedTeam, calendarInput.trim()).catch((e) => {
+          console.warn('Actas detailed sync skipped/partial:', e);
+        });
         setAllConfigs(getAllTeamCompetitionConfigs());
         toast.success(
           `¡Éxito! Se sincronizaron los ${CLUB_TEAMS.length} equipos y las actas arbitrales para todos los equipos del club.`,

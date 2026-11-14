@@ -21,9 +21,10 @@ import {
   LayoutDashboard,
   Globe
 } from 'lucide-react';
-import { computeAllCollectiveStats, RIVAL_TEAMS, COLLECTIVE_MATCHES } from '@/data/rivalStatsData';
 import { CLUB_TEAMS } from '@/types';
 import { getTeamCompetitionConfig, getTeamRivals, COMPETITION_UPDATED_EVENT } from '@/lib/teamCompetitions';
+import { ACTAS_DATA_UPDATED } from '@/lib/actasArbitrales';
+import { computeLiveTeamCollectiveStats } from '@/lib/liveRivalStats';
 import TeamCompetitionManagerModal from '@/components/competitions/TeamCompetitionManagerModal';
 import { Button } from '@/components/ui/button';
 import { RivalAttributionBanner } from '@/components/rivales/RivalAttributionBanner';
@@ -63,9 +64,16 @@ export default function EstadisticasRivales() {
   const [compVersion, setCompVersion] = useState(0);
 
   useEffect(() => {
-    const handleCompUpdated = () => setCompVersion(v => v + 1);
+    const handleCompUpdated = () => {
+      setCompVersion(v => v + 1);
+      setDataVersion(v => v + 1);
+    };
     window.addEventListener(COMPETITION_UPDATED_EVENT, handleCompUpdated);
-    return () => window.removeEventListener(COMPETITION_UPDATED_EVENT, handleCompUpdated);
+    window.addEventListener(ACTAS_DATA_UPDATED, handleCompUpdated);
+    return () => {
+      window.removeEventListener(COMPETITION_UPDATED_EVENT, handleCompUpdated);
+      window.removeEventListener(ACTAS_DATA_UPDATED, handleCompUpdated);
+    };
   }, []);
 
   const currentConfig = useMemo(() => getTeamCompetitionConfig(selectedClubTeam), [selectedClubTeam, compVersion]);
@@ -93,10 +101,10 @@ export default function EstadisticasRivales() {
     }
   }, [selectedClubTeam, currentRivals]);
 
-  // Re-compute all stats whenever dataVersion or currentRivals updates
+  // Re-compute all stats whenever dataVersion, currentConfig or selectedClubTeam updates
   const stats = useMemo(() => {
-    return computeAllCollectiveStats(COLLECTIVE_MATCHES, 'all', undefined, currentRivals);
-  }, [dataVersion, currentRivals]);
+    return computeLiveTeamCollectiveStats(selectedClubTeam, currentConfig);
+  }, [dataVersion, selectedClubTeam, currentConfig]);
 
   const totalGfGrupo = useMemo(() => stats.reduce((acc, s) => acc + s.gf, 0), [stats]);
   const totalPjGrupo = useMemo(() => stats.reduce((acc, s) => acc + s.pj, 0) / 2, [stats]);
@@ -204,6 +212,7 @@ export default function EstadisticasRivales() {
       <RivalAttributionBanner 
         onOpenSyncModal={() => setIsSyncModalOpen(true)}
         dataVersion={dataVersion}
+        competitionConfig={currentConfig}
       />
 
       {/* 2. Top Summary KPI Cards */}
@@ -251,7 +260,7 @@ export default function EstadisticasRivales() {
           </div>
           <div className="min-w-0">
             <span className="text-[10px] uppercase font-bold text-slate-500 block">Equipos Catalogados</span>
-            <h4 className="text-xl font-black text-white">14 Equipos</h4>
+            <h4 className="text-xl font-black text-white">{currentRivals.length} Equipos</h4>
             <p className="text-[11px] text-purple-400 font-semibold">100% Colectivo RFFM</p>
           </div>
         </div>
@@ -289,6 +298,8 @@ export default function EstadisticasRivales() {
             stats={stats}
             onSelectTeam={handleSelectTeamFromTable}
             selectedTeamId={selectedTeamId}
+            selectedClubTeam={selectedClubTeam}
+            competitionConfig={currentConfig}
             onDataUpdated={() => setDataVersion(v => v + 1)}
           />
         )}
@@ -393,6 +404,8 @@ export default function EstadisticasRivales() {
       <RivalSyncModal
         isOpen={isSyncModalOpen}
         onClose={() => setIsSyncModalOpen(false)}
+        selectedClubTeam={selectedClubTeam}
+        competitionConfig={currentConfig}
         onDataUpdated={() => setDataVersion(v => v + 1)}
       />
 

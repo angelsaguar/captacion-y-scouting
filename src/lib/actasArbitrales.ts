@@ -525,13 +525,36 @@ export function getTeamActasData(teamName: string): TeamActasDatabase {
     const raw = localStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed.playersSummary && Object.keys(parsed.playersSummary).length > 0) {
+      if (parsed && typeof parsed.playersSummary === 'object') {
         return parsed;
       }
     }
   } catch (err) {
     console.warn('Error reading team actas data:', err);
   }
+
+  // Check if team has configured a non-Grupo-50 competition before falling back to Grupo 50 baseline
+  try {
+    const compRaw = localStorage.getItem('club_teams_competition_configs_v2');
+    if (compRaw) {
+      const compAll = JSON.parse(compRaw);
+      const cfg = compAll?.[teamName];
+      if (cfg && cfg.competicionId && cfg.competicionId !== '26738324') {
+        return {
+          teamName,
+          categoryName: cfg.categoryName || 'Competición RFFM',
+          temporada: cfg.temporada || '2026-2027',
+          updatedAt: cfg.lastSync || cfg.updatedAt || new Date().toISOString(),
+          playersSummary: {},
+          rivalsSummary: {},
+          actas: []
+        };
+      }
+    }
+  } catch {
+    // Ignore storage read error
+  }
+
   return createDefaultTeamActasDatabase(teamName);
 }
 

@@ -2,10 +2,19 @@ export type Franja15Min = '0-15' | '16-30' | '31-35' | '36-50' | '51-65' | '66-7
 
 export interface RivalTeam {
   id: string;
+  codequipo?: string;
   name: string;
   shortName: string;
   crestUrl: string;
   isMyTeam?: boolean;
+  position?: number;
+  points?: number;
+  matchesPlayed?: number;
+  won?: number;
+  drawn?: number;
+  lost?: number;
+  goalsFor?: number;
+  goalsAgainst?: number;
 }
 
 export interface CollectiveGoalEvent {

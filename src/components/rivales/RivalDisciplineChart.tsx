@@ -62,7 +62,8 @@ export const RivalDisciplineChart: React.FC<RivalDisciplineChartProps> = ({
   const totalAmarillasGrupo = stats.reduce((acc, s) => acc + s.discipline.amarillas, 0);
   const totalRojasGrupo = stats.reduce((acc, s) => acc + s.discipline.rojasDirectas + s.discipline.doblesAmarillas, 0);
   const totalTarjetasGrupo = totalAmarillasGrupo + totalRojasGrupo;
-  const promedioGrupoPorPartido = stats.length > 0 ? (totalTarjetasGrupo / (stats[0].pj * 7)).toFixed(2) : '0';
+  const totalMatchesPlayed = stats.reduce((acc, s) => acc + s.pj, 0) / 2;
+  const promedioGrupoPorPartido = totalMatchesPlayed > 0 ? (totalTarjetasGrupo / totalMatchesPlayed).toFixed(2) : '0.00';
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-6">
@@ -140,7 +141,7 @@ export const RivalDisciplineChart: React.FC<RivalDisciplineChartProps> = ({
           <div className="text-2xl font-black text-white mt-1">
             {promedioGrupoPorPartido} <span className="text-xs text-slate-400 font-semibold">tarjetas/partido</span>
           </div>
-          <span className="text-[10px] text-slate-400 mt-1 block">Media del Grupo 50</span>
+          <span className="text-[10px] text-slate-400 mt-1 block">Media de la categoría</span>
         </div>
 
         <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4">
@@ -251,7 +252,7 @@ export const RivalDisciplineChart: React.FC<RivalDisciplineChartProps> = ({
                     </span>
                     {item.team.isMyTeam && (
                       <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-1 py-0.2 rounded font-black">
-                        AFE 'B'
+                        {selectedClubTeam || 'MI EQUIPO'}
                       </span>
                     )}
                   </div>
@@ -277,7 +278,7 @@ export const RivalDisciplineChart: React.FC<RivalDisciplineChartProps> = ({
 
       {/* Detail from Official Referee Match Reports (Actas RFFM) */}
       {(() => {
-        const teamActasDb = getTeamActasData(selectedClubTeam || 'Fundación AFE B');
+        const teamActasDb = getTeamActasData(selectedClubTeam || 'INFANTIL B');
         const rivalsActaList = Object.values(teamActasDb.rivalsSummary || {});
         const actasList = teamActasDb.actas || [];
 

@@ -31,28 +31,37 @@ import {
   fetchLiveRFFMResultados 
 } from '@/data/rffmStandingsData';
 
+import { getTeamCompetitionConfig, COMPETITION_UPDATED_EVENT } from '@/lib/teamCompetitions';
+import { syncTeamWithFederationFull } from '@/lib/liveRivalStats';
+
 interface GroupStandingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  selectedTeam?: string;
 }
 
 const STORAGE_STANDINGS_KEY = 'rffm_g50_official_standings_v4';
 const STORAGE_MATCHES_KEY = 'rffm_g50_official_matches_v4';
 const ACTIVE_JORNADA_KEY = 'rffm_g50_active_jornada_v4';
 
-export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsModalProps) {
+export default function GroupStandingsModal({ isOpen, onClose, selectedTeam = 'INFANTIL B' }: GroupStandingsModalProps) {
   const navigate = useNavigate();
+  const [compConfig, setCompConfig] = useState(() => getTeamCompetitionConfig(selectedTeam));
   const [selectedJornada, setSelectedJornada] = useState<number>(() => {
+    const cfg = getTeamCompetitionConfig(selectedTeam);
+    if (cfg.jornadasDisputadas && cfg.jornadasDisputadas.length > 0) {
+      return Math.max(...cfg.jornadasDisputadas);
+    }
     try {
       const saved = localStorage.getItem(ACTIVE_JORNADA_KEY);
       if (saved) {
         const val = parseInt(saved, 10);
-        if (!isNaN(val) && val >= 1 && val <= 26) return val;
+        if (!isNaN(val) && val >= 1 && val <= 38) return val;
       }
     } catch {
       // fallback
     }
-    return 4; // Default to Jornada 4 (disputed round on RFFM)
+    return 4;
   });
 
   const [activeTab, setActiveTab] = useState<'tabla' | 'jornadas' | 'mi_equipo'>('tabla');
@@ -61,7 +70,59 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoadingLive, setIsLoadingLive] = useState(false);
 
-  useEffect(() => {
+  const loadFromConfig = () => {
+    const cfg = getTeamCompetitionConfig(selectedTeam);
+    setCompConfig(cfg);
+
+    const hasSyncedConfig = Boolean(cfg.lastSync) || (cfg.competicionId && cfg.competicionId !== '26738324');
+    if (hasSyncedConfig && cfg.rivals && cfg.rivals.length > 0) {
+      const mappedStandings: StandingTeam[] = [...cfg.rivals]
+        .sort((a, b) => (a.position || 99) - (b.position || 99) || (b.points || 0) - (a.points || 0))
+        .map((r, idx) => ({
+          pos: r.position || idx + 1,
+          name: r.name,
+          shortName: r.shortName,
+          pts: r.points ?? 0,
+          pj: r.matchesPlayed ?? 0,
+          pg: r.won ?? 0,
+          pe: r.drawn ?? 0,
+          pp: r.lost ?? 0,
+          gf: r.goalsFor ?? 0,
+          gc: r.goalsAgainst ?? 0,
+          dg: (r.goalsFor ?? 0) - (r.goalsAgainst ?? 0),
+          form: [],
+          escudoUrl: r.crestUrl || undefined,
+          isMyTeam: Boolean(r.isMyTeam)
+        }));
+      setStandings(mappedStandings);
+
+      const mappedMatches: JornadaMatch[] = (cfg.matches || []).map((m, idx) => {
+        const gl = m.golesLocal !== '' && m.golesLocal !== null && m.golesLocal !== undefined ? Number(m.golesLocal) : undefined;
+        const gv = m.golesVisitante !== '' && m.golesVisitante !== null && m.golesVisitante !== undefined ? Number(m.golesVisitante) : undefined;
+        const hasScore = gl !== undefined && gv !== undefined && !isNaN(gl) && !isNaN(gv);
+        return {
+          id: m.id || `cfg-m-${m.jornada}-${idx}`,
+          jornada: m.jornada,
+          local: m.local,
+          visitante: m.visitante,
+          golesLocal: hasScore ? gl : undefined,
+          golesVisitante: hasScore ? gv : undefined,
+          jugado: Boolean(hasScore || m.disputado),
+          fecha: m.fecha || '',
+          hora: m.hora || '',
+          campo: m.campo || '',
+          escudoLocal: m.escudoLocal || undefined,
+          escudoVisitante: m.escudoVisitante || undefined
+        };
+      });
+      setAllMatches(mappedMatches);
+      if (cfg.jornadasDisputadas && cfg.jornadasDisputadas.length > 0) {
+        const latest = Math.max(...cfg.jornadasDisputadas);
+        setSelectedJornada(latest);
+      }
+      return;
+    }
+
     try {
       const savedStandings = localStorage.getItem(`${STORAGE_STANDINGS_KEY}_j${selectedJornada}`);
       if (savedStandings) {
@@ -80,13 +141,26 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
       setStandings(OFFICIAL_RFFM_JORNADA_4_STANDINGS);
       setAllMatches(OFFICIAL_RFFM_ALL_MATCHES);
     }
-  }, [selectedJornada, isOpen]);
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    loadFromConfig();
+    const handleCompUpdated = () => loadFromConfig();
+    window.addEventListener(COMPETITION_UPDATED_EVENT, handleCompUpdated);
+    return () => window.removeEventListener(COMPETITION_UPDATED_EVENT, handleCompUpdated);
+  }, [selectedTeam, isOpen]);
 
   if (!isOpen) return null;
 
   const handleSelectJornada = async (jornada: number) => {
     setSelectedJornada(jornada);
     localStorage.setItem(ACTIVE_JORNADA_KEY, String(jornada));
+
+    const cfg = getTeamCompetitionConfig(selectedTeam);
+    if (cfg.competicionId && cfg.competicionId !== '26738324') {
+      return;
+    }
 
     setIsLoadingLive(true);
     try {
@@ -115,27 +189,13 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
 
   const handleLiveSync = async () => {
     setIsLoadingLive(true);
-    const toastId = toast.loading(`Sincronizando con RFFM.es (Jornada ${selectedJornada})...`);
+    const toastId = toast.loading(`Sincronizando ${selectedTeam} con RFFM.es...`);
     try {
-      const liveStandings = await fetchLiveRFFMClasificacion(selectedJornada);
-      const liveMatches = await fetchLiveRFFMResultados(selectedJornada);
-
-      if (liveStandings && liveStandings.length > 0) {
-        setStandings(liveStandings);
-        localStorage.setItem(`${STORAGE_STANDINGS_KEY}_j${selectedJornada}`, JSON.stringify(liveStandings));
-      }
-
-      if (liveMatches && liveMatches.length > 0) {
-        setAllMatches(prev => {
-          const others = prev.filter(m => m.jornada !== selectedJornada);
-          const combined = [...others, ...liveMatches];
-          localStorage.setItem(STORAGE_MATCHES_KEY, JSON.stringify(combined));
-          return combined;
-        });
-      }
+      const res = await syncTeamWithFederationFull(selectedTeam);
+      loadFromConfig();
 
       toast.dismiss(toastId);
-      toast.success(`¡Clasificación oficial sincronizada en vivo con la RFFM!`);
+      toast.success(`¡Clasificación y estadísticas de ${res.config.categoryName} (Jornada ${res.latestJornada}) sincronizadas en vivo con la RFFM!`);
     } catch {
       toast.dismiss(toastId);
       toast.error('No se pudo conectar con la RFFM. Mostrando datos oficiales.');
@@ -145,7 +205,8 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
   };
 
   const handleOpenRFFMResultados = () => {
-    window.open(RFFM_URL_CONFIG.getResultadosUrl(selectedJornada), '_blank', 'noopener,noreferrer');
+    const targetUrl = compConfig.urlClasificacion || compConfig.urlCalendario || RFFM_URL_CONFIG.getResultadosUrl(selectedJornada);
+    window.open(targetUrl, '_blank', 'noopener,noreferrer');
   };
 
   const handleResetToOfficialRFFM = () => {
@@ -181,7 +242,7 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
     localStorage.setItem(STORAGE_MATCHES_KEY, JSON.stringify(updated));
   };
 
-  const myTeam = standings.find(t => t.isMyTeam || t.name.includes('AFE')) || standings[8];
+  const myTeam = standings.find(t => t.isMyTeam || t.name.includes('AFE')) || standings[0];
   const leaderTeam = standings[0];
 
   const filteredStandings = standings.filter(t => 
@@ -190,7 +251,10 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
   );
 
   const currentJornadaMatches = allMatches.filter(m => m.jornada === selectedJornada);
-  const myTeamMatches = allMatches.filter(m => m.local.includes('AFE') || m.visitante.includes('AFE'));
+  const myTeamMatches = allMatches.filter(m => m.local.includes('AFE') || m.visitante.includes('AFE') || (myTeam && (m.local.toUpperCase() === myTeam.name.toUpperCase() || m.visitante.toUpperCase() === myTeam.name.toUpperCase())));
+  const availableJornadas = (compConfig.jornadasDisputadas && compConfig.jornadasDisputadas.length > 0)
+    ? compConfig.jornadasDisputadas
+    : [1, 2, 3, 4, 5];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-1 sm:p-3 bg-slate-950/85 backdrop-blur-md overflow-hidden animate-in fade-in duration-150">
@@ -209,10 +273,10 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
                   Clasificación Oficial RFFM
                 </h2>
                 <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 whitespace-nowrap">
-                  2ª Infantil G.50
+                  {compConfig.categoryName || '2ª Infantil G.50'}
                 </span>
                 <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 whitespace-nowrap">
-                  J.{selectedJornada} de 26
+                  Jornada {selectedJornada}
                 </span>
               </div>
             </div>
@@ -221,7 +285,7 @@ export default function GroupStandingsModal({ isOpen, onClose }: GroupStandingsM
           {/* Center: Jornada Selector & View Tabs */}
           <div className="hidden md:flex items-center gap-2">
             <div className="flex items-center gap-1 bg-slate-950/80 p-0.5 rounded-lg border border-slate-800">
-              {[1, 2, 3, 4, 5].map((jNum) => {
+              {availableJornadas.slice(-6).map((jNum) => {
                 const isSelected = selectedJornada === jNum;
                 return (
                   <button

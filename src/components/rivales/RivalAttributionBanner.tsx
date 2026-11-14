@@ -2,19 +2,38 @@ import React from 'react';
 import { ShieldCheck, ExternalLink, RefreshCw, AlertCircle, Calendar, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
+import { TeamCompetitionConfig } from '@/types/competitions';
+
 interface RivalAttributionBannerProps {
   onRefresh?: () => void;
   onOpenSyncModal?: () => void;
   dataVersion?: number;
+  competitionConfig?: TeamCompetitionConfig;
 }
 
 export const RivalAttributionBanner: React.FC<RivalAttributionBannerProps> = ({
   onRefresh,
   onOpenSyncModal,
-  dataVersion
+  dataVersion,
+  competitionConfig
 }) => {
-  const activeJornada = typeof window !== 'undefined' ? (Number(localStorage.getItem('rffm_g50_synced_jornadas')) || 4) : 4;
-  const lastSyncTime = typeof window !== 'undefined' ? (localStorage.getItem('rffm_g50_last_sync_time') || '') : '';
+  const jornadas = competitionConfig?.jornadasDisputadas || [];
+  const activeJornada =
+    jornadas.length > 0
+      ? Math.max(...jornadas)
+      : (typeof window !== 'undefined' ? Number(localStorage.getItem('rffm_g50_synced_jornadas')) || 5 : 5);
+  const lastSyncFormatted = competitionConfig?.lastSync
+    ? new Date(competitionConfig.lastSync).toLocaleString('es-ES')
+    : (typeof window !== 'undefined' ? (localStorage.getItem('rffm_g50_last_sync_time') || '') : '');
+
+  const categoryLabel = competitionConfig?.categoryName || '2ª INFANTIL GRUPO 50';
+  const seasonLabel = competitionConfig?.temporada || '2026-2027';
+  const compId = competitionConfig?.competicionId || '26738324';
+  const grupoId = competitionConfig?.grupoId || '27306559';
+  const webUrl =
+    competitionConfig?.urlClasificacion ||
+    competitionConfig?.urlCalendario ||
+    `https://www.rffm.es/competicion/resultados-y-jornadas?temporada=22&competicion=${compId}&grupo=${grupoId}&jornada=${activeJornada}&tipojuego=1`;
 
   return (
     <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl backdrop-blur-sm space-y-3">
@@ -27,11 +46,11 @@ export const RivalAttributionBanner: React.FC<RivalAttributionBannerProps> = ({
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] uppercase font-black tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md">
-                RFFM OFICIAL • 2ª INFANTIL GRUPO 50
+                RFFM OFICIAL • {categoryLabel}
               </span>
               <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded-md flex items-center gap-1">
                 <Calendar className="w-3 h-3 text-slate-400" />
-                Temporada 2026-2027
+                Temporada {seasonLabel}
               </span>
               <span className="text-[10px] uppercase font-bold tracking-wider text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md flex items-center gap-1">
                 <Lock className="w-3 h-3" />
@@ -39,12 +58,12 @@ export const RivalAttributionBanner: React.FC<RivalAttributionBannerProps> = ({
               </span>
             </div>
             <h2 className="text-sm sm:text-base font-black text-white uppercase tracking-tight mt-1">
-              Estadísticas Colectivas de Rivales • Competición 26738324 / Grupo 27306559
+              Estadísticas Colectivas de Rivales{compId ? ` • Competición ${compId}${grupoId ? ` / Grupo ${grupoId}` : ''}` : ''}
             </h2>
             <p className="text-xs text-slate-400">
               Fuente de datos oficial:{' '}
               <a
-                href={`https://www.rffm.es/competicion/resultados-y-jornadas?temporada=22&competicion=26738324&grupo=27306559&jornada=${activeJornada}&tipojuego=1`}
+                href={webUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-blue-400 hover:text-blue-300 underline font-medium inline-flex items-center gap-1 ml-0.5"
@@ -54,9 +73,7 @@ export const RivalAttributionBanner: React.FC<RivalAttributionBannerProps> = ({
               </a>
               {' '}• Última sincronización federativa:{' '}
               <span className="text-slate-200 font-semibold">
-                {activeJornada >= 5 
-                  ? `Jornada ${activeJornada} cerrada y oficial (RFFM al día)${lastSyncTime ? ` • ${lastSyncTime}` : ''}`
-                  : 'Jornada 4 cerrada / Jornada 5 disponible para sincronizar'}
+                {`Jornada ${activeJornada} sincronizada (RFFM al día)${lastSyncFormatted ? ` • ${lastSyncFormatted}` : ''}`}
               </span>.
             </p>
           </div>
@@ -77,7 +94,7 @@ export const RivalAttributionBanner: React.FC<RivalAttributionBannerProps> = ({
           )}
 
           <a
-            href="https://www.rffm.es/competicion/resultados-y-jornadas?temporada=22&competicion=26738324&grupo=27306559&jornada=4&tipojuego=1"
+            href={webUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-3.5 h-9 rounded-xl transition-colors shadow-md shadow-blue-900/30"

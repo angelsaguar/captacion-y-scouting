@@ -14,26 +14,37 @@ import {
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { RIVAL_TEAMS, FRANJAS_15M } from '@/data/rivalStatsData';
-import { syncWithRFFMWeb } from '@/services/rffmSyncService';
+import { syncTeamWithFederationFull } from '@/lib/liveRivalStats';
+import { TeamCompetitionConfig } from '@/types/competitions';
 
 interface RivalSyncModalProps {
   isOpen: boolean;
   onClose: () => void;
+  selectedClubTeam?: string;
+  competitionConfig?: TeamCompetitionConfig;
   onDataUpdated?: () => void;
 }
 
 export const RivalSyncModal: React.FC<RivalSyncModalProps> = ({
   isOpen,
   onClose,
+  selectedClubTeam = 'INFANTIL B',
+  competitionConfig,
   onDataUpdated
 }) => {
   const [activeTab, setActiveTab] = useState<'status' | 'manual' | 'upload'>('status');
   const [isSyncingModal, setIsSyncingModal] = useState(false);
   
+  const modalRivals = (competitionConfig?.rivals && competitionConfig.rivals.length > 1)
+    ? competitionConfig.rivals
+    : RIVAL_TEAMS;
+  const disputedJornadas = competitionConfig?.jornadasDisputadas || [];
+  const latestJornada = disputedJornadas.length > 0 ? Math.max(...disputedJornadas) : 5;
+
   // Manual match entry state
-  const [jornada, setJornada] = useState<number>(5);
-  const [localTeamId, setLocalTeamId] = useState<string>(RIVAL_TEAMS[0].id);
-  const [visitanteTeamId, setVisitanteTeamId] = useState<string>(RIVAL_TEAMS[1].id);
+  const [jornada, setJornada] = useState<number>(latestJornada);
+  const [localTeamId, setLocalTeamId] = useState<string>(modalRivals[0]?.id || RIVAL_TEAMS[0].id);
+  const [visitanteTeamId, setVisitanteTeamId] = useState<string>(modalRivals[1]?.id || RIVAL_TEAMS[1].id);
   const [golesLocal, setGolesLocal] = useState<number>(0);
   const [golesVisitante, setGolesVisitante] = useState<number>(0);
   const [amarillasLocal, setAmarillasLocal] = useState<number>(0);
@@ -76,7 +87,7 @@ export const RivalSyncModal: React.FC<RivalSyncModalProps> = ({
             </div>
             <div>
               <h3 className="font-black text-white uppercase tracking-tight text-base">
-                Gestión y Sincronización de Datos • RFFM Grupo 50
+                Gestión y Sincronización de Datos • {competitionConfig?.categoryName || 'RFFM'}
               </h3>
               <p className="text-xs text-slate-400">
                 Control de fuentes oficiales, actas colectivas y carga autorizada.
@@ -150,20 +161,28 @@ export const RivalSyncModal: React.FC<RivalSyncModalProps> = ({
                 </h4>
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div className="p-2.5 bg-slate-900/60 rounded-xl border border-slate-800">
-                    <span className="text-slate-500 text-[10px] uppercase font-bold block">Jornadas Verificadas</span>
-                    <span className="text-sm font-black text-white">Jornadas 1 a 4 (Cerradas)</span>
+                    <span className="text-slate-500 text-[10px] uppercase font-bold block">Jornadas Disputadas</span>
+                    <span className="text-sm font-black text-white">
+                      {disputedJornadas.length > 0 ? `Jornadas 1 a ${latestJornada}` : 'Sin sincronizar'}
+                    </span>
                   </div>
                   <div className="p-2.5 bg-slate-900/60 rounded-xl border border-slate-800">
-                    <span className="text-slate-500 text-[10px] uppercase font-bold block">Jornada 5</span>
-                    <span className="text-sm font-black text-amber-400">En Proceso de Validación</span>
+                    <span className="text-slate-500 text-[10px] uppercase font-bold block">Última Sincronización</span>
+                    <span className="text-sm font-black text-emerald-400">
+                      {competitionConfig?.lastSync
+                        ? new Date(competitionConfig.lastSync).toLocaleString('es-ES')
+                        : 'Pendiente'}
+                    </span>
                   </div>
                   <div className="p-2.5 bg-slate-900/60 rounded-xl border border-slate-800">
                     <span className="text-slate-500 text-[10px] uppercase font-bold block">Equipos Catalogados</span>
-                    <span className="text-sm font-black text-white">14 de 14 equipos</span>
+                    <span className="text-sm font-black text-white">{modalRivals.length} equipos</span>
                   </div>
                   <div className="p-2.5 bg-slate-900/60 rounded-xl border border-slate-800">
-                    <span className="text-slate-500 text-[10px] uppercase font-bold block">Protección Menores</span>
-                    <span className="text-sm font-black text-emerald-400">100% Anónimo Colectivo</span>
+                    <span className="text-slate-500 text-[10px] uppercase font-bold block">Partidos / Actas</span>
+                    <span className="text-sm font-black text-blue-400">
+                      {competitionConfig?.matches?.length || 0} partidos registrados
+                    </span>
                   </div>
                 </div>
               </div>
@@ -174,12 +193,12 @@ export const RivalSyncModal: React.FC<RivalSyncModalProps> = ({
                   onClick={async () => {
                     setIsSyncingModal(true);
                     try {
-                      await syncWithRFFMWeb(5);
+                      const res = await syncTeamWithFederationFull(selectedClubTeam);
                       if (onDataUpdated) onDataUpdated();
-                      toast.success("¡Datos actualizados con la web de la RFFM! Jornada 5 sincronizada.");
+                      toast.success(`¡Datos actualizados con la web de la RFFM! ${res.config.categoryName} (Jornada ${res.latestJornada}) sincronizada.`);
                       onClose();
-                    } catch (e) {
-                      toast.error("Error al sincronizar con RFFM.");
+                    } catch (e: any) {
+                      toast.error(e?.message || "Error al sincronizar con RFFM.");
                     } finally {
                       setIsSyncingModal(false);
                     }
@@ -188,12 +207,12 @@ export const RivalSyncModal: React.FC<RivalSyncModalProps> = ({
                   className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs h-10 gap-2 shadow-lg shadow-blue-900/30"
                 >
                   <RefreshCw className={`w-4 h-4 ${isSyncingModal ? 'animate-spin' : ''}`} />
-                  <span>{isSyncingModal ? 'Sincronizando con RFFM Web...' : 'Actualizar Jornada 5 con la Web de la Federación'}</span>
+                  <span>{isSyncingModal ? 'Sincronizando con RFFM Web...' : `Actualizar ${selectedClubTeam} con la Web de la Federación`}</span>
                 </Button>
               </div>
 
               <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
-                <span>URL Federativa vinculada: rffm.es Grupo 50 (Infantil)</span>
+                <span>URL Federativa vinculada: {competitionConfig?.categoryName || 'rffm.es'}</span>
                 <span className="text-emerald-400 font-bold">● Servicio Activo</span>
               </div>
             </div>
@@ -227,7 +246,7 @@ export const RivalSyncModal: React.FC<RivalSyncModalProps> = ({
                     onChange={(e) => setLocalTeamId(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 text-white rounded-xl p-2 text-xs font-bold"
                   >
-                    {RIVAL_TEAMS.map(t => (
+                    {modalRivals.map(t => (
                       <option key={t.id} value={t.id}>{t.shortName}</option>
                     ))}
                   </select>
@@ -240,7 +259,7 @@ export const RivalSyncModal: React.FC<RivalSyncModalProps> = ({
                     onChange={(e) => setVisitanteTeamId(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 text-white rounded-xl p-2 text-xs font-bold"
                   >
-                    {RIVAL_TEAMS.map(t => (
+                    {modalRivals.map(t => (
                       <option key={t.id} value={t.id}>{t.shortName}</option>
                     ))}
                   </select>
@@ -367,7 +386,7 @@ export const RivalSyncModal: React.FC<RivalSyncModalProps> = ({
 
         {/* Modal Footer */}
         <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between text-xs text-slate-500">
-          <span>RFFM Segunda Infantil Grupo 50</span>
+          <span>{competitionConfig?.categoryName || 'RFFM Oficial'}</span>
           <Button
             onClick={onClose}
             variant="ghost"
