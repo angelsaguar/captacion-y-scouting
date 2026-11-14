@@ -618,8 +618,12 @@ export async function syncTeamActasFromFederation(teamName: string, calendarUrl:
 
   const result = await resp.json();
   if (result.ok && result.data) {
-    saveTeamActasData(result.data);
-    return result.data;
+    const existing = getTeamActasData(teamName);
+    if (result.data.actas?.length > 0 || !existing.actas || existing.actas.length === 0) {
+      saveTeamActasData(result.data);
+      return result.data;
+    }
+    return existing;
   }
 
   throw new Error('Respuesta inválida del servidor federativo');
