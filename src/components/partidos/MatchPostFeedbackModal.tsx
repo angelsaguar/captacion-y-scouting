@@ -213,7 +213,7 @@ export const MatchPostFeedbackModal: React.FC<MatchPostFeedbackModalProps> = ({
   if (!isOpen) return null;
 
   // Handle Save
-  const handleSave = () => {
+  const handleSave = async () => {
     const feedback: MatchPostFeedback = {
       valoracion_general: valoracionGeneral,
       puntuacion_general: puntuacionGeneral,
@@ -243,9 +243,14 @@ export const MatchPostFeedbackModal: React.FC<MatchPostFeedbackModalProps> = ({
       autor: 'Cuerpo Técnico'
     };
 
-    onSaveFeedback(match.id, feedback);
-    toast.success('¡Feedback post-partido guardado correctamente!');
-    onClose();
+    try {
+      await onSaveFeedback(match.id, feedback);
+      toast.success('¡Feedback post-partido guardado correctamente!');
+      onClose();
+    } catch (err: any) {
+      console.error('Error guardando feedback:', err);
+      toast.error('Error al guardar el feedback post-partido. Inténtalo de nuevo.');
+    }
   };
 
   // Generate WhatsApp text

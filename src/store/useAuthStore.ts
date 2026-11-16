@@ -1,5 +1,7 @@
 import { create } from 'zustand';
+import { signOut as firebaseSignOut } from 'firebase/auth';
 import { supabase } from '../lib/supabase';
+import { auth } from '../lib/firebase';
 import { User } from '../types';
 
 interface AuthState {
@@ -38,6 +40,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
   signOut: async () => {
     await supabase.auth.signOut();
+    try {
+      await firebaseSignOut(auth);
+    } catch {
+      // ignore firebase signout error if not signed in
+    }
     set({ user: null, loading: false });
   },
   refreshUser: async () => {

@@ -1,0 +1,196 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerifiedUser() && request.auth.token.email.lower() == 'angel.saguar@telefonica.net';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (isVerifiedUser() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    function isValidAdminUser(data, adminId) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'email', 'createdAt'])
+        && isValidId(data.uid)
+        && data.uid == adminId
+        && data.email is string && data.email.size() > 3 && data.email.size() <= 254
+        && data.createdAt is timestamp;
+    }
+
+    function isValidTeamMatch(data) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'team', 'rival', 'fecha', 'hora',
+          'tipo', 'competicion', 'estado', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'team', 'rival', 'fecha', 'hora',
+          'tipo', 'competicion', 'estado', 'goles_favor', 'goles_contra',
+          'acta', 'convocatoria', 'hora_citacion', 'lugar', 'equipacion',
+          'observaciones', 'mensaje_motivacional', 'feedback_post_partido',
+          'estadisticas', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.ownerId)
+        && data.team is string && data.team.size() > 0 && data.team.size() <= 80
+        && data.rival is string && data.rival.size() > 0 && data.rival.size() <= 120
+        && data.fecha is string && data.fecha.size() > 0 && data.fecha.size() <= 20
+        && data.hora is string && data.hora.size() <= 20
+        && data.tipo is string && data.tipo.size() <= 20 && data.tipo in ['Local', 'Visitante']
+        && data.competicion is string && data.competicion.size() <= 30 && data.competicion in ['Liga', 'Copa', 'Amistoso']
+        && data.estado is string && data.estado.size() <= 30 && data.estado in ['Programado', 'Finalizado']
+        && (!('goles_favor' in data) || data.goles_favor == null || (data.goles_favor is int && data.goles_favor >= 0 && data.goles_favor <= 99))
+        && (!('goles_contra' in data) || data.goles_contra == null || (data.goles_contra is int && data.goles_contra >= 0 && data.goles_contra <= 99))
+        && (!('acta' in data) || data.acta == null || (data.acta is string && data.acta.size() <= 5000))
+        && (!('convocatoria' in data) || (data.convocatoria is list && data.convocatoria.size() <= 40 && (data.convocatoria.size() == 0 || data.convocatoria[0] is string)))
+        && (!('hora_citacion' in data) || (data.hora_citacion is string && data.hora_citacion.size() <= 120))
+        && (!('lugar' in data) || (data.lugar is string && data.lugar.size() <= 200))
+        && (!('equipacion' in data) || (data.equipacion is string && data.equipacion.size() <= 300))
+        && (!('observaciones' in data) || (data.observaciones is string && data.observaciones.size() <= 3000))
+        && (!('mensaje_motivacional' in data) || (data.mensaje_motivacional is string && data.mensaje_motivacional.size() <= 500))
+        && (!('feedback_post_partido' in data) || data.feedback_post_partido == null || (data.feedback_post_partido is map && data.feedback_post_partido.keys().size() <= 20))
+        && (!('estadisticas' in data) || data.estadisticas == null || (data.estadisticas is map && data.estadisticas.keys().size() <= 20))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMatchPlan(data) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'team', 'rivalName', 'fechaPartido',
+          'sistema', 'sistemaRival', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'team', 'rivalName', 'fechaPartido',
+          'sistema', 'sistemaRival', 'convocatoria', 'objetivos_tacticos',
+          'alineacion_propuesta', 'puntos_fuertes_rival', 'balon_parado',
+          'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.ownerId)
+        && data.team is string && data.team.size() > 0 && data.team.size() <= 80
+        && data.rivalName is string && data.rivalName.size() > 0 && data.rivalName.size() <= 120
+        && data.fechaPartido is string && data.fechaPartido.size() > 0 && data.fechaPartido.size() <= 20
+        && data.sistema is string && data.sistema.size() > 0 && data.sistema.size() <= 30
+        && data.sistemaRival is string && data.sistemaRival.size() > 0 && data.sistemaRival.size() <= 30
+        && (!('convocatoria' in data) || (data.convocatoria is list && data.convocatoria.size() <= 40 && (data.convocatoria.size() == 0 || data.convocatoria[0] is string)))
+        && (!('objetivos_tacticos' in data) || (data.objetivos_tacticos is string && data.objetivos_tacticos.size() <= 5000))
+        && (!('alineacion_propuesta' in data) || (data.alineacion_propuesta is string && data.alineacion_propuesta.size() <= 3000))
+        && (!('puntos_fuertes_rival' in data) || (data.puntos_fuertes_rival is string && data.puntos_fuertes_rival.size() <= 3000))
+        && (!('balon_parado' in data) || (data.balon_parado is string && data.balon_parado.size() <= 3000))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /admins/{adminId} {
+      allow get: if isVerifiedUser() && isValidId(adminId) && (request.auth.uid == adminId || isBootstrappedAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create: if isBootstrappedAdmin()
+        && isValidId(adminId)
+        && isValidAdminUser(incoming(), adminId)
+        && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isBootstrappedAdmin() && isValidId(adminId);
+    }
+
+    match /team_matches/{matchId} {
+      allow get: if isVerifiedUser() && isValidId(matchId) && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isBootstrappedAdmin() || (isVerifiedUser() && existing().ownerId == request.auth.uid);
+
+      allow create: if isVerifiedUser()
+        && isValidId(matchId)
+        && isValidTeamMatch(incoming())
+        && incoming().id == matchId
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser()
+        && isValidId(matchId)
+        && isValidTeamMatch(incoming())
+        && incoming().id == existing().id
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            existing().ownerId == request.auth.uid && (
+              // Action: Update match stats & score
+              incoming().diff(existing()).affectedKeys().hasOnly(['goles_favor', 'goles_contra', 'estado', 'estadisticas', 'acta', 'updatedAt']) ||
+              // Action: Update post-match feedback
+              incoming().diff(existing()).affectedKeys().hasOnly(['estado', 'feedback_post_partido', 'estadisticas', 'updatedAt']) ||
+              // Action: Update convocatoria & citacion
+              incoming().diff(existing()).affectedKeys().hasOnly(['convocatoria', 'hora_citacion', 'lugar', 'equipacion', 'observaciones', 'mensaje_motivacional', 'estadisticas', 'updatedAt']) ||
+              // Action: Edit full match details
+              incoming().diff(existing()).affectedKeys().hasOnly(['rival', 'fecha', 'hora', 'tipo', 'competicion', 'estado', 'goles_favor', 'goles_contra', 'acta', 'convocatoria', 'hora_citacion', 'lugar', 'equipacion', 'observaciones', 'mensaje_motivacional', 'feedback_post_partido', 'estadisticas', 'updatedAt'])
+            )
+          )
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(matchId) && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    match /match_plans/{planId} {
+      allow get: if isVerifiedUser() && isValidId(planId) && (existing().ownerId == request.auth.uid || isAdmin());
+      allow list: if isBootstrappedAdmin() || (isVerifiedUser() && existing().ownerId == request.auth.uid);
+
+      allow create: if isVerifiedUser()
+        && isValidId(planId)
+        && isValidMatchPlan(incoming())
+        && incoming().id == planId
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser()
+        && isValidId(planId)
+        && isValidMatchPlan(incoming())
+        && incoming().id == existing().id
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            existing().ownerId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'rivalName', 'fechaPartido', 'sistema', 'sistemaRival',
+              'convocatoria', 'objetivos_tacticos', 'alineacion_propuesta',
+              'puntos_fuertes_rival', 'balon_parado', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(planId) && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    match /test/connection {
+      allow get: if isVerifiedUser();
+    }
+  }
+}

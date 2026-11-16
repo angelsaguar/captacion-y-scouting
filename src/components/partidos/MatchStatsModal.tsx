@@ -387,7 +387,7 @@ interface MatchStatsModalProps {
   teamName: string;
   allPlayers: any[];
   onClose: () => void;
-  onSaveMatch: (updatedMatch: any) => void;
+  onSaveMatch: (updatedMatch: any) => Promise<void> | void;
 }
 
 type StatCategory = 
@@ -1600,7 +1600,7 @@ export default function MatchStatsModal({
   };
 
   // Save handler
-  const handleSaveAndSync = () => {
+  const handleSaveAndSync = async () => {
     const updatedMatch = {
       ...match,
       goles_favor: teamTotals.goles_favor,
@@ -1619,9 +1619,14 @@ export default function MatchStatsModal({
       }
     };
 
-    onSaveMatch(updatedMatch);
-    toast.success('¡Estadísticas y marcador guardados y sincronizados correctamente!');
-    onClose();
+    try {
+      await onSaveMatch(updatedMatch);
+      toast.success('¡Estadísticas y marcador guardados y sincronizados correctamente!');
+      onClose();
+    } catch (err) {
+      console.error('Error guardando estadísticas del partido:', err);
+      toast.error('Error al guardar las estadísticas del partido.');
+    }
   };
 
   // Set of players currently on the pitch taking into account starting titulares and chronological substitutions

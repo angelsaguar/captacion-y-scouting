@@ -1,0 +1,246 @@
+{
+  "entities": {
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized administrator record for role verification.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the administrator.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Verified administrator email address.",
+          "maxLength": 254
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "TeamMatch": {
+      "title": "TeamMatch",
+      "description": "Official or friendly match record including convocatoria, live match statistics, and post-match technical feedback.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Match document identifier.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the staff member who owns or created the record.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "team": {
+          "type": "string",
+          "description": "Club team name.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "rival": {
+          "type": "string",
+          "description": "Opponent team name.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "fecha": {
+          "type": "string",
+          "description": "Match date (YYYY-MM-DD).",
+          "minLength": 1,
+          "maxLength": 20
+        },
+        "hora": {
+          "type": "string",
+          "description": "Match kickoff time.",
+          "maxLength": 20
+        },
+        "tipo": {
+          "type": "string",
+          "enum": ["Local", "Visitante"],
+          "description": "Home or away designation.",
+          "maxLength": 20
+        },
+        "competicion": {
+          "type": "string",
+          "enum": ["Liga", "Copa", "Amistoso"],
+          "description": "Competition type.",
+          "maxLength": 30
+        },
+        "estado": {
+          "type": "string",
+          "enum": ["Programado", "Finalizado"],
+          "description": "Current match status.",
+          "maxLength": 30
+        },
+        "goles_favor": {
+          "type": "integer",
+          "description": "Goals scored by club team."
+        },
+        "goles_contra": {
+          "type": "integer",
+          "description": "Goals conceded by club team."
+        },
+        "acta": {
+          "type": "string",
+          "description": "Post-match referee/coach summary.",
+          "maxLength": 5000
+        },
+        "convocatoria": {
+          "type": "array",
+          "description": "Array of called-up player IDs."
+        },
+        "hora_citacion": {
+          "type": "string",
+          "description": "Player arrival call time.",
+          "maxLength": 120
+        },
+        "lugar": {
+          "type": "string",
+          "description": "Match venue or stadium.",
+          "maxLength": 200
+        },
+        "equipacion": {
+          "type": "string",
+          "description": "Team kit instructions.",
+          "maxLength": 300
+        },
+        "observaciones": {
+          "type": "string",
+          "description": "Match call-up observations.",
+          "maxLength": 3000
+        },
+        "mensaje_motivacional": {
+          "type": "string",
+          "description": "Motivational phrase for the squad.",
+          "maxLength": 500
+        },
+        "feedback_post_partido": {
+          "type": "object",
+          "description": "Structured post-match technical feedback and debrief."
+        },
+        "estadisticas": {
+          "type": "object",
+          "description": "Live and post-match team and player statistics payload."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp."
+        }
+      },
+      "required": ["id", "ownerId", "team", "rival", "fecha", "hora", "tipo", "competicion", "estado", "createdAt", "updatedAt"]
+    },
+    "MatchPlan": {
+      "title": "MatchPlan",
+      "description": "Tactical match preparation plan and counter-strategy.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Match plan document identifier.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the staff member who owns the plan.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "team": {
+          "type": "string",
+          "description": "Club team name.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "rivalName": {
+          "type": "string",
+          "description": "Opponent name.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "fechaPartido": {
+          "type": "string",
+          "description": "Match date.",
+          "minLength": 1,
+          "maxLength": 20
+        },
+        "sistema": {
+          "type": "string",
+          "description": "Team formation.",
+          "maxLength": 30
+        },
+        "sistemaRival": {
+          "type": "string",
+          "description": "Opponent formation.",
+          "maxLength": 30
+        },
+        "convocatoria": {
+          "type": "array",
+          "description": "Selected player IDs."
+        },
+        "objetivos_tacticos": {
+          "type": "string",
+          "description": "Key tactical objectives.",
+          "maxLength": 5000
+        },
+        "alineacion_propuesta": {
+          "type": "string",
+          "description": "Proposed lineup notes.",
+          "maxLength": 3000
+        },
+        "puntos_fuertes_rival": {
+          "type": "string",
+          "description": "Opponent strengths.",
+          "maxLength": 3000
+        },
+        "balon_parado": {
+          "type": "string",
+          "description": "Set-piece strategy.",
+          "maxLength": 3000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp."
+        }
+      },
+      "required": ["id", "ownerId", "team", "rivalName", "fechaPartido", "sistema", "sistemaRival", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Administrator registry used for role-based access control."
+    },
+    "/team_matches/{matchId}": {
+      "schema": { "$ref": "#/entities/TeamMatch" },
+      "description": "Team match schedule, live/post-match player & team stats, and post-match feedback."
+    },
+    "/match_plans/{planId}": {
+      "schema": { "$ref": "#/entities/MatchPlan" },
+      "description": "Pre-match tactical plans and counter-strategies per team."
+    }
+  }
+}

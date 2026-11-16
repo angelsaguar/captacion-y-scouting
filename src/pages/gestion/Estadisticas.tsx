@@ -50,6 +50,11 @@ import {
 } from '@/lib/actasArbitrales';
 import { getTeamCompetitionConfig, COMPETITION_UPDATED_EVENT } from '@/lib/teamCompetitions';
 import { syncTeamWithFederationFull } from '@/lib/liveRivalStats';
+import {
+  fetchTeamMatchesFromFirestore,
+  isFirebaseAuthReady,
+  mergeMatchRecords
+} from '@/lib/firestoreMatches';
 
 interface TeamPlayer {
   id: string;
@@ -694,17 +699,41 @@ export default function Estadisticas() {
     migrateAllStoredMatches();
     loadAllData();
 
+    const syncCloudMatches = async () => {
+      if (!isFirebaseAuthReady()) return;
+      try {
+        const cloudMatches = await fetchTeamMatchesFromFirestore(selectedTeam);
+        if (Array.isArray(cloudMatches) && cloudMatches.length > 0) {
+          const matchesKey = `team_matches_${selectedTeam}`;
+          const localRaw = localStorage.getItem(matchesKey);
+          const localList = localRaw ? JSON.parse(localRaw) : [];
+          const merged = mergeMatchRecords(cloudMatches, Array.isArray(localList) ? localList : []);
+          localStorage.setItem(matchesKey, JSON.stringify(merged));
+          loadAllData();
+        }
+      } catch (err) {
+        console.warn('Could not sync cloud matches in Estadisticas:', err);
+      }
+    };
+
+    syncCloudMatches();
+
     const handleUpdate = () => {
       loadAllData();
+    };
+    const handleFbAuthReady = () => {
+      syncCloudMatches();
     };
 
     window.addEventListener('storage', handleUpdate);
     window.addEventListener('lapoveda_matches_updated', handleUpdate);
+    window.addEventListener('lapoveda_firebase_auth_ready', handleFbAuthReady);
     window.addEventListener(ACTAS_DATA_UPDATED, handleUpdate);
     window.addEventListener(COMPETITION_UPDATED_EVENT, handleUpdate);
     return () => {
       window.removeEventListener('storage', handleUpdate);
       window.removeEventListener('lapoveda_matches_updated', handleUpdate);
+      window.removeEventListener('lapoveda_firebase_auth_ready', handleFbAuthReady);
       window.removeEventListener(ACTAS_DATA_UPDATED, handleUpdate);
       window.removeEventListener(COMPETITION_UPDATED_EVENT, handleUpdate);
     };

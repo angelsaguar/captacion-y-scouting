@@ -86,6 +86,7 @@ function createLocalStorageSupabaseClient(): any {
     private isSingle = false;
     private isMaybeSingle = false;
     private operation: 'select' | 'insert' | 'upsert' | 'update' | 'delete' = 'select';
+    private returnRows = false;
     private mutationPayload: any = null;
     private upsertConflictField: string | null = null;
 
@@ -94,7 +95,11 @@ function createLocalStorageSupabaseClient(): any {
     }
 
     select(columns?: string) {
-      this.operation = 'select';
+      if (this.operation !== 'select') {
+        this.returnRows = true;
+      } else {
+        this.operation = 'select';
+      }
       return this;
     }
 
@@ -208,13 +213,16 @@ function createLocalStorageSupabaseClient(): any {
           ? this.mutationPayload
           : [this.mutationPayload];
         const stamped = rowsToAdd.map((r) => ({
-          id: r.id || 'rec_' + Math.random().toString(36).substr(2, 9),
+          id: r.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'rec_' + Math.random().toString(36).substr(2, 9)),
           created_at: r.created_at || new Date().toISOString(),
           ...r,
         }));
         currentTable = [...currentTable, ...stamped];
         setTableData(this.tableName, currentTable);
-        return { data: Array.isArray(this.mutationPayload) ? stamped : stamped[0], error: null };
+        if (this.isSingle) return { data: stamped[0] ?? null, error: null };
+        if (this.isMaybeSingle) return { data: stamped[0] ?? null, error: null };
+        if (this.returnRows || Array.isArray(this.mutationPayload)) return { data: stamped, error: null };
+        return { data: stamped[0], error: null };
       }
 
       if (this.operation === 'upsert') {
@@ -227,13 +235,14 @@ function createLocalStorageSupabaseClient(): any {
           .map((k) => k.trim());
 
         const nextTable = [...currentTable];
+        const savedRows: any[] = [];
         for (const row of rowsToUpsert) {
           const matchIndex = nextTable.findIndex((existing) =>
             conflictKeys.every((k) => String(existing[k] ?? '') === String(row[k] ?? ''))
           );
 
           const entry = {
-            id: row.id || (matchIndex >= 0 ? nextTable[matchIndex].id : 'rec_' + Math.random().toString(36).substr(2, 9)),
+            id: row.id || (matchIndex >= 0 ? nextTable[matchIndex].id : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'rec_' + Math.random().toString(36).substr(2, 9))),
             created_at: matchIndex >= 0 ? nextTable[matchIndex].created_at : (row.created_at || new Date().toISOString()),
             updated_at: new Date().toISOString(),
             ...row,
@@ -241,29 +250,36 @@ function createLocalStorageSupabaseClient(): any {
 
           if (matchIndex >= 0) {
             nextTable[matchIndex] = { ...nextTable[matchIndex], ...entry };
+            savedRows.push(nextTable[matchIndex]);
           } else {
             nextTable.push(entry);
+            savedRows.push(entry);
           }
         }
         setTableData(this.tableName, nextTable);
+        if (this.isSingle || this.isMaybeSingle) return { data: savedRows[0] ?? null, error: null };
+        if (this.returnRows || Array.isArray(this.mutationPayload)) return { data: savedRows, error: null };
         return { data: this.mutationPayload, error: null };
       }
 
       if (this.operation === 'update') {
-        let updatedCount = 0;
+        const updatedRows: any[] = [];
         const nextTable = currentTable.map((item) => {
           const matches = this.filters.every((f) => f(item));
           if (matches) {
-            updatedCount++;
-            return {
+            const nextItem = {
               ...item,
               ...this.mutationPayload,
               updated_at: new Date().toISOString(),
             };
+            updatedRows.push(nextItem);
+            return nextItem;
           }
           return item;
         });
         setTableData(this.tableName, nextTable);
+        if (this.isSingle || this.isMaybeSingle) return { data: updatedRows[0] ?? null, error: null };
+        if (this.returnRows) return { data: updatedRows, error: null };
         return { data: this.mutationPayload, error: null };
       }
 

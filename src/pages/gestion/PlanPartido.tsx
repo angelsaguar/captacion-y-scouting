@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CLUB_TEAMS } from '@/types';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import {
+  deleteMatchPlanFromFirestore,
+  fetchMatchPlansFromFirestore,
+  isFirebaseAuthReady,
+  sanitizeFirestoreId,
+  upsertMatchPlansToFirestore
+} from '@/lib/firestoreMatches';
 import { 
   Presentation, 
   Plus, 
@@ -164,8 +171,30 @@ export default function PlanPartido() {
     const playersList: TeamPlayer[] = savedRoster ? JSON.parse(savedRoster) : [];
     setRoster(playersList);
 
-    // Fetch plans from Supabase, fallback to localStorage
     const fetchPlans = async () => {
+      const plansKey = `team_gameplans_${selectedTeam}`;
+      const savedPlansStr = localStorage.getItem(plansKey);
+      const localPlans: MatchPlan[] = savedPlansStr ? (() => { try { return JSON.parse(savedPlansStr); } catch { return []; } })() : [];
+
+      let cloudPlans: MatchPlan[] = [];
+      if (isFirebaseAuthReady()) {
+        try {
+          const fetchedCloud = await fetchMatchPlansFromFirestore(selectedTeam);
+          if (Array.isArray(fetchedCloud)) {
+            cloudPlans = fetchedCloud;
+          }
+        } catch (err) {
+          console.warn('Exception fetching match plans from Firestore:', err);
+        }
+      }
+
+      if (cloudPlans.length > 0) {
+        setPlans(cloudPlans);
+        setActivePlan(cloudPlans[0]);
+        localStorage.setItem(plansKey, JSON.stringify(cloudPlans));
+        return;
+      }
+
       try {
         const { data, error } = await supabase
           .from('match_plans')
@@ -173,7 +202,7 @@ export default function PlanPartido() {
           .eq('team', selectedTeam)
           .order('fecha_partido', { ascending: false });
 
-        if (!error && data) {
+        if (!error && Array.isArray(data) && data.length > 0) {
           const formatted: MatchPlan[] = data.map(item => ({
             id: item.id,
             matchId: '',
@@ -190,23 +219,17 @@ export default function PlanPartido() {
           }));
 
           setPlans(formatted);
-          setActivePlan(formatted.length > 0 ? formatted[0] : null);
-          localStorage.setItem(`team_gameplans_${selectedTeam}`, JSON.stringify(formatted));
+          setActivePlan(formatted[0] || null);
+          localStorage.setItem(plansKey, JSON.stringify(formatted));
           return;
-        } else if (error) {
-          console.warn('Error fetching match plans from Supabase, using local fallback:', error);
         }
       } catch (err) {
         console.warn('Exception fetching match plans from Supabase:', err);
       }
 
-      // Local fallback
-      const plansKey = `team_gameplans_${selectedTeam}`;
-      const savedPlans = localStorage.getItem(plansKey);
-      if (savedPlans) {
-        const parsed = JSON.parse(savedPlans);
-        setPlans(parsed);
-        setActivePlan(parsed.length > 0 ? parsed[0] : null);
+      if (savedPlansStr !== null) {
+        setPlans(localPlans);
+        setActivePlan(localPlans.length > 0 ? localPlans[0] : null);
       } else {
         // Default preloaded game plan
         const defaults: MatchPlan[] = [
@@ -235,12 +258,15 @@ export default function PlanPartido() {
   }, [selectedTeam]);
 
   const savePlans = async (updated: MatchPlan[]) => {
-    setPlans(updated);
-    localStorage.setItem(`team_gameplans_${selectedTeam}`, JSON.stringify(updated));
+    const normalized = updated.map(p => ({
+      ...p,
+      id: sanitizeFirestoreId(p.id),
+    }));
+    setPlans(normalized);
+    localStorage.setItem(`team_gameplans_${selectedTeam}`, JSON.stringify(normalized));
 
-    // Try to sync to Supabase in background
     try {
-      for (const p of updated) {
+      for (const p of normalized) {
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.id);
         const payload = {
           team: selectedTeam,
@@ -255,22 +281,20 @@ export default function PlanPartido() {
           balon_parado: p.balon_parado || ''
         };
 
-        if (isUuid) {
+        if (!isSupabaseConfigured || isUuid) {
           await supabase
             .from('match_plans')
-            .upsert({ id: p.id, ...payload });
+            .upsert({ id: p.id, ...payload }, { onConflict: 'id' });
         } else {
-          // If it's a temporary ID like 'gp1', insert it and let Supabase assign a real UUID
           const { data, error } = await supabase
             .from('match_plans')
             .insert({ ...payload })
             .select();
 
           if (!error && data && data[0]) {
-            // Update temporary ID in state and local storage with UUID
             p.id = data[0].id;
-            setPlans([...updated]);
-            localStorage.setItem(`team_gameplans_${selectedTeam}`, JSON.stringify(updated));
+            setPlans([...normalized]);
+            localStorage.setItem(`team_gameplans_${selectedTeam}`, JSON.stringify(normalized));
             if (activePlan && activePlan.id === p.id) {
               setActivePlan({ ...activePlan, id: data[0].id });
             }
@@ -278,7 +302,11 @@ export default function PlanPartido() {
         }
       }
     } catch (err) {
-      console.warn('Failed to sync match plans to Supabase:', err);
+      console.warn('Failed to sync match plans to table store:', err);
+    }
+
+    if (isFirebaseAuthReady()) {
+      await upsertMatchPlansToFirestore(normalized, selectedTeam);
     }
   };
 
@@ -460,20 +488,25 @@ export default function PlanPartido() {
   const handleDeletePlan = async (id: string, rival: string) => {
     if (confirm(`¿Estás seguro de eliminar el plan técnico contra ${rival}?`)) {
       const updated = plans.filter(p => p.id !== id);
-      
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-      if (isUuid) {
+
+      try {
+        await supabase
+          .from('match_plans')
+          .delete()
+          .eq('id', id);
+      } catch (err) {
+        console.warn('Failed to delete match plan from table store:', err);
+      }
+
+      if (isFirebaseAuthReady()) {
         try {
-          await supabase
-            .from('match_plans')
-            .delete()
-            .eq('id', id);
+          await deleteMatchPlanFromFirestore(id);
         } catch (err) {
-          console.warn('Failed to delete match plan from Supabase:', err);
+          console.warn('Failed to delete match plan from Firestore:', err);
         }
       }
 
-      savePlans(updated);
+      await savePlans(updated);
       if (activePlan?.id === id) {
         setActivePlan(updated.length > 0 ? updated[0] : null);
       }

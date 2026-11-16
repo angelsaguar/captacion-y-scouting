@@ -1,5 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { supabase } from '@/lib/supabase';
+import { signInWithPopup } from 'firebase/auth';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { auth, googleProvider } from '@/lib/firebase';
+import {
+  deleteTeamMatchFromFirestore,
+  fetchTeamMatchesFromFirestore,
+  isFirebaseAuthReady,
+  mergeMatchRecords,
+  sanitizeFirestoreId,
+  upsertMatchPlansToFirestore,
+  upsertTeamMatchesToFirestore
+} from '@/lib/firestoreMatches';
 import { CLUB_TEAMS } from '@/types';
 import { getCategoryMatchDuration } from '@/lib/matchDuration';
 import UDLaPovedaLogo from '@/components/layout/UDLaPovedaLogo';
@@ -181,6 +192,9 @@ export default function Partidos() {
   const matchDuration = getCategoryMatchDuration(selectedTeam);
   const [matches, setMatches] = useState<Match[]>([]);
   const [players, setPlayers] = useState<any[]>([]);
+  const [cloudReady, setCloudReady] = useState<boolean>(() => isFirebaseAuthReady());
+  const [cloudSyncing, setCloudSyncing] = useState<boolean>(false);
+  const [cloudReloadNonce, setCloudReloadNonce] = useState<number>(0);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showActaModal, setShowActaModal] = useState<Match | null>(null);
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
@@ -192,8 +206,16 @@ export default function Partidos() {
 
   useEffect(() => {
     const handleCompUpdated = () => setCompVersion(v => v + 1);
+    const handleFbAuthReady = () => {
+      setCloudReady(isFirebaseAuthReady());
+      setCloudReloadNonce(n => n + 1);
+    };
     window.addEventListener(COMPETITION_UPDATED_EVENT, handleCompUpdated);
-    return () => window.removeEventListener(COMPETITION_UPDATED_EVENT, handleCompUpdated);
+    window.addEventListener('lapoveda_firebase_auth_ready', handleFbAuthReady);
+    return () => {
+      window.removeEventListener(COMPETITION_UPDATED_EVENT, handleCompUpdated);
+      window.removeEventListener('lapoveda_firebase_auth_ready', handleFbAuthReady);
+    };
   }, []);
 
   const currentConfig = useMemo(() => getTeamCompetitionConfig(selectedTeam), [selectedTeam, compVersion]);
@@ -609,26 +631,36 @@ export default function Partidos() {
         }
       }
 
+      const newPlanId = savedMatchPlanId || crypto.randomUUID();
+      if (!savedMatchPlanId) {
+        setSavedMatchPlanId(newPlanId);
+      }
+
       // Sync local storage
       const localKey = `team_gameplans_${selectedTeam}`;
       const existingStr = localStorage.getItem(localKey);
       const existing = existingStr ? JSON.parse(existingStr) : [];
+      const newPlanObj = {
+        id: newPlanId,
+        rivalName: rival,
+        fechaPartido: matchDate,
+        sistema: planMySystem,
+        sistemaRival: planRivalSystem,
+        objetivos_tacticos: payload.objetivos_tacticos,
+        alineacion_propuesta: payload.alineacion_propuesta,
+        puntos_fuertes_rival: payload.puntos_fuertes_rival,
+        balon_parado: payload.balon_parado,
+        fecha_creacion: new Date().toISOString().split('T')[0]
+      };
       const updated = [
-        {
-          id: savedMatchPlanId || crypto.randomUUID(),
-          rivalName: rival,
-          fechaPartido: matchDate,
-          sistema: planMySystem,
-          sistemaRival: planRivalSystem,
-          objetivos_tacticos: payload.objetivos_tacticos,
-          alineacion_propuesta: payload.alineacion_propuesta,
-          puntos_fuertes_rival: payload.puntos_fuertes_rival,
-          balon_parado: payload.balon_parado,
-          fecha_creacion: new Date().toISOString().split('T')[0]
-        },
+        newPlanObj,
         ...existing.filter((p: any) => p.rivalName !== rival)
       ];
       localStorage.setItem(localKey, JSON.stringify(updated));
+
+      if (isFirebaseAuthReady()) {
+        await upsertMatchPlansToFirestore([newPlanObj], selectedTeam);
+      }
 
       toast.success('¡Plan de partido guardado correctamente en la base de datos!', { id: toastId });
     } catch (err) {
@@ -1196,6 +1228,28 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       setPlayers(cleanDeduplicatedRoster);
       localStorage.setItem(rosterKey, JSON.stringify(cleanDeduplicatedRoster));
 
+      const key = `team_matches_${selectedTeam}`;
+      const deletedMatchesKey = `team_matches_deleted_${selectedTeam}`;
+      let deletedMatchIds = new Set<string>();
+      try {
+        const deletedRaw = localStorage.getItem(deletedMatchesKey);
+        if (deletedRaw) {
+          deletedMatchIds = new Set(JSON.parse(deletedRaw).map(String));
+        }
+      } catch {}
+
+      let localMatches: Match[] = [];
+      const savedLocal = localStorage.getItem(key);
+      if (savedLocal) {
+        try {
+          const parsed = JSON.parse(savedLocal);
+          if (Array.isArray(parsed)) {
+            localMatches = parsed;
+          }
+        } catch {}
+      }
+
+      let dbMatches: Match[] = [];
       try {
         const { data, error } = await supabase
           .from('team_matches')
@@ -1203,8 +1257,8 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
           .eq('team', selectedTeam)
           .order('fecha', { ascending: false });
 
-        if (!error && data) {
-          const formatted: Match[] = data.map(item => {
+        if (!error && Array.isArray(data) && data.length > 0) {
+          dbMatches = data.map(item => {
             const stats = item.estadisticas || {};
             return {
               id: item.id,
@@ -1214,32 +1268,51 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
               tipo: item.tipo as any,
               competicion: item.competicion as any,
               estado: item.estado as any,
-              goles_favor: item.goles_favor !== null ? item.goles_favor : undefined,
-              goles_contra: item.goles_contra !== null ? item.goles_contra : undefined,
+              goles_favor: item.goles_favor !== null && item.goles_favor !== undefined ? item.goles_favor : undefined,
+              goles_contra: item.goles_contra !== null && item.goles_contra !== undefined ? item.goles_contra : undefined,
               acta: item.acta || undefined,
+              feedback_post_partido: item.feedback_post_partido || stats.feedback_post_partido || undefined,
               convocatoria: stats.convocatoria || item.convocatoria || [],
               hora_citacion: stats.hora_citacion || item.hora_citacion || '',
               lugar: stats.lugar || item.lugar || '',
               equipacion: stats.equipacion || item.equipacion || '',
               observaciones: stats.observaciones || item.observaciones || '',
+              mensaje_motivacional: stats.mensaje_motivacional || item.mensaje_motivacional || '',
               estadisticas: stats
             };
           });
-          
-          setMatches(formatted);
-          localStorage.setItem(`team_matches_${selectedTeam}`, JSON.stringify(formatted));
-          return;
         }
       } catch (err) {
-        console.warn('Exception fetching matches:', err);
+        console.warn('Exception fetching matches from local DB table:', err);
       }
 
-      const key = `team_matches_${selectedTeam}`;
-      const saved = localStorage.getItem(key);
-      if (saved) {
-        setMatches(JSON.parse(saved));
+      let cloudMatches: Match[] = [];
+      if (isFirebaseAuthReady()) {
+        try {
+          const fetchedCloud = await fetchTeamMatchesFromFirestore(selectedTeam);
+          if (Array.isArray(fetchedCloud)) {
+            cloudMatches = fetchedCloud;
+          }
+        } catch (err) {
+          console.warn('Exception fetching matches from Firestore:', err);
+        }
+      }
+
+      const merged = mergeMatchRecords(
+        cloudMatches,
+        mergeMatchRecords(localMatches, dbMatches)
+      ).filter(m => !deletedMatchIds.has(String(m.id)));
+
+      if (merged.length > 0 || savedLocal !== null) {
+        setMatches(merged);
+        localStorage.setItem(key, JSON.stringify(merged));
+        if (isFirebaseAuthReady() && localMatches.length > 0 && cloudMatches.length === 0) {
+          upsertTeamMatchesToFirestore(merged, selectedTeam).catch(err =>
+            console.warn('Background Firestore backfill failed:', err)
+          );
+        }
       } else {
-        const defaults: Match[] = [
+        const defaultMatchesList: Match[] = [
           { 
             id: 'm-coslada', 
             rival: 'COSLADA', 
@@ -1256,13 +1329,14 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
           { id: 'm1', rival: 'A.D. Arganda', fecha: new Date().toISOString().split('T')[0], hora: '12:00', tipo: 'Local', competicion: 'Liga', estado: 'Programado' },
           { id: 'm2', rival: 'F.C. Rivas Vaciamadrid', fecha: '2026-05-15', hora: '11:30', tipo: 'Visitante', competicion: 'Liga', estado: 'Finalizado', goles_favor: 3, goles_contra: 1, acta: 'Excelente partido de posesión y presión alta. Destacó el juego defensivo por bandas.' }
         ];
+        const defaults: Match[] = defaultMatchesList.filter(m => !deletedMatchIds.has(String(m.id)));
         localStorage.setItem(key, JSON.stringify(defaults));
         setMatches(defaults);
       }
     };
 
     fetchTeamRosterAndMatches();
-  }, [selectedTeam]);
+  }, [selectedTeam, cloudReloadNonce]);
 
   // Sync modal form states when showActaModal is opened/selected
   useEffect(() => {
@@ -1294,7 +1368,26 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       setMatchPlayerStats([]);
       setSubstitutions([]);
     }
-  }, [showActaModal, players]);
+  }, [showActaModal?.id, players]);
+
+  const handleConnectGoogleCloud = async () => {
+    setCloudSyncing(true);
+    const toastId = toast.loading('Conectando cuenta Google con Firebase Firestore...');
+    try {
+      await signInWithPopup(auth, googleProvider);
+      setCloudReady(isFirebaseAuthReady());
+      if (matches.length > 0 && isFirebaseAuthReady()) {
+        await upsertTeamMatchesToFirestore(matches, selectedTeam);
+      }
+      setCloudReloadNonce(n => n + 1);
+      toast.success('¡Nube Firebase conectada y partidos sincronizados!', { id: toastId });
+    } catch (err: any) {
+      console.error('Error conectando con Google/Firebase:', err);
+      toast.error(err?.message || 'No se pudo conectar con Google Firebase.', { id: toastId });
+    } finally {
+      setCloudSyncing(false);
+    }
+  };
 
   const handleSavePostMatchFeedback = async (matchId: string, feedback: MatchPostFeedback) => {
     const updated = matches.map(m => {
@@ -1312,17 +1405,29 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       return m;
     });
 
+    const updatedMatch = updated.find(m => m.id === matchId);
+    if (updatedMatch) {
+      setEditingMatch(prev => (prev && prev.id === matchId ? updatedMatch : prev));
+      setShowActaModal(prev => (prev && prev.id === matchId ? updatedMatch : prev));
+    }
+
     await saveMatches(updated);
     setShowFeedbackModalMatch(null);
   };
 
   const saveMatches = async (updated: Match[]) => {
-    setMatches(updated);
-    localStorage.setItem(`team_matches_${selectedTeam}`, JSON.stringify(updated));
+    const normalizedUpdated = updated.map(m => ({
+      ...m,
+      id: sanitizeFirestoreId(m.id),
+    }));
 
-    // Try to sync to Supabase in the background
+    setMatches(normalizedUpdated);
+    localStorage.setItem(`team_matches_${selectedTeam}`, JSON.stringify(normalizedUpdated));
+    window.dispatchEvent(new CustomEvent('lapoveda_matches_updated', { detail: { team: selectedTeam } }));
+
+    // Sync to local/Supabase team_matches table
     try {
-      for (const match of updated) {
+      for (const match of normalizedUpdated) {
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(match.id);
         const statsToSave = {
           ...(match.estadisticas || {}),
@@ -1346,31 +1451,34 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
           goles_favor: match.goles_favor ?? null,
           goles_contra: match.goles_contra ?? null,
           acta: match.acta ?? null,
-          feedback_post_partido: match.feedback_post_partido ?? null,
+          feedback_post_partido: match.feedback_post_partido || match.estadisticas?.feedback_post_partido || null,
           estadisticas: statsToSave
         };
 
-        if (isUuid) {
+        if (!isSupabaseConfigured || isUuid) {
           await supabase
             .from('team_matches')
-            .upsert({ id: match.id, ...payload });
+            .upsert({ id: match.id, ...payload }, { onConflict: 'id' });
         } else {
-          // If it's a temporary ID, insert it and let Supabase assign a real UUID
           const { data, error } = await supabase
             .from('team_matches')
             .insert({ ...payload })
             .select();
 
           if (!error && data && data[0]) {
-            // Update the temporary ID in state and local storage with the new UUID
             match.id = data[0].id;
-            setMatches([...updated]);
-            localStorage.setItem(`team_matches_${selectedTeam}`, JSON.stringify(updated));
+            setMatches([...normalizedUpdated]);
+            localStorage.setItem(`team_matches_${selectedTeam}`, JSON.stringify(normalizedUpdated));
           }
         }
       }
     } catch (err) {
-      console.warn('Failed to sync team matches to Supabase:', err);
+      console.warn('Failed to sync team matches to table store:', err);
+    }
+
+    // Persist to Firebase Firestore when authenticated
+    if (isFirebaseAuthReady()) {
+      await upsertTeamMatchesToFirestore(normalizedUpdated, selectedTeam);
     }
   };
 
@@ -1418,7 +1526,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
     setShowConvocatoriaModal(null);
   };
 
-  const handleAddMatch = (e: React.FormEvent) => {
+  const handleAddMatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.rival.trim()) {
       toast.error('El nombre del equipo rival es obligatorio');
@@ -1468,7 +1576,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
     };
 
     const updated = [newMatch, ...matches];
-    saveMatches(updated);
+    await saveMatches(updated);
     toast.success('Partido registrado en el calendario.');
     
     // Clear form
@@ -1497,18 +1605,32 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
     if (!deletingMatch) return;
     const { id, rival } = deletingMatch;
 
-    const updated = matches.filter(m => m.id !== id);
-    saveMatches(updated);
+    try {
+      const deletedMatchesKey = `team_matches_deleted_${selectedTeam}`;
+      const existingDeleted = JSON.parse(localStorage.getItem(deletedMatchesKey) || '[]');
+      const nextDeleted = Array.from(new Set([...(Array.isArray(existingDeleted) ? existingDeleted : []), String(id)]));
+      localStorage.setItem(deletedMatchesKey, JSON.stringify(nextDeleted));
+    } catch {}
 
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-    if (isUuid) {
+    const updated = matches.filter(m => m.id !== id);
+    setMatches(updated);
+    localStorage.setItem(`team_matches_${selectedTeam}`, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('lapoveda_matches_updated', { detail: { team: selectedTeam } }));
+
+    try {
+      await supabase
+        .from('team_matches')
+        .delete()
+        .eq('id', id);
+    } catch (err) {
+      console.warn('Failed to delete match from table store:', err);
+    }
+
+    if (isFirebaseAuthReady()) {
       try {
-        await supabase
-          .from('team_matches')
-          .delete()
-          .eq('id', id);
+        await deleteTeamMatchFromFirestore(id);
       } catch (err) {
-        console.warn('Failed to delete match from Supabase:', err);
+        console.warn('Failed to delete match from Firestore:', err);
       }
     }
 
@@ -1516,7 +1638,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
     toast.success(`Partido contra ${rival} eliminado del calendario.`);
   };
 
-  const handleSaveActa = (e: React.FormEvent) => {
+  const handleSaveActa = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showActaModal) return;
 
@@ -1525,16 +1647,19 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
     const updated = matches.map(m => {
       if (m.id === showActaModal.id) {
+        const preservedFeedback = showActaModal.feedback_post_partido || m.feedback_post_partido || m.estadisticas?.feedback_post_partido;
         return {
           ...m,
           estado: 'Finalizado' as const,
           goles_favor: gf,
           goles_contra: gc,
           acta: showActaModal.acta || '',
+          feedback_post_partido: preservedFeedback,
           estadisticas: {
             ...(m.estadisticas || {}),
             jugadoras_stats: matchPlayerStats,
             cambios: substitutions,
+            feedback_post_partido: preservedFeedback,
             totales_equipo: {
               ...(m.estadisticas?.totales_equipo || {}),
               goles_favor: gf,
@@ -1546,7 +1671,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       return m;
     });
 
-    saveMatches(updated);
+    await saveMatches(updated);
     toast.success('Resultado, Acta y Estadísticas del partido actualizados correctamente.');
     setShowActaModal(null);
   };
@@ -1571,16 +1696,25 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       return;
     }
 
+    const latestExisting = matches.find(m => m.id === editingMatch.id);
+    const preservedFeedback =
+      editingMatch.feedback_post_partido ||
+      latestExisting?.feedback_post_partido ||
+      latestExisting?.estadisticas?.feedback_post_partido;
+
     const gf = editingMatch.estado === 'Finalizado' ? Number(editingMatch.goles_favor ?? 0) : undefined;
     const gc = editingMatch.estado === 'Finalizado' ? Number(editingMatch.goles_contra ?? 0) : undefined;
 
     const updatedStats = {
+      ...(latestExisting?.estadisticas || {}),
       ...(editingMatch.estadisticas || {}),
       lugar: editingMatch.lugar || '',
       hora_citacion: editingMatch.hora_citacion || '',
       equipacion: editingMatch.equipacion || '',
       observaciones: editingMatch.observaciones || '',
+      feedback_post_partido: preservedFeedback,
       totales_equipo: {
+        ...(latestExisting?.estadisticas?.totales_equipo || {}),
         ...(editingMatch.estadisticas?.totales_equipo || {}),
         goles_favor: gf ?? 0,
         goles_contra: gc ?? 0
@@ -1589,6 +1723,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
     const updatedMatch: Match = {
       ...editingMatch,
+      feedback_post_partido: preservedFeedback,
       goles_favor: gf,
       goles_contra: gc,
       acta: editingMatch.estado === 'Finalizado' ? (editingMatch.acta ?? '') : undefined,
@@ -1605,12 +1740,37 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
   const handleSaveStatsTracker = async (updatedMatch: Match) => {
     const updated = matches.map(m => m.id === updatedMatch.id ? updatedMatch : m);
     await saveMatches(updated);
-    setShowStatsTrackerModal(updatedMatch);
     window.dispatchEvent(new CustomEvent('lapoveda_matches_updated', { detail: { match: updatedMatch } }));
   };
 
   return (
     <div className="space-y-6">
+      {/* Cloud Sync Status Banner */}
+      <div className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 py-2.5 rounded-2xl border text-xs ${
+        cloudReady
+          ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300'
+          : 'bg-cyan-950/30 border-cyan-500/30 text-cyan-200'
+      }`}>
+        <div className="flex items-center gap-2 font-semibold">
+          <span className={`w-2 h-2 rounded-full ${cloudReady ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+          {cloudReady ? (
+            <span>Nube Firebase Firestore conectada ({auth.currentUser?.email}) — Partidos, estadísticas y feedback sincronizados.</span>
+          ) : (
+            <span>Guardado local activo • Conecta tu cuenta Google para sincronizar partidos, estadísticas y feedback en Firebase Firestore.</span>
+          )}
+        </div>
+        {!cloudReady && (
+          <Button
+            type="button"
+            onClick={handleConnectGoogleCloud}
+            disabled={cloudSyncing}
+            className="h-8 px-3 text-[11px] font-black uppercase bg-white hover:bg-slate-100 text-slate-950 rounded-xl cursor-pointer shrink-0"
+          >
+            {cloudSyncing ? 'Conectando...' : 'Conectar Google Firebase'}
+          </Button>
+        )}
+      </div>
+
       {/* Selector & Add */}
       <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-slate-900/60 border border-slate-900 p-4 rounded-2xl">
         <div className="w-full sm:w-auto flex flex-col gap-1.5">
