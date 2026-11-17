@@ -52,9 +52,13 @@ import { getTeamCompetitionConfig, COMPETITION_UPDATED_EVENT } from '@/lib/teamC
 import { syncTeamWithFederationFull } from '@/lib/liveRivalStats';
 import {
   fetchTeamMatchesFromFirestore,
+  findMatchesNeedingCloudSync,
+  getDeletedMatchIdsForTeam,
   isFirebaseAuthReady,
+  isMatchMarkedDeleted,
   mergeMatchRecords,
-  sanitizeFirestoreId
+  subscribeToTeamMatchesFromFirestore,
+  upsertTeamMatchesToFirestore
 } from '@/lib/firestoreMatches';
 
 interface TeamPlayer {
@@ -261,8 +265,10 @@ export default function Estadisticas() {
     // 2. Fetch Matches & Normalize Minutes according to official Category Duration (Infantil: 70', Cadete: 80', Juvenil/Senior: 90')
     const matchDuration = getCategoryMatchDuration(selectedTeam);
     const matchesKey = `team_matches_${selectedTeam}`;
+    const deletedIds = getDeletedMatchIdsForTeam(selectedTeam);
     const savedMatches = localStorage.getItem(matchesKey);
     let matchesList: Match[] = savedMatches ? JSON.parse(savedMatches) : [];
+    matchesList = matchesList.filter((m) => !isMatchMarkedDeleted(m, deletedIds));
     
     let matchesUpdated = false;
     matchesList = matchesList.map(m => {
@@ -719,21 +725,25 @@ export default function Estadisticas() {
     const syncCloudMatches = async () => {
       if (!isFirebaseAuthReady()) return;
       try {
-        const cloudMatches = await fetchTeamMatchesFromFirestore(selectedTeam);
-        if (Array.isArray(cloudMatches) && cloudMatches.length > 0) {
-          const matchesKey = `team_matches_${selectedTeam}`;
-          const localRaw = localStorage.getItem(matchesKey);
-          const localList = localRaw ? JSON.parse(localRaw) : [];
-          const deletedRaw = localStorage.getItem(`team_matches_deleted_${selectedTeam}`);
-          const deletedIds = new Set<string>(deletedRaw ? JSON.parse(deletedRaw) : []);
-          const filteredCloud = cloudMatches.filter(
-            (m: any) => !deletedIds.has(m.id) && !deletedIds.has(sanitizeFirestoreId(m.id))
-          );
-          const merged = mergeMatchRecords(filteredCloud, Array.isArray(localList) ? localList : []);
+        const cloudMatches = (await fetchTeamMatchesFromFirestore(selectedTeam)) || [];
+        const matchesKey = `team_matches_${selectedTeam}`;
+        const localRaw = localStorage.getItem(matchesKey);
+        const localList = localRaw ? JSON.parse(localRaw) : [];
+        const deletedIds = getDeletedMatchIdsForTeam(selectedTeam);
+        const merged = mergeMatchRecords(
+          cloudMatches,
+          Array.isArray(localList) ? localList : [],
+          deletedIds
+        );
+        if (merged.length > 0 || localRaw !== null) {
           try {
             localStorage.setItem(matchesKey, JSON.stringify(merged));
           } catch {}
           loadAllData();
+        }
+        const toBackfill = findMatchesNeedingCloudSync(merged, cloudMatches);
+        if (toBackfill.length > 0) {
+          upsertTeamMatchesToFirestore(toBackfill, selectedTeam).catch(() => {});
         }
       } catch (err) {
         console.warn('Could not sync cloud matches in Estadisticas:', err);
@@ -741,6 +751,22 @@ export default function Estadisticas() {
     };
 
     syncCloudMatches();
+
+    const unsubLive = subscribeToTeamMatchesFromFirestore(selectedTeam, (liveCloudMatches) => {
+      const matchesKey = `team_matches_${selectedTeam}`;
+      const localRaw = localStorage.getItem(matchesKey);
+      const localList = localRaw ? JSON.parse(localRaw) : [];
+      const deletedIds = getDeletedMatchIdsForTeam(selectedTeam);
+      const merged = mergeMatchRecords(
+        liveCloudMatches,
+        Array.isArray(localList) ? localList : [],
+        deletedIds
+      );
+      try {
+        localStorage.setItem(matchesKey, JSON.stringify(merged));
+      } catch {}
+      loadAllData();
+    });
 
     const handleUpdate = () => {
       loadAllData();
@@ -755,6 +781,7 @@ export default function Estadisticas() {
     window.addEventListener(ACTAS_DATA_UPDATED, handleUpdate);
     window.addEventListener(COMPETITION_UPDATED_EVENT, handleUpdate);
     return () => {
+      unsubLive();
       window.removeEventListener('storage', handleUpdate);
       window.removeEventListener('lapoveda_matches_updated', handleUpdate);
       window.removeEventListener('lapoveda_firebase_auth_ready', handleFbAuthReady);

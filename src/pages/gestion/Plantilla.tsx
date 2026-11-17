@@ -3,7 +3,13 @@ import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
 import { Player, CLUB_TEAMS, POSITION_STRUCTURED_ATTRIBUTES, COMMON_ATTRIBUTES } from '@/types';
 import { getCategoryMatchDuration } from '@/lib/matchDuration';
-import { mergeMatchRecords, sanitizeFirestoreId } from '@/lib/firestoreMatches';
+import {
+  isFirebaseAuthReady,
+  isMatchMarkedDeleted,
+  mergeMatchRecords,
+  sanitizeFirestoreId,
+  upsertTeamMatchesToFirestore,
+} from '@/lib/firestoreMatches';
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 import { 
   Users, 
@@ -2855,11 +2861,12 @@ export default function Plantilla() {
     const foundMatches: any[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith('team_matches_')) {
+      if (key && key.startsWith('team_matches_') && !key.startsWith('team_matches_deleted_')) {
         try {
           const matchesArr = JSON.parse(localStorage.getItem(key) || '[]');
           if (Array.isArray(matchesArr)) {
             matchesArr.forEach((m: any) => {
+              if (!m || typeof m !== 'object' || isMatchMarkedDeleted(m)) return;
               const pStat = m.estadisticas?.jugadoras_stats?.find((s: any) => 
                 s.playerId === player.id || 
                 (s.id && s.id === player.id) ||
@@ -3840,11 +3847,8 @@ export default function Plantilla() {
 
         for (let i = 0; i < updatedMatches.length; i++) {
           const match = updatedMatches[i];
-          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(match.id);
-          
-          let targetId = match.id;
-          if (!isUuid) {
-            targetId = crypto.randomUUID();
+          const targetId = sanitizeFirestoreId(match.id);
+          if (targetId !== match.id) {
             updatedMatches[i] = { ...match, id: targetId };
             matchesChanges = true;
           }
@@ -3878,6 +3882,14 @@ export default function Plantilla() {
 
         if (matchesChanges) {
           localStorage.setItem(matchesKey, JSON.stringify(updatedMatches));
+        }
+
+        if (isFirebaseAuthReady() && updatedMatches.length > 0) {
+          try {
+            await upsertTeamMatchesToFirestore(updatedMatches, selectedTeam);
+          } catch (fbErr) {
+            console.warn('Error syncing matches from Plantilla to Firestore:', fbErr);
+          }
         }
       }
 

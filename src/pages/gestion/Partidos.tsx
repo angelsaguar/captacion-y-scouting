@@ -4,10 +4,15 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { auth, googleProvider } from '@/lib/firebase';
 import {
   deleteTeamMatchFromFirestore,
+  ensurePreSyncMatchSafetyBackup,
   fetchTeamMatchesFromFirestore,
+  findMatchesNeedingCloudSync,
+  getDeletedMatchIdsForTeam,
   isFirebaseAuthReady,
   mergeMatchRecords,
+  removeDeletedMatchTombstone,
   sanitizeFirestoreId,
+  subscribeToTeamMatchesFromFirestore,
   upsertMatchPlansToFirestore,
   upsertTeamMatchesToFirestore
 } from '@/lib/firestoreMatches';
@@ -214,11 +219,18 @@ export default function Partidos() {
       setCloudReady(isFirebaseAuthReady());
       setCloudReloadNonce(n => n + 1);
     };
+    const handleGlobalMatchesUpdated = (e: any) => {
+      if (e?.detail?.team === 'ALL') {
+        setCloudReloadNonce(n => n + 1);
+      }
+    };
     window.addEventListener(COMPETITION_UPDATED_EVENT, handleCompUpdated);
     window.addEventListener('lapoveda_firebase_auth_ready', handleFbAuthReady);
+    window.addEventListener('lapoveda_matches_updated', handleGlobalMatchesUpdated);
     return () => {
       window.removeEventListener(COMPETITION_UPDATED_EVENT, handleCompUpdated);
       window.removeEventListener('lapoveda_firebase_auth_ready', handleFbAuthReady);
+      window.removeEventListener('lapoveda_matches_updated', handleGlobalMatchesUpdated);
     };
   }, []);
 
@@ -1232,15 +1244,10 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       setPlayers(cleanDeduplicatedRoster);
       localStorage.setItem(rosterKey, JSON.stringify(cleanDeduplicatedRoster));
 
+      ensurePreSyncMatchSafetyBackup();
+
       const key = `team_matches_${selectedTeam}`;
-      const deletedMatchesKey = `team_matches_deleted_${selectedTeam}`;
-      let deletedMatchIds = new Set<string>();
-      try {
-        const deletedRaw = localStorage.getItem(deletedMatchesKey);
-        if (deletedRaw) {
-          deletedMatchIds = new Set(JSON.parse(deletedRaw).map(String));
-        }
-      } catch {}
+      const deletedMatchIds = getDeletedMatchIdsForTeam(selectedTeam);
 
       let localMatches: Match[] = [];
       const savedLocal = localStorage.getItem(key);
@@ -1302,47 +1309,54 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
         }
       }
 
+      const latestDeletedIds = getDeletedMatchIdsForTeam(selectedTeam);
       const merged = mergeMatchRecords(
         cloudMatches,
-        mergeMatchRecords(localMatches, dbMatches)
-      ).filter(m => !deletedMatchIds.has(String(m.id)));
+        mergeMatchRecords(localMatches, dbMatches, latestDeletedIds),
+        latestDeletedIds
+      );
 
       if (merged.length > 0 || savedLocal !== null) {
         setMatches(merged);
         localStorage.setItem(key, JSON.stringify(merged));
-        if (isFirebaseAuthReady() && localMatches.length > 0 && cloudMatches.length === 0) {
-          upsertTeamMatchesToFirestore(merged, selectedTeam).catch(err =>
-            console.warn('Background Firestore backfill failed:', err)
-          );
+        if (isFirebaseAuthReady()) {
+          const toBackfill = findMatchesNeedingCloudSync(merged, cloudMatches);
+          if (toBackfill.length > 0) {
+            upsertTeamMatchesToFirestore(toBackfill, selectedTeam).catch(err =>
+              console.warn('Background Firestore backfill failed:', err)
+            );
+          }
         }
       } else {
-        const teamSlug = sanitizeFirestoreId(selectedTeam.toLowerCase()).slice(0, 24) || 'club';
-        const defaultMatchesList: Match[] = [
-          { 
-            id: `m-coslada-${teamSlug}`, 
-            rival: 'COSLADA', 
-            fecha: '2026-09-12', 
-            hora: '13:15', 
-            tipo: 'Local', 
-            competicion: 'Amistoso', 
-            estado: 'Programado',
-            lugar: 'Campo Municipal (Principal)',
-            hora_citacion: '12:00 h (1h 15m antes)',
-            equipacion: '1ª Equipación Oficial (Camiseta Blanca, Pantalón Verde, Medias Verdes) + Chándal',
-            observaciones: '• Acudir con puntualidad a la hora fijada.\n• Confirmar recepción del mensaje en el grupo de WhatsApp.'
-          },
-          { id: `m1-${teamSlug}`, rival: 'A.D. Arganda', fecha: new Date().toISOString().split('T')[0], hora: '12:00', tipo: 'Local', competicion: 'Liga', estado: 'Programado' },
-          { id: `m2-${teamSlug}`, rival: 'F.C. Rivas Vaciamadrid', fecha: '2026-05-15', hora: '11:30', tipo: 'Visitante', competicion: 'Liga', estado: 'Finalizado', goles_favor: 3, goles_contra: 1, acta: 'Excelente partido de posesión y presión alta. Destacó el juego defensivo por bandas.' }
-        ];
-        const defaults: Match[] = defaultMatchesList.filter(m => !deletedMatchIds.has(String(m.id)));
-        try {
-          localStorage.setItem(key, JSON.stringify(defaults));
-        } catch {}
-        setMatches(defaults);
+        setMatches([]);
       }
     };
 
     fetchTeamRosterAndMatches();
+
+    // Real-time Firestore listener so edits from Mac or external computer reflect immediately
+    const unsubLiveMatches = subscribeToTeamMatchesFromFirestore(selectedTeam, (liveCloudMatches) => {
+      const key = `team_matches_${selectedTeam}`;
+      const deletedIds = getDeletedMatchIdsForTeam(selectedTeam);
+      let currentLocal: Match[] = [];
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) currentLocal = parsed;
+        }
+      } catch {}
+
+      const mergedLive = mergeMatchRecords(liveCloudMatches, currentLocal, deletedIds);
+      setMatches(mergedLive);
+      try {
+        localStorage.setItem(key, JSON.stringify(mergedLive));
+      } catch {}
+    });
+
+    return () => {
+      unsubLiveMatches();
+    };
   }, [selectedTeam, cloudReloadNonce]);
 
   // Sync modal form states when showActaModal is opened/selected
@@ -1445,6 +1459,9 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
   };
 
   const saveMatches = async (updated: Match[], targetMatchId?: string) => {
+    if (targetMatchId) {
+      removeDeletedMatchTombstone(selectedTeam, targetMatchId);
+    }
     const normalizedUpdated = updated.map(sanitizeMatchForStorage);
 
     setMatches(normalizedUpdated);
@@ -1659,37 +1676,20 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
     if (!deletingMatch) return;
     const { id, rival } = deletingMatch;
 
-    try {
-      const deletedMatchesKey = `team_matches_deleted_${selectedTeam}`;
-      const existingDeleted = JSON.parse(localStorage.getItem(deletedMatchesKey) || '[]');
-      const nextDeleted = Array.from(new Set([...(Array.isArray(existingDeleted) ? existingDeleted : []), String(id)]));
-      localStorage.setItem(deletedMatchesKey, JSON.stringify(nextDeleted));
-    } catch {}
-
-    const updated = matches.filter(m => m.id !== id);
+    const updated = matches.filter(m => m.id !== id && sanitizeFirestoreId(m.id) !== sanitizeFirestoreId(id));
     setMatches(updated);
     localStorage.setItem(`team_matches_${selectedTeam}`, JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent('lapoveda_matches_updated', { detail: { team: selectedTeam } }));
 
+    // Synchronize deletion via soft-delete tombstone ("marca de baja") without physically deleting historical records
     try {
-      await supabase
-        .from('team_matches')
-        .delete()
-        .eq('id', id);
+      await deleteTeamMatchFromFirestore(id, selectedTeam);
     } catch (err) {
-      console.warn('Failed to delete match from table store:', err);
-    }
-
-    if (isFirebaseAuthReady()) {
-      try {
-        await deleteTeamMatchFromFirestore(id);
-      } catch (err) {
-        console.warn('Failed to delete match from Firestore:', err);
-      }
+      console.warn('Failed to mark match as deleted in Firestore:', err);
     }
 
     setDeletingMatch(null);
-    toast.success(`Partido contra ${rival} eliminado del calendario.`);
+    toast.success(`Partido contra ${rival} dado de baja en el calendario (histórico conservado).`);
   };
 
   const handleSaveActa = async (e: React.FormEvent) => {

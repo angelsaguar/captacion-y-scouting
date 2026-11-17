@@ -28,6 +28,15 @@ import {
   verifyAndRestoreBackupInIsolatedSandbox,
   verifyFirebaseProjectConfig,
 } from './src/lib/encryptedBackup';
+import {
+  computeMatchRichnessScore,
+  findMatchesNeedingCloudSync,
+  findPlansNeedingCloudSync,
+  isMatchMarkedDeleted,
+  mergeMatchPlanRecords,
+  mergeMatchRecords,
+  mergeTwoMatches,
+} from './src/lib/firestoreMatches';
 
 async function isRealFirestoreEmulatorAvailable(): Promise<boolean> {
   try {
@@ -399,6 +408,222 @@ describe('Auditoría de Seguridad Previa a Publicación – Captación y Scoutin
       } finally {
         await testEnv.cleanup();
       }
+    });
+  });
+
+  describe('6. Sincronización de Partidos y Planes de Partido entre Mac (Admin) y Ordenador Externo (Alejandro)', () => {
+    it('elimina el filtro restrictivo ownerId en las consultas de Firestore para que Alejandro vea los mismos partidos y planes que el Administrador', () => {
+      const firestoreMatchesCode = fs.readFileSync(
+        path.resolve(process.cwd(), 'src/lib/firestoreMatches.ts'),
+        'utf-8'
+      );
+      assert.equal(
+        firestoreMatchesCode.includes("where('ownerId', '==', user.uid)"),
+        false,
+        'No debe existir filtro restrictivo por ownerId en las consultas de lectura'
+      );
+      assert.equal(
+        firestoreMatchesCode.includes("deleteDoc(doc(db, 'team_matches'"),
+        false,
+        'Las bajas deben sincronizarse mediante marcas de baja sin borrado físico deleteDoc en team_matches'
+      );
+      assert.equal(
+        firestoreMatchesCode.includes("deleteDoc(doc(db, 'match_plans'"),
+        false,
+        'Las bajas deben sincronizarse mediante marcas de baja sin borrado físico deleteDoc en match_plans'
+      );
+    });
+
+    it('conserva íntegramente estadísticas en vivo, goles, convocatorias y feedback post-partido sin sobrescribir registros más completos con versiones antiguas', () => {
+      // Partido completo registrado en el Mac del Administrador (ej. INFANTIL B 4 - 0 CD CIUDAD DE MADRID con 4 goles de Alejandro Yubero #2)
+      const macRichMatch = {
+        id: 'match-infantil-b-ciudad-madrid',
+        team: 'INFANTIL B',
+        rival: 'CD CIUDAD DE MADRID',
+        fecha: '2026-11-14',
+        hora: '13:00',
+        tipo: 'Local',
+        competicion: 'Liga',
+        estado: 'Finalizado',
+        goles_favor: 4,
+        goles_contra: 0,
+        convocatoria: ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10', 'p11'],
+        _updatedAtMs: 1763370000000,
+        feedback_post_partido: {
+          valoracion_general: 'Excelente',
+          resumen_mister: 'Gran partido colectivo y efectividad ofensiva.',
+        },
+        estadisticas: {
+          has_live_stats: true,
+          totales_equipo: {
+            goles_favor: 4,
+            goles_contra: 0,
+            corners_favor: 5,
+            recuperaciones_balon: 12,
+          },
+          jugadoras_stats: [
+            {
+              playerId: 'p2',
+              nombre: 'ALEJANDRO',
+              apellidos: 'YUBERO SANCHEZ',
+              dorsal: '2',
+              posicion: 'MC',
+              titular: true,
+              minutos: 70,
+              goles_metidos: 4,
+              asistencias: 0,
+            },
+          ],
+        },
+      };
+
+      // Versión incompleta / antigua que pudiera existir en otro dispositivo o en un stub de calendario
+      const incompleteStubMatch = {
+        id: 'match-infantil-b-ciudad-madrid',
+        team: 'INFANTIL B',
+        rival: 'CD CIUDAD DE MADRID',
+        fecha: '2026-11-14',
+        hora: '13:00',
+        tipo: 'Local',
+        competicion: 'Liga',
+        estado: 'Programado',
+        goles_favor: undefined,
+        goles_contra: undefined,
+        convocatoria: [],
+        _updatedAtMs: 1763300000000,
+        estadisticas: {
+          jugadoras_stats: [],
+        },
+      };
+
+      assert.equal(
+        computeMatchRichnessScore(macRichMatch) > computeMatchRichnessScore(incompleteStubMatch),
+        true
+      );
+
+      // Fusión en ambos sentidos (Mac -> Nube y Nube -> Ordenador de Alejandro)
+      const mergedA = mergeTwoMatches(incompleteStubMatch, macRichMatch);
+      const mergedB = mergeTwoMatches(macRichMatch, incompleteStubMatch);
+
+      for (const merged of [mergedA, mergedB]) {
+        assert.equal(merged.estado, 'Finalizado');
+        assert.equal(merged.goles_favor, 4);
+        assert.equal(merged.goles_contra, 0);
+        assert.equal(merged.convocatoria.length, 11);
+        assert.equal(merged.estadisticas.jugadoras_stats.length, 1);
+        assert.equal(merged.estadisticas.jugadoras_stats[0].nombre, 'ALEJANDRO');
+        assert.equal(merged.estadisticas.jugadoras_stats[0].goles_metidos, 4);
+        assert.equal(merged.feedback_post_partido?.valoracion_general, 'Excelente');
+      }
+    });
+
+    it('detecta todos los partidos históricos pendientes de subir a Firestore aunque ya exista algún partido en la nube y deduplica por clave natural', () => {
+      const cloudMatches = [
+        {
+          id: 'match-1',
+          rival: 'Rival 1',
+          fecha: '2026-10-01',
+          tipo: 'Local',
+          estado: 'Finalizado',
+          goles_favor: 2,
+          goles_contra: 1,
+          _updatedAtMs: 1000,
+        },
+      ];
+
+      const macLocalMatches = [
+        {
+          id: 'match-1',
+          rival: 'Rival 1',
+          fecha: '2026-10-01',
+          tipo: 'Local',
+          estado: 'Finalizado',
+          goles_favor: 2,
+          goles_contra: 1,
+          _updatedAtMs: 1000,
+        },
+        {
+          id: 'match-2-historico',
+          rival: 'CD CIUDAD DE MADRID',
+          fecha: '2026-11-14',
+          tipo: 'Local',
+          estado: 'Finalizado',
+          goles_favor: 4,
+          goles_contra: 0,
+          _updatedAtMs: 2000,
+        },
+        // Mismo partido creado desde calendario con otro ID pero sin estadísticas
+        {
+          id: 'calendar-stub-dup',
+          rival: 'C.D. Ciudad de Madrid',
+          fecha: '2026-11-14',
+          tipo: 'Local',
+          estado: 'Programado',
+          _updatedAtMs: 1500,
+        },
+      ];
+
+      const merged = mergeMatchRecords(cloudMatches, macLocalMatches);
+      // Debe conservar los 2 partidos reales sin duplicar el partido del 2026-11-14
+      assert.equal(merged.length, 2);
+      const ciudadMatch = merged.find((m) => m.fecha === '2026-11-14');
+      assert.equal(ciudadMatch?.goles_favor, 4);
+      assert.equal(ciudadMatch?.estado, 'Finalizado');
+
+      // Debe detectar que match-2-historico necesita subirse a Firestore aunque cloudMatches ya tenía 1 partido
+      const pendingUpload = findMatchesNeedingCloudSync(merged, cloudMatches);
+      assert.equal(pendingUpload.length, 1);
+      assert.equal(pendingUpload[0].fecha, '2026-11-14');
+      assert.equal(pendingUpload[0].goles_favor, 4);
+    });
+
+    it('sincroniza las eliminaciones mediante marcas de baja sin perder el histórico y fusiona planes de partido tácticos entre ambos ordenadores', () => {
+      const matches = [
+        { id: 'm-keep', rival: 'Rival Activo', fecha: '2026-11-10', tipo: 'Local' },
+        { id: 'm-soft-deleted', rival: 'Rival Baja', fecha: '2026-11-03', tipo: 'Visitante' },
+      ];
+      const deletedTombstones = new Set<string>(['m-soft-deleted']);
+
+      assert.equal(isMatchMarkedDeleted(matches[0], deletedTombstones), false);
+      assert.equal(isMatchMarkedDeleted(matches[1], deletedTombstones), true);
+      assert.equal(
+        isMatchMarkedDeleted({ id: 'm-cloud-flag', estadisticas: { isDeleted: true } }),
+        true
+      );
+
+      const activeMatches = mergeMatchRecords(matches, [], deletedTombstones);
+      assert.equal(activeMatches.length, 1);
+      assert.equal(activeMatches[0].id, 'm-keep');
+
+      // Planes de partido: combina planes de la nube y planes locales sin que 1 plan en la nube borre los locales
+      const cloudPlans = [
+        {
+          id: 'plan-1',
+          rivalName: 'CD Ciudad de Madrid',
+          fechaPartido: '2026-11-14',
+          sistema: '1-4-3-3',
+          sistemaRival: '1-4-4-2',
+          objetivos_tacticos: 'Presión tras pérdida',
+          _updatedAtMs: 1000,
+        },
+      ];
+      const localPlans = [
+        {
+          id: 'plan-2-local',
+          rivalName: 'AD Arganda',
+          fechaPartido: '2026-11-21',
+          sistema: '1-4-2-3-1',
+          sistemaRival: '1-4-4-2',
+          objetivos_tacticos: 'Salida de 3 con pivote',
+          _updatedAtMs: 2000,
+        },
+      ];
+
+      const mergedPlans = mergeMatchPlanRecords(cloudPlans, localPlans);
+      assert.equal(mergedPlans.length, 2);
+      const plansToBackfill = findPlansNeedingCloudSync(mergedPlans, cloudPlans);
+      assert.equal(plansToBackfill.length, 1);
+      assert.equal(plansToBackfill[0].id, 'plan-2-local');
     });
   });
 });

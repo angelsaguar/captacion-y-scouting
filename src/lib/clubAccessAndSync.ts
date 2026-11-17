@@ -11,6 +11,21 @@ import {
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { supabase } from './supabase';
 import { CLUB_TEAMS } from '@/types';
+import {
+  addDeletedMatchTombstone,
+  addDeletedPlanTombstone,
+  ensurePreSyncMatchSafetyBackup,
+  fetchMatchPlansFromFirestore,
+  fetchTeamMatchesFromFirestore,
+  findMatchesNeedingCloudSync,
+  findPlansNeedingCloudSync,
+  getDeletedMatchIdsForTeam,
+  getDeletedPlanIdsForTeam,
+  mergeMatchPlanRecords,
+  mergeMatchRecords,
+  upsertMatchPlansToFirestore,
+  upsertTeamMatchesToFirestore,
+} from './firestoreMatches';
 
 export const ADMIN_EMAIL = 'angel.saguar@telefonica.net';
 export const ALEJANDRO_EMAIL = 'asaguar04@gmail.com';
@@ -485,6 +500,9 @@ export async function syncAllClubDataWithFirestore(options?: {
   let pushed = 0;
   let pulled = 0;
 
+  // Guarantee non-destructive pre-sync backup before any cross-device merge
+  ensurePreSyncMatchSafetyBackup();
+
   // 1. PULL from Firestore /club_sync for permitted modules
   if (direction === 'pull' || direction === 'bidirectional') {
     try {
@@ -535,6 +553,44 @@ export async function syncAllClubDataWithFirestore(options?: {
             localStorage.setItem(key, JSON.stringify(items));
             pulled++;
           }
+        } else if (data.category === 'team_matches_deleted' && data.team && Array.isArray(items)) {
+          for (const delId of items) {
+            if (delId) addDeletedMatchTombstone(data.team, String(delId));
+          }
+          pulled++;
+        } else if (data.category === 'team_plans_deleted' && data.team && Array.isArray(items)) {
+          for (const delId of items) {
+            if (delId) addDeletedPlanTombstone(data.team, String(delId));
+          }
+          pulled++;
+        } else if (data.category === 'team_matches' && data.team && Array.isArray(items)) {
+          const key = `team_matches_${data.team}`;
+          const localRaw = localStorage.getItem(key);
+          const localArr = localRaw ? JSON.parse(localRaw) : [];
+          const deletedIds = getDeletedMatchIdsForTeam(data.team);
+          const merged = mergeMatchRecords(
+            items,
+            Array.isArray(localArr) ? localArr : [],
+            deletedIds
+          );
+          if (merged.length > 0) {
+            localStorage.setItem(key, JSON.stringify(merged));
+            pulled++;
+          }
+        } else if (data.category === 'team_gameplans' && data.team && Array.isArray(items)) {
+          const key = `team_gameplans_${data.team}`;
+          const localRaw = localStorage.getItem(key);
+          const localArr = localRaw ? JSON.parse(localRaw) : [];
+          const deletedPlanIds = getDeletedPlanIdsForTeam(data.team);
+          const merged = mergeMatchPlanRecords(
+            items,
+            Array.isArray(localArr) ? localArr : [],
+            deletedPlanIds
+          );
+          if (merged.length > 0) {
+            localStorage.setItem(key, JSON.stringify(merged));
+            pulled++;
+          }
         } else if (data.category === 'competitions_config' && items && typeof items === 'object') {
           const key = 'club_teams_competition_configs_v2';
           if (!localStorage.getItem(key)) {
@@ -548,10 +604,10 @@ export async function syncAllClubDataWithFirestore(options?: {
     }
   }
 
-  // 2. PUSH local state to Firestore /club_sync for permitted modules
-  if (direction === 'push' || direction === 'bidirectional') {
+  // 2. PUSH & BIDIRECTIONAL RECONCILIATION with Firestore (/club_sync, /team_matches, /match_plans)
+  if (direction === 'push' || direction === 'pull' || direction === 'bidirectional') {
     try {
-      if (allowedModules.includes('scouting')) {
+      if ((direction === 'push' || direction === 'bidirectional') && allowedModules.includes('scouting')) {
         const { data: playersData } = await supabase.from('players').select('*');
         if (Array.isArray(playersData) && playersData.length > 0) {
           // Strip base64 photos from cloud sync payload to stay well below 1MB Firestore limit
@@ -584,7 +640,7 @@ export async function syncAllClubDataWithFirestore(options?: {
         }
       }
 
-      if (allowedModules.includes('needs')) {
+      if ((direction === 'push' || direction === 'bidirectional') && allowedModules.includes('needs')) {
         const needsRaw = localStorage.getItem('ud_lapoveda_needs_backup');
         if (needsRaw) {
           await upsertClubSyncDoc({
@@ -599,59 +655,226 @@ export async function syncAllClubDataWithFirestore(options?: {
       }
 
       if (allowedModules.includes('gestion-equipo')) {
-        const coachesRaw = localStorage.getItem('ud_lapoveda_coaches_backup');
-        if (coachesRaw) {
-          await upsertClubSyncDoc({
-            id: 'club_coaches_master',
-            module: 'gestion-equipo',
-            category: 'club_coaches',
-            team: 'ALL',
-            items: JSON.parse(coachesRaw),
-          });
-          pushed++;
+        if (direction === 'push' || direction === 'bidirectional') {
+          const coachesRaw = localStorage.getItem('ud_lapoveda_coaches_backup');
+          if (coachesRaw) {
+            await upsertClubSyncDoc({
+              id: 'club_coaches_master',
+              module: 'gestion-equipo',
+              category: 'club_coaches',
+              team: 'ALL',
+              items: JSON.parse(coachesRaw),
+            });
+            pushed++;
+          }
         }
 
-        for (const team of CLUB_TEAMS) {
+        // Gather all teams from CLUB_TEAMS plus any custom team_matches_* keys in localStorage
+        const allTeamsSet = new Set<string>(CLUB_TEAMS);
+        if (typeof localStorage !== 'undefined') {
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith('team_matches_') && !k.startsWith('team_matches_deleted_')) {
+              const tName = k.replace('team_matches_', '').trim();
+              if (tName) allTeamsSet.add(tName);
+            }
+          }
+        }
+
+        // Also read local table store for any matches/plans stored there
+        let allDbMatches: any[] = [];
+        let allDbPlans: any[] = [];
+        try {
+          const { data: dbM } = await supabase.from('team_matches').select('*');
+          if (Array.isArray(dbM)) allDbMatches = dbM;
+        } catch {}
+        try {
+          const { data: dbP } = await supabase.from('match_plans').select('*');
+          if (Array.isArray(dbP)) allDbPlans = dbP;
+        } catch {}
+
+        for (const team of Array.from(allTeamsSet)) {
           const slug = sanitizeDocId(team.toLowerCase());
-          const rosterRaw = localStorage.getItem(`team_roster_${team}`);
-          if (rosterRaw) {
-            const parsed = JSON.parse(rosterRaw);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              const lightRoster = parsed.map((p: any) => {
-                const { foto_url, ...rest } = p;
-                return typeof foto_url === 'string' && !foto_url.startsWith('data:')
-                  ? { ...rest, foto_url }
-                  : rest;
-              });
-              await upsertClubSyncDoc({
-                id: `roster_${slug}`,
-                module: 'gestion-equipo',
-                category: 'team_roster',
-                team,
-                items: lightRoster,
-              });
-              pushed++;
+
+          if (direction === 'push' || direction === 'bidirectional') {
+            const rosterRaw = localStorage.getItem(`team_roster_${team}`);
+            if (rosterRaw) {
+              const parsed = JSON.parse(rosterRaw);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                const lightRoster = parsed.map((p: any) => {
+                  const { foto_url, ...rest } = p;
+                  return typeof foto_url === 'string' && !foto_url.startsWith('data:')
+                    ? { ...rest, foto_url }
+                    : rest;
+                });
+                await upsertClubSyncDoc({
+                  id: `roster_${slug}`,
+                  module: 'gestion-equipo',
+                  category: 'team_roster',
+                  team,
+                  items: lightRoster,
+                });
+                pushed++;
+              }
+            }
+
+            const sessionsRaw = localStorage.getItem(`team_sessions_${team}`);
+            if (sessionsRaw) {
+              const parsed = JSON.parse(sessionsRaw);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                await upsertClubSyncDoc({
+                  id: `sessions_${slug}`,
+                  module: 'gestion-equipo',
+                  category: 'team_sessions',
+                  team,
+                  items: parsed,
+                });
+                pushed++;
+              }
             }
           }
 
-          const sessionsRaw = localStorage.getItem(`team_sessions_${team}`);
-          if (sessionsRaw) {
-            const parsed = JSON.parse(sessionsRaw);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              await upsertClubSyncDoc({
-                id: `sessions_${slug}`,
-                module: 'gestion-equipo',
-                category: 'team_sessions',
-                team,
-                items: parsed,
-              });
-              pushed++;
+          // --- Bidirectional reconciliation of Matches (/team_matches + localStorage + club_sync) ---
+          try {
+            const deletedMatchIds = getDeletedMatchIdsForTeam(team);
+            const localMatchesRaw = localStorage.getItem(`team_matches_${team}`);
+            const localMatches: any[] = localMatchesRaw ? JSON.parse(localMatchesRaw) : [];
+            const teamDbMatches = allDbMatches.filter(
+              (m) => (m.team || m.team_id) === team
+            );
+
+            let cloudMatches: any[] = [];
+            if (direction === 'pull' || direction === 'bidirectional') {
+              const fetched = await fetchTeamMatchesFromFirestore(team);
+              if (Array.isArray(fetched)) {
+                cloudMatches = fetched;
+                if (cloudMatches.length > 0) pulled++;
+              }
             }
+
+            const mergedMatches = mergeMatchRecords(
+              cloudMatches,
+              mergeMatchRecords(
+                Array.isArray(localMatches) ? localMatches : [],
+                teamDbMatches,
+                deletedMatchIds
+              ),
+              deletedMatchIds
+            );
+
+            if (mergedMatches.length > 0 || localMatchesRaw !== null) {
+              localStorage.setItem(`team_matches_${team}`, JSON.stringify(mergedMatches));
+            }
+
+            if (direction === 'push' || direction === 'bidirectional') {
+              const matchesToPush = findMatchesNeedingCloudSync(mergedMatches, cloudMatches);
+              if (matchesToPush.length > 0) {
+                await upsertTeamMatchesToFirestore(matchesToPush, team);
+                pushed += matchesToPush.length;
+              }
+
+              if (mergedMatches.length > 0) {
+                await upsertClubSyncDoc({
+                  id: `matches_${slug}`,
+                  module: 'gestion-equipo',
+                  category: 'team_matches',
+                  team,
+                  items: mergedMatches,
+                });
+              }
+
+              if (deletedMatchIds.size > 0) {
+                await upsertClubSyncDoc({
+                  id: `deleted_matches_${slug}`,
+                  module: 'gestion-equipo',
+                  category: 'team_matches_deleted',
+                  team,
+                  items: Array.from(deletedMatchIds),
+                });
+              }
+            }
+          } catch (matchSyncErr) {
+            console.warn(`Match sync skipped for ${team}:`, matchSyncErr);
+          }
+
+          // --- Bidirectional reconciliation of Match Plans (/match_plans + localStorage + club_sync) ---
+          try {
+            const deletedPlanIds = getDeletedPlanIdsForTeam(team);
+            const localPlansRaw = localStorage.getItem(`team_gameplans_${team}`);
+            const localPlans: any[] = localPlansRaw ? JSON.parse(localPlansRaw) : [];
+            const teamDbPlans = allDbPlans
+              .filter((p) => p.team === team)
+              .map((item) => ({
+                id: item.id,
+                matchId: '',
+                rivalName: item.rival_name || item.rivalName,
+                fechaPartido: item.fecha_partido || item.fechaPartido,
+                sistema: item.sistema,
+                sistemaRival: item.sistema_rival || item.sistemaRival,
+                convocatoria: item.convocatoria || [],
+                objetivos_tacticos: item.objetivos_tacticos || '',
+                alineacion_propuesta: item.alineacion_propuesta || '',
+                puntos_fuertes_rival: item.puntos_fuertes_rival || '',
+                balon_parado: item.balon_parado || '',
+              }));
+
+            let cloudPlans: any[] = [];
+            if (direction === 'pull' || direction === 'bidirectional') {
+              const fetchedPlans = await fetchMatchPlansFromFirestore(team);
+              if (Array.isArray(fetchedPlans)) {
+                cloudPlans = fetchedPlans;
+                if (cloudPlans.length > 0) pulled++;
+              }
+            }
+
+            const mergedPlans = mergeMatchPlanRecords(
+              cloudPlans,
+              mergeMatchPlanRecords(
+                Array.isArray(localPlans) ? localPlans : [],
+                teamDbPlans,
+                deletedPlanIds
+              ),
+              deletedPlanIds
+            );
+
+            if (mergedPlans.length > 0 || localPlansRaw !== null) {
+              localStorage.setItem(`team_gameplans_${team}`, JSON.stringify(mergedPlans));
+            }
+
+            if (direction === 'push' || direction === 'bidirectional') {
+              const plansToPush = findPlansNeedingCloudSync(mergedPlans, cloudPlans);
+              if (plansToPush.length > 0) {
+                await upsertMatchPlansToFirestore(plansToPush, team);
+                pushed += plansToPush.length;
+              }
+
+              if (mergedPlans.length > 0) {
+                await upsertClubSyncDoc({
+                  id: `gameplans_${slug}`,
+                  module: 'gestion-equipo',
+                  category: 'team_gameplans',
+                  team,
+                  items: mergedPlans,
+                });
+              }
+
+              if (deletedPlanIds.size > 0) {
+                await upsertClubSyncDoc({
+                  id: `deleted_plans_${slug}`,
+                  module: 'gestion-equipo',
+                  category: 'team_plans_deleted',
+                  team,
+                  items: Array.from(deletedPlanIds),
+                });
+              }
+            }
+          } catch (planSyncErr) {
+            console.warn(`Match plan sync skipped for ${team}:`, planSyncErr);
           }
         }
       }
 
-      if (allowedModules.includes('estadisticas-rivales')) {
+      if ((direction === 'push' || direction === 'bidirectional') && allowedModules.includes('estadisticas-rivales')) {
         const compRaw = localStorage.getItem('club_teams_competition_configs_v2');
         if (compRaw) {
           await upsertClubSyncDoc({
@@ -665,9 +888,15 @@ export async function syncAllClubDataWithFirestore(options?: {
         }
       }
     } catch (err) {
-      console.warn('Push to /club_sync skipped or partial:', err);
+      console.warn('Push/Reconciliation with Firestore skipped or partial:', err);
     }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('lapoveda_matches_updated', { detail: { team: 'ALL' } }));
+    window.dispatchEvent(new CustomEvent('lapoveda_plans_updated', { detail: { team: 'ALL' } }));
   }
 
   return { pushed, pulled };
 }
+

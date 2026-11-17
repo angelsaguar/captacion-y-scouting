@@ -37,6 +37,11 @@ import {
   LayoutDashboard
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import {
+  isFirebaseAuthReady,
+  sanitizeFirestoreId,
+  upsertMatchPlansToFirestore,
+} from '@/lib/firestoreMatches';
 import { toast } from 'sonner';
 
 interface RivalTacticalSimulatorProps {
@@ -525,6 +530,40 @@ ${selectedScenarioId !== 'custom'
         currentBlock,
         timestamp: new Date().toISOString()
       }));
+
+      const planId = sanitizeFirestoreId(`sim-infantil-b-${selectedRivalId}`);
+      const firestorePlan = {
+        id: planId,
+        matchId: '',
+        rivalName: rivalStats.team.shortName,
+        fechaPartido: planPayload.fecha_partido,
+        sistema: planPayload.sistema,
+        sistemaRival: planPayload.sistema_rival,
+        convocatoria: [],
+        objetivos_tacticos: planPayload.objetivos_tacticos,
+        alineacion_propuesta: planPayload.alineacion_propuesta,
+        puntos_fuertes_rival: planPayload.puntos_fuertes_rival,
+        balon_parado: planPayload.balon_parado,
+        fecha_creacion: planPayload.fecha_partido,
+        _updatedAtMs: Date.now(),
+      };
+
+      try {
+        const plansKey = 'team_gameplans_INFANTIL B';
+        const existingPlansRaw = localStorage.getItem(plansKey);
+        const existingPlans: any[] = existingPlansRaw ? JSON.parse(existingPlansRaw) : [];
+        const updatedPlans = [
+          firestorePlan,
+          ...existingPlans.filter((p) => p.id !== planId),
+        ];
+        localStorage.setItem(plansKey, JSON.stringify(updatedPlans));
+      } catch {}
+
+      if (isFirebaseAuthReady()) {
+        try {
+          await upsertMatchPlansToFirestore([firestorePlan], 'INFANTIL B');
+        } catch {}
+      }
 
       toast.success(`Estrategia sincronizada en el Plan de Partido contra ${rivalStats.team.shortName}.`);
     } catch (e) {

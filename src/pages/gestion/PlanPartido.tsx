@@ -3,9 +3,14 @@ import { CLUB_TEAMS } from '@/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import {
   deleteMatchPlanFromFirestore,
+  ensurePreSyncMatchSafetyBackup,
   fetchMatchPlansFromFirestore,
+  findPlansNeedingCloudSync,
+  getDeletedPlanIdsForTeam,
   isFirebaseAuthReady,
+  mergeMatchPlanRecords,
   sanitizeFirestoreId,
+  subscribeToMatchPlansFromFirestore,
   upsertMatchPlansToFirestore
 } from '@/lib/firestoreMatches';
 import { 
@@ -161,6 +166,8 @@ export default function PlanPartido() {
 
   // Load team matches, roster & game plans
   useEffect(() => {
+    ensurePreSyncMatchSafetyBackup();
+
     const matchesKey = `team_matches_${selectedTeam}`;
     const savedMatches = localStorage.getItem(matchesKey);
     const scheduledList: Match[] = savedMatches ? JSON.parse(savedMatches) : [];
@@ -173,8 +180,17 @@ export default function PlanPartido() {
 
     const fetchPlans = async () => {
       const plansKey = `team_gameplans_${selectedTeam}`;
+      const deletedPlanIds = getDeletedPlanIdsForTeam(selectedTeam);
       const savedPlansStr = localStorage.getItem(plansKey);
-      const localPlans: MatchPlan[] = savedPlansStr ? (() => { try { return JSON.parse(savedPlansStr); } catch { return []; } })() : [];
+      const localPlans: MatchPlan[] = savedPlansStr
+        ? (() => {
+            try {
+              return JSON.parse(savedPlansStr);
+            } catch {
+              return [];
+            }
+          })()
+        : [];
 
       let cloudPlans: MatchPlan[] = [];
       if (isFirebaseAuthReady()) {
@@ -188,13 +204,7 @@ export default function PlanPartido() {
         }
       }
 
-      if (cloudPlans.length > 0) {
-        setPlans(cloudPlans);
-        setActivePlan(cloudPlans[0]);
-        localStorage.setItem(plansKey, JSON.stringify(cloudPlans));
-        return;
-      }
-
+      let dbPlans: MatchPlan[] = [];
       try {
         const { data, error } = await supabase
           .from('match_plans')
@@ -203,7 +213,7 @@ export default function PlanPartido() {
           .order('fecha_partido', { ascending: false });
 
         if (!error && Array.isArray(data) && data.length > 0) {
-          const formatted: MatchPlan[] = data.map(item => ({
+          dbPlans = data.map(item => ({
             id: item.id,
             matchId: '',
             rivalName: item.rival_name,
@@ -217,44 +227,79 @@ export default function PlanPartido() {
             balon_parado: item.balon_parado || '',
             fecha_creacion: item.created_at ? item.created_at.split('T')[0] : new Date().toISOString().split('T')[0]
           }));
-
-          setPlans(formatted);
-          setActivePlan(formatted[0] || null);
-          localStorage.setItem(plansKey, JSON.stringify(formatted));
-          return;
         }
       } catch (err) {
-        console.warn('Exception fetching match plans from Supabase:', err);
+        console.warn('Exception fetching match plans from local table:', err);
       }
 
-      if (savedPlansStr !== null) {
-        setPlans(localPlans);
-        setActivePlan(localPlans.length > 0 ? localPlans[0] : null);
-      } else {
-        // Default preloaded game plan
-        const defaults: MatchPlan[] = [
-          {
-            id: 'gp1',
-            matchId: 'm1',
-            rivalName: 'A.D. Arganda',
-            fechaPartido: new Date().toISOString().split('T')[0],
-            sistema: '1-4-3-3',
-            sistemaRival: '1-4-4-2',
-            convocatoria: playersList.slice(0, 14).map(p => p.id),
-            objetivos_tacticos: '1. Presión alta tras pérdida de balón en campo contrario.\n2. Basculaciones defensivas rápidas para bloquear sus transiciones por fuera.\n3. Salida de balón combinada con central de apoyo alternando pases cortos.',
-            alineacion_propuesta: 'Sofía (GK)\nElena (CB), Carlos (CB), Marcos (LB), Jose (RB)\nSanti (DM), Luis (MC), Cris (MC)\nPaula (EI), Maria (ED), Jorge (DC)',
-            puntos_fuertes_rival: 'Contragolpes veloces por bandas. Extremo izquierdo muy rápido con buen desborde. Debemos vigilar los balones cruzados a su espalda.',
-            balon_parado: 'Córners ofensivos: Saque cerrado a primer palo con prolongación.\nFaltas defensivas: Bloque de línea de fuera de juego adelantado con barrera compacta de 4.',
-            fecha_creacion: new Date().toISOString().split('T')[0]
+      const mergedPlans: MatchPlan[] = mergeMatchPlanRecords(
+        cloudPlans,
+        mergeMatchPlanRecords(localPlans, dbPlans, deletedPlanIds),
+        deletedPlanIds
+      );
+
+      if (mergedPlans.length > 0 || savedPlansStr !== null) {
+        setPlans(mergedPlans);
+        setActivePlan(prev => {
+          if (prev) {
+            const found = mergedPlans.find(p => p.id === prev.id);
+            if (found) return found;
           }
-        ];
-        localStorage.setItem(plansKey, JSON.stringify(defaults));
-        setPlans(defaults);
-        setActivePlan(defaults[0]);
+          return mergedPlans[0] || null;
+        });
+        localStorage.setItem(plansKey, JSON.stringify(mergedPlans));
+
+        if (isFirebaseAuthReady()) {
+          const toBackfill = findPlansNeedingCloudSync(mergedPlans, cloudPlans);
+          if (toBackfill.length > 0) {
+            upsertMatchPlansToFirestore(toBackfill, selectedTeam).catch(() => {});
+          }
+        }
+      } else {
+        setPlans([]);
+        setActivePlan(null);
       }
     };
 
     fetchPlans();
+
+    const unsubLivePlans = subscribeToMatchPlansFromFirestore(selectedTeam, (liveCloudPlans) => {
+      const plansKey = `team_gameplans_${selectedTeam}`;
+      const deletedPlanIds = getDeletedPlanIdsForTeam(selectedTeam);
+      let currentLocal: MatchPlan[] = [];
+      try {
+        const raw = localStorage.getItem(plansKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) currentLocal = parsed;
+        }
+      } catch {}
+
+      const mergedLive: MatchPlan[] = mergeMatchPlanRecords(liveCloudPlans, currentLocal, deletedPlanIds);
+      setPlans(mergedLive);
+      setActivePlan(prev => {
+        if (prev) {
+          const found = mergedLive.find(p => p.id === prev.id);
+          if (found) return found;
+        }
+        return mergedLive[0] || null;
+      });
+      try {
+        localStorage.setItem(plansKey, JSON.stringify(mergedLive));
+      } catch {}
+    });
+
+    const handleGlobalPlansUpdated = () => {
+      fetchPlans();
+    };
+    window.addEventListener('lapoveda_plans_updated', handleGlobalPlansUpdated);
+    window.addEventListener('lapoveda_firebase_auth_ready', handleGlobalPlansUpdated);
+
+    return () => {
+      unsubLivePlans();
+      window.removeEventListener('lapoveda_plans_updated', handleGlobalPlansUpdated);
+      window.removeEventListener('lapoveda_firebase_auth_ready', handleGlobalPlansUpdated);
+    };
   }, [selectedTeam]);
 
   const savePlans = async (updated: MatchPlan[]) => {
@@ -486,31 +531,21 @@ export default function PlanPartido() {
   };
 
   const handleDeletePlan = async (id: string, rival: string) => {
-    if (confirm(`¿Estás seguro de eliminar el plan técnico contra ${rival}?`)) {
-      const updated = plans.filter(p => p.id !== id);
+    if (confirm(`¿Estás seguro de dar de baja el plan técnico contra ${rival}?`)) {
+      const updated = plans.filter(p => p.id !== id && sanitizeFirestoreId(p.id) !== sanitizeFirestoreId(id));
 
+      // Synchronize deletion via soft-delete tombstone ("marca de baja") without physically deleting historical records
       try {
-        await supabase
-          .from('match_plans')
-          .delete()
-          .eq('id', id);
+        await deleteMatchPlanFromFirestore(id, selectedTeam);
       } catch (err) {
-        console.warn('Failed to delete match plan from table store:', err);
-      }
-
-      if (isFirebaseAuthReady()) {
-        try {
-          await deleteMatchPlanFromFirestore(id);
-        } catch (err) {
-          console.warn('Failed to delete match plan from Firestore:', err);
-        }
+        console.warn('Failed to mark match plan as deleted in Firestore:', err);
       }
 
       await savePlans(updated);
       if (activePlan?.id === id) {
         setActivePlan(updated.length > 0 ? updated[0] : null);
       }
-      toast.success('Plan de partido eliminado.');
+      toast.success('Plan de partido dado de baja (histórico conservado).');
     }
   };
 

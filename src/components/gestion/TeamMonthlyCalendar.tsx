@@ -39,6 +39,12 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import UDLaPovedaLogo from '@/components/layout/UDLaPovedaLogo';
 import { supabase } from '@/lib/supabase';
+import {
+  fetchTeamMatchesFromFirestore,
+  isFirebaseAuthReady,
+  sanitizeFirestoreId,
+  upsertTeamMatchesToFirestore,
+} from '@/lib/firestoreMatches';
 import html2canvas from 'html2canvas';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
@@ -337,11 +343,19 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         }
       }
 
-      // 1. Fetch matches from Supabase
+      // 1. Fetch matches from Supabase, Firestore, and localStorage
       const { data: dbMatches } = await supabase
         .from('team_matches')
         .select('*')
         .eq('team_id', selectedTeam);
+
+      let cloudMatches: any[] = [];
+      if (isFirebaseAuthReady()) {
+        try {
+          const fetched = await fetchTeamMatchesFromFirestore(selectedTeam);
+          if (Array.isArray(fetched)) cloudMatches = fetched;
+        } catch {}
+      }
 
       // Combine with local storage matches
       const localMatchesStr = localStorage.getItem(`team_matches_${selectedTeam}`);
@@ -350,6 +364,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       const allMatchesMap = new Map<string, any>();
       (dbMatches || []).forEach(m => { if (m.fecha) allMatchesMap.set(m.fecha, m); });
       localMatches.forEach((m: any) => { if (m.fecha) allMatchesMap.set(m.fecha, m); });
+      cloudMatches.forEach((m: any) => { if (m.fecha) allMatchesMap.set(m.fecha, m); });
 
       allMatchesMap.forEach((m, dateStr) => {
         const d = new Date(dateStr);
@@ -643,12 +658,14 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
 
         const matchPayload = {
           ...(existingMatch || {}),
-          id: existingMatch?.id || crypto.randomUUID(),
+          id: sanitizeFirestoreId(existingMatch?.id || crypto.randomUUID()),
           team_id: selectedTeam,
+          team: selectedTeam,
           fecha: editingDate,
           rival: resolvedRival,
           tipo: resolvedTipo,
           competicion: compVal,
+          estado: existingMatch?.estado || 'Programado',
           hora: resolvedHora,
           lugar: resolvedLugar,
           _updatedAtMs: Date.now()
@@ -661,6 +678,14 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         try {
           localStorage.setItem(matchesKey, JSON.stringify(currentMatches));
         } catch {}
+        if (isFirebaseAuthReady()) {
+          try {
+            await upsertTeamMatchesToFirestore([matchPayload], selectedTeam);
+          } catch (fbErr) {
+            console.warn('Error syncing calendar match to Firestore:', fbErr);
+          }
+        }
+        window.dispatchEvent(new CustomEvent('lapoveda_matches_updated', { detail: { team: selectedTeam } }));
       }
 
       // Upsert master monthly calendar record to attendance_sessions

@@ -7,6 +7,11 @@ import {
 import { RIVAL_MATCHES_COLLECTIVE } from '@/data/rivalStatsData';
 import { generateLocalTacticalAdvice } from '@/lib/tacticalAdvisor';
 import { supabase } from '@/lib/supabase';
+import {
+  isFirebaseAuthReady,
+  sanitizeFirestoreId,
+  upsertMatchPlansToFirestore,
+} from '@/lib/firestoreMatches';
 import { 
   FileText, 
   Printer, 
@@ -253,8 +258,42 @@ export const RivalTechnicalReport: React.FC<RivalTechnicalReportProps> = ({
         // Fallback to local storage handled
       }
 
+      const planId = sanitizeFirestoreId(`plan-infantil-b-${selectedTeamId}`);
+      const firestorePlan = {
+        id: planId,
+        matchId: '',
+        rivalName: currentTeamStats.team.shortName,
+        fechaPartido: updatedReport.fechaInforme,
+        sistema: updatedReport.sistemaPropio,
+        sistemaRival: updatedReport.sistemaRival,
+        convocatoria: updatedReport.convocatoria || [],
+        objetivos_tacticos: `${updatedReport.objetivosOfensivos}\n\n${updatedReport.objetivosDefensivos}`,
+        alineacion_propuesta: updatedReport.alineacionPrevista,
+        puntos_fuertes_rival: updatedReport.puntosFuertesRival,
+        balon_parado: updatedReport.balonParado,
+        fecha_creacion: new Date().toISOString().split('T')[0],
+        _updatedAtMs: Date.now(),
+      };
+
+      try {
+        const plansKey = 'team_gameplans_INFANTIL B';
+        const existingPlansRaw = localStorage.getItem(plansKey);
+        const existingPlans: any[] = existingPlansRaw ? JSON.parse(existingPlansRaw) : [];
+        const updatedPlans = [
+          firestorePlan,
+          ...existingPlans.filter((p) => p.id !== planId && p.rivalName !== firestorePlan.rivalName),
+        ];
+        localStorage.setItem(plansKey, JSON.stringify(updatedPlans));
+      } catch {}
+
+      if (isFirebaseAuthReady()) {
+        try {
+          await upsertMatchPlansToFirestore([firestorePlan], 'INFANTIL B');
+        } catch {}
+      }
+
       setReport(updatedReport);
-      toast.success(`Informe técnico de ${currentTeamStats.team.shortName} guardado con éxito.`);
+      toast.success(`Informe técnico de ${currentTeamStats.team.shortName} guardado y sincronizado con éxito.`);
     } catch (error) {
       toast.error('Error al guardar el informe técnico.');
     } finally {

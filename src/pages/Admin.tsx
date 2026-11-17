@@ -51,6 +51,12 @@ import {
   verifyAndRestoreBackupInIsolatedSandbox,
   verifyFirebaseProjectConfig,
 } from '@/lib/encryptedBackup';
+import {
+  isFirebaseAuthReady,
+  sanitizeFirestoreId,
+  upsertMatchPlansToFirestore,
+  upsertTeamMatchesToFirestore,
+} from '@/lib/firestoreMatches';
 
 export default function Admin() {
   const [users, setUsers] = useState<User[]>([]);
@@ -573,13 +579,8 @@ export default function Admin() {
 
             for (let i = 0; i < updatedMatches.length; i++) {
               const m = updatedMatches[i];
-              const isUuid =
-                /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-                  m.id
-                );
-              let targetId = m.id;
-              if (!isUuid) {
-                targetId = crypto.randomUUID();
+              const targetId = sanitizeFirestoreId(m.id);
+              if (targetId !== m.id) {
                 updatedMatches[i] = { ...m, id: targetId };
                 changed = true;
               }
@@ -605,6 +606,9 @@ export default function Admin() {
 
             if (changed) {
               localStorage.setItem(`team_matches_${team}`, JSON.stringify(updatedMatches));
+            }
+            if (isFirebaseAuthReady() && updatedMatches.length > 0) {
+              await upsertTeamMatchesToFirestore(updatedMatches, team);
             }
           } catch (e) {
             console.error('Error syncing matches for team ' + team, e);
@@ -671,13 +675,8 @@ export default function Admin() {
 
             for (let i = 0; i < updatedPlans.length; i++) {
               const p = updatedPlans[i];
-              const isUuid =
-                /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-                  p.id
-                );
-              let targetId = p.id;
-              if (!isUuid) {
-                targetId = crypto.randomUUID();
+              const targetId = sanitizeFirestoreId(p.id);
+              if (targetId !== p.id) {
                 updatedPlans[i] = { ...p, id: targetId };
                 changed = true;
               }
@@ -702,6 +701,9 @@ export default function Admin() {
 
             if (changed) {
               localStorage.setItem(`team_gameplans_${team}`, JSON.stringify(updatedPlans));
+            }
+            if (isFirebaseAuthReady() && updatedPlans.length > 0) {
+              await upsertMatchPlansToFirestore(updatedPlans, team);
             }
           } catch (e) {
             console.error('Error syncing match plans for team ' + team, e);

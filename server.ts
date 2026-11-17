@@ -731,7 +731,12 @@ Recomienda la mejor contra-estrategia táctica para que nuestro equipo venza a e
   });
 }
 
-if (process.env.VITEST !== "true" && process.env.SKIP_SERVER_AUTOSTART !== "true") {
+if (
+  process.env.VITEST !== "true" &&
+  process.env.SKIP_SERVER_AUTOSTART !== "true" &&
+  !process.env.NODE_TEST_CONTEXT &&
+  !process.argv.includes("--test")
+) {
   startServer().catch((err) => {
     console.error("Failed to start server:", err);
     process.exit(1);
