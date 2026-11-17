@@ -1,12 +1,11 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { 
-  Users, 
-  LayoutDashboard, 
-  TrendingUp, 
-  UsersRound, 
-  Settings, 
-  UserCircle, 
+import {
+  Users,
+  LayoutDashboard,
+  TrendingUp,
+  UsersRound,
+  Settings,
   LogOut,
   Trophy,
   Search,
@@ -16,11 +15,11 @@ import {
   ClipboardList,
   Shield,
   LayoutGrid,
-  Swords
+  Swords,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/store/useAuthStore';
+import { ClubModuleId, isRouteAllowedForUser } from '@/lib/clubAccessAndSync';
 import UDLaPovedaLogo from './UDLaPovedaLogo';
 
 const menuItems = [
@@ -42,9 +41,15 @@ interface SidebarProps {
   isCollapsed?: boolean;
 }
 
-export default function Sidebar({ onClose, onCollapse, isCollapsed }: SidebarProps) {
+export default function Sidebar({ onClose, onCollapse }: SidebarProps) {
   const location = useLocation();
   const { user, signOut } = useAuthStore();
+
+  const allowedMods = (user?.allowedModules || []) as ClubModuleId[];
+  const visibleMenuItems = menuItems.filter((item) =>
+    isRouteAllowedForUser(item.path, user?.role, allowedMods)
+  );
+  const canCreateScoutingPlayer = isRouteAllowedForUser('/players/new', user?.role, allowedMods);
 
   return (
     <aside className="w-full lg:w-64 bg-slate-950 text-white flex flex-col h-full lg:border-r border-slate-800 relative">
@@ -55,10 +60,12 @@ export default function Sidebar({ onClose, onCollapse, isCollapsed }: SidebarPro
           </div>
           <div>
             <h1 className="font-bold text-base tracking-tight leading-tight">FUNDACION. AFE</h1>
-            <p className="text-[10px] text-emerald-400 uppercase tracking-widest font-semibold">Scouting System</p>
+            <p className="text-[10px] text-emerald-400 uppercase tracking-widest font-semibold">
+              Scouting System
+            </p>
           </div>
         </div>
-        
+
         {onClose && (
           <button
             onClick={onClose}
@@ -84,15 +91,15 @@ export default function Sidebar({ onClose, onCollapse, isCollapsed }: SidebarPro
       </div>
 
       <nav className="flex-1 px-4 py-4 space-y-1">
-        {menuItems.map((item) => (
+        {visibleMenuItems.map((item) => (
           <Link
             key={item.path}
             to={item.path}
             className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group",
-              location.pathname === item.path 
-                ? "bg-blue-600 text-white" 
-                : "text-slate-400 hover:bg-slate-900 hover:text-white"
+              'flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group',
+              location.pathname === item.path
+                ? 'bg-blue-600 text-white'
+                : 'text-slate-400 hover:bg-slate-900 hover:text-white'
             )}
           >
             <item.icon className="w-5 h-5 transition-transform group-hover:scale-110" />
@@ -104,10 +111,10 @@ export default function Sidebar({ onClose, onCollapse, isCollapsed }: SidebarPro
           <Link
             to="/admin"
             className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group",
-              location.pathname === '/admin' 
-                ? "bg-blue-600 text-white" 
-                : "text-slate-400 hover:bg-slate-900 hover:text-white"
+              'flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 group',
+              location.pathname === '/admin'
+                ? 'bg-blue-600 text-white'
+                : 'text-slate-400 hover:bg-slate-900 hover:text-white'
             )}
           >
             <Settings className="w-5 h-5" />
@@ -117,25 +124,28 @@ export default function Sidebar({ onClose, onCollapse, isCollapsed }: SidebarPro
       </nav>
 
       <div className="p-4 border-t border-slate-800 space-y-4">
-        <Link 
-          to="/players/new"
-          className="w-full bg-slate-50 text-blue-950 font-bold hover:bg-white flex items-center justify-center gap-2 py-2 rounded-lg mb-4 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span className="text-xs uppercase">Nuevo Jugador</span>
-        </Link>
-        
+        {canCreateScoutingPlayer && (
+          <Link
+            to="/players/new"
+            className="w-full bg-slate-50 text-blue-950 font-bold hover:bg-white flex items-center justify-center gap-2 py-2 rounded-lg mb-4 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="text-xs uppercase">Nuevo Jugador</span>
+          </Link>
+        )}
+
         <div className="flex items-center gap-3 px-2">
           <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-xs font-bold">
-            {user?.nombre.substring(0, 2).toUpperCase()}
+            {(user?.nombre || 'US').substring(0, 2).toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{user?.nombre}</p>
             <p className="text-[10px] text-slate-500 uppercase">{user?.role}</p>
           </div>
-          <button 
+          <button
             onClick={() => signOut()}
             className="text-slate-500 hover:text-red-400 p-1"
+            title="Cerrar sesión"
           >
             <LogOut className="w-4 h-4" />
           </button>

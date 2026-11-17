@@ -5,6 +5,8 @@ export interface User {
   nombre: string;
   email: string;
   role: Role;
+  allowedModules?: string[];
+  uidLocked?: boolean;
   created_at?: string;
 }
 

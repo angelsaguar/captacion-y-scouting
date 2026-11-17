@@ -719,7 +719,9 @@ export const OFFICIAL_RFFM_ALL_MATCHES: JornadaMatch[] = [
 
 export async function fetchLiveRFFMClasificacion(jornada: number = 4): Promise<StandingTeam[] | null> {
   try {
-    const res = await fetch(`/api/rffm/clasificacion?jornada=${jornada}`);
+    const { getAuthBearerHeaders } = await import('@/lib/clubAccessAndSync');
+    const headers = await getAuthBearerHeaders();
+    const res = await fetch(`/api/rffm/clasificacion?jornada=${jornada}`, { headers });
     if (!res.ok) return null;
     const data = await res.json();
     if (!data?.clasificacion || !Array.isArray(data.clasificacion)) return null;
@@ -757,7 +759,9 @@ export async function fetchLiveRFFMClasificacion(jornada: number = 4): Promise<S
 
 export async function fetchLiveRFFMResultados(jornada: number = 4): Promise<JornadaMatch[] | null> {
   try {
-    const res = await fetch(`/api/rffm/resultados?jornada=${jornada}`);
+    const { getAuthBearerHeaders } = await import('@/lib/clubAccessAndSync');
+    const headers = await getAuthBearerHeaders();
+    const res = await fetch(`/api/rffm/resultados?jornada=${jornada}`, { headers });
     if (!res.ok) return null;
     const data = await res.json();
     if (!data?.partidos || !Array.isArray(data.partidos)) return null;

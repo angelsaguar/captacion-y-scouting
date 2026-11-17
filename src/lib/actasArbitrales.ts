@@ -628,9 +628,12 @@ export function getRivalActaStats(teamName: string, rivalName: string): RivalAct
  * Fetches and processes all official referee match reports for the category from server
  */
 export async function syncTeamActasFromFederation(teamName: string, calendarUrl: string): Promise<TeamActasDatabase> {
+  const { getAuthBearerHeaders } = await import('./clubAccessAndSync');
+  const headers = await getAuthBearerHeaders({ 'Content-Type': 'application/json' });
+
   const resp = await fetch('/api/rffm/sync-actas-detailed', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ teamName, calendarUrl })
   });
 

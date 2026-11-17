@@ -141,10 +141,12 @@ export async function getTacticalAdvice(params: {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const { getAuthBearerHeaders } = await import('./clubAccessAndSync');
+    const headers = await getAuthBearerHeaders({ 'Content-Type': 'application/json' });
 
     const res = await fetch('/api/tactical-advice', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       signal: controller.signal,
       body: JSON.stringify(params)
     });

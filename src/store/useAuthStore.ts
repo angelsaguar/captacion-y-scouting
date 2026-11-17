@@ -3,6 +3,14 @@ import { signOut as firebaseSignOut } from 'firebase/auth';
 import { supabase } from '../lib/supabase';
 import { auth } from '../lib/firebase';
 import { User } from '../types';
+import {
+  ADMIN_EMAIL,
+  ALEJANDRO_EMAIL,
+  CLUB_MODULES,
+  getAlejandroAccessConfig,
+  isStrictAdminEmail,
+  isStrictAlejandroEmail,
+} from '../lib/clubAccessAndSync';
 
 interface AuthState {
   user: User | null;
@@ -17,86 +25,96 @@ export const useAuthStore = create<AuthState>((set) => ({
   loading: true,
   setUser: (user) => {
     if (user) {
-      const cleanEmail = user.email ? user.email.toLowerCase() : '';
-      const cleanNombre = user.nombre ? user.nombre.toLowerCase() : '';
-      const isSanti = cleanEmail.includes('santi') || cleanNombre.includes('santi');
-      const isAlejandro = cleanEmail.includes('alejandro') || cleanNombre.includes('alejandro') || cleanEmail.includes('saguar') || cleanNombre.includes('saguar');
-      const isJavier = cleanEmail.includes('javier') || cleanNombre.includes('javier') || cleanEmail.includes('asensio') || cleanNombre.includes('asensio');
-      const isAdmin = cleanEmail === 'angel.saguar@telefonica.net';
-      const isScout = user.role === 'scout';
+      const cleanEmail = (user.email || '').trim().toLowerCase();
+      const isAdmin = isStrictAdminEmail(cleanEmail);
+      const isAlejandro = isStrictAlejandroEmail(cleanEmail);
 
-      if (!isAdmin && !isSanti && !isAlejandro && !isJavier && !isScout) {
-        supabase.auth.signOut();
+      // Zero-Trust: Only angel.saguar@telefonica.net (ADMIN) and asaguar04@gmail.com (SCOUT) are allowed
+      if (!isAdmin && !isAlejandro) {
+        supabase.auth.signOut().catch(() => {});
+        firebaseSignOut(auth).catch(() => {});
         set({ user: null, loading: false });
         return;
       }
+
       if (isAdmin) {
         user.role = 'admin';
-      } else if (!user.role) {
+        user.email = ADMIN_EMAIL;
+        user.allowedModules = CLUB_MODULES.map((m) => m.id);
+      } else {
         user.role = 'scout';
+        user.email = ALEJANDRO_EMAIL;
+        user.allowedModules = Array.isArray(user.allowedModules) ? user.allowedModules : [];
       }
     }
     set({ user, loading: false });
   },
   signOut: async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // ignore local signout error
+    }
     try {
       await firebaseSignOut(auth);
     } catch {
-      // ignore firebase signout error if not signed in
+      // ignore firebase signout error
     }
     set({ user: null, loading: false });
   },
   refreshUser: async () => {
     try {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (authUser) {
-        const cleanEmail = authUser.email ? authUser.email.toLowerCase() : '';
-        const cleanNombre = (authUser.user_metadata?.nombre || '').toLowerCase();
-        const isSanti = cleanEmail.includes('santi') || cleanNombre.includes('santi');
-        const isAlejandro = cleanEmail.includes('alejandro') || cleanNombre.includes('alejandro') || cleanEmail.includes('saguar') || cleanNombre.includes('saguar');
-        const isJavier = cleanEmail.includes('javier') || cleanNombre.includes('javier') || cleanEmail.includes('asensio') || cleanNombre.includes('asensio');
-        const isAdminEmail = cleanEmail === 'angel.saguar@telefonica.net';
-        
-        // Fetch profile to see if they exist in users table
-        const { data: profile } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', authUser.id)
-          .single();
-        
-        const hasValidProfile = profile && (profile.role === 'scout' || profile.role === 'admin');
+      const fbUser = auth.currentUser;
+      if (!fbUser || !fbUser.email || !fbUser.emailVerified) {
+        await supabase.auth.signOut().catch(() => {});
+        set({ user: null, loading: false });
+        return;
+      }
 
-        if (!isAdminEmail && !isSanti && !isAlejandro && !isJavier && !hasValidProfile) {
-          await supabase.auth.signOut();
+      const cleanEmail = fbUser.email.trim().toLowerCase();
+      if (isStrictAdminEmail(cleanEmail)) {
+        set({
+          user: {
+            id: fbUser.uid,
+            email: ADMIN_EMAIL,
+            nombre: fbUser.displayName || 'Ángel Saguar',
+            role: 'admin',
+            allowedModules: CLUB_MODULES.map((m) => m.id),
+            uidLocked: true,
+          },
+          loading: false,
+        });
+        return;
+      }
+
+      if (isStrictAlejandroEmail(cleanEmail)) {
+        const cfg = await getAlejandroAccessConfig();
+        if (!cfg.active || (cfg.uidLocked && cfg.uid && cfg.uid !== fbUser.uid)) {
+          await firebaseSignOut(auth).catch(() => {});
           set({ user: null, loading: false });
           return;
         }
-        
-        if (profile) {
-          const updatedProfile = {
-            ...profile,
-            role: isAdminEmail ? 'admin' : (profile.role || 'scout'),
-          };
-          set({ user: updatedProfile as User, loading: false });
-        } else {
-          // If auth user exists but profile doesn't, create a temporary user object
-          set({ 
-            user: { 
-              id: authUser.id, 
-              email: authUser.email || '', 
-              nombre: authUser.user_metadata?.nombre || 'Nuevo Usuario',
-              role: isAdminEmail ? 'admin' : 'scout' 
-            } as User, 
-            loading: false 
-          });
-        }
-      } else {
-        set({ user: null, loading: false });
+        set({
+          user: {
+            id: fbUser.uid,
+            email: ALEJANDRO_EMAIL,
+            nombre: fbUser.displayName || cfg.nombre || 'Alejandro Saguar',
+            role: 'scout',
+            allowedModules: cfg.allowedModules,
+            uidLocked: cfg.uidLocked,
+          },
+          loading: false,
+        });
+        return;
       }
+
+      // Any other account is strictly rejected
+      await supabase.auth.signOut().catch(() => {});
+      await firebaseSignOut(auth).catch(() => {});
+      set({ user: null, loading: false });
     } catch (error) {
       console.error('Auth refresh failed:', error);
       set({ user: null, loading: false });
     }
-  }
+  },
 }));

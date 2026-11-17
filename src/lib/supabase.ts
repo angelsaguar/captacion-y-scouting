@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
+const supabaseAnonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
 
 export const isUrlValid = (url: any) => {
   if (typeof url !== 'string' || !url) return false;
@@ -334,63 +334,23 @@ function createLocalStorageSupabaseClient(): any {
         const session = getLocalSession();
         return { data: { user: session?.user || null }, error: null };
       },
-      async signInWithPassword({ email, password }: { email: string; password?: string }) {
-        const cleanEmail = (email || '').trim().toLowerCase();
-        const isAdmin = cleanEmail === 'angel.saguar@telefonica.net';
-        const isSanti = cleanEmail.includes('santi');
-        const isAlejandro = cleanEmail.includes('alejandro') || cleanEmail.includes('saguar');
-        const isJavier = cleanEmail.includes('javier') || cleanEmail.includes('asensio');
-
-        let displayName = 'Usuario Autorizado';
-        if (isAdmin) displayName = 'Ángel Saguar';
-        else if (isSanti) displayName = 'Santi';
-        else if (isAlejandro) displayName = 'Alejandro Saguar';
-        else if (isJavier) displayName = 'Javier Asensio';
-
-        const user = {
-          id: 'usr_' + cleanEmail.replace(/[^a-z0-9]/g, '_'),
-          email: cleanEmail,
-          role: isAdmin ? 'admin' : 'scout',
-          user_metadata: {
-            nombre: displayName,
+      async signInWithPassword(_credentials: { email: string; password?: string }) {
+        return {
+          data: { user: null, session: null },
+          error: {
+            message:
+              'El inicio de sesión con contraseña local ha sido deshabilitado por seguridad. Utiliza exclusivamente el acceso con cuenta Google verificada (Firebase Authentication).',
           },
         };
-
-        const session = {
-          access_token: 'local_token_' + Date.now(),
-          token_type: 'bearer',
-          expires_in: 3600 * 24 * 30,
-          refresh_token: 'local_refresh_' + Date.now(),
-          user,
-        };
-
-        setLocalSession(session);
-        notifyAuthListeners('SIGNED_IN', session);
-        return { data: { user, session }, error: null };
       },
-      async signUp({ email, password, options }: any) {
-        const cleanEmail = (email || '').trim().toLowerCase();
-        const nombre = options?.data?.nombre || 'Nuevo Usuario';
-        const isAdmin = cleanEmail === 'angel.saguar@telefonica.net';
-
-        const user = {
-          id: 'usr_' + cleanEmail.replace(/[^a-z0-9]/g, '_'),
-          email: cleanEmail,
-          role: isAdmin ? 'admin' : 'scout',
-          user_metadata: { nombre },
+      async signUp(_payload: any) {
+        return {
+          data: { user: null, session: null },
+          error: {
+            message:
+              'El registro libre con clave estática ha sido deshabilitado. Solo las dos cuentas autorizadas pueden acceder mediante Google Authentication.',
+          },
         };
-
-        const session = {
-          access_token: 'local_token_' + Date.now(),
-          token_type: 'bearer',
-          expires_in: 3600 * 24 * 30,
-          refresh_token: 'local_refresh_' + Date.now(),
-          user,
-        };
-
-        setLocalSession(session);
-        notifyAuthListeners('SIGNED_IN', session);
-        return { data: { user, session }, error: null };
       },
       async signOut() {
         setLocalSession(null);

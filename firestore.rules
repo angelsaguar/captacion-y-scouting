@@ -23,7 +23,9 @@ service cloud.firestore {
     }
 
     function isVerifiedUser() {
-      return isSignedIn() && request.auth.token.email_verified == true;
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email is string;
     }
 
     function isBootstrappedAdmin() {
@@ -34,12 +36,87 @@ service cloud.firestore {
       return isBootstrappedAdmin() || (isVerifiedUser() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
     }
 
+    function isAlejandroEmail() {
+      return isVerifiedUser() && request.auth.token.email.lower() == 'asaguar04@gmail.com';
+    }
+
+    function alejandroAccessDoc() {
+      return get(/databases/$(database)/documents/club_access/alejandro_scout).data;
+    }
+
+    function isAuthorizedAlejandro() {
+      return isAlejandroEmail()
+        && exists(/databases/$(database)/documents/club_access/alejandro_scout)
+        && alejandroAccessDoc().active == true
+        && alejandroAccessDoc().uidLocked == true
+        && alejandroAccessDoc().uid == request.auth.uid
+        && alejandroAccessDoc().email == 'asaguar04@gmail.com';
+    }
+
+    function hasAlejandroModule(moduleName) {
+      return isAuthorizedAlejandro()
+        && alejandroAccessDoc().allowedModules is list
+        && moduleName in alejandroAccessDoc().allowedModules;
+    }
+
     function isValidAdminUser(data, adminId) {
       return data.keys().hasAll(['uid', 'email', 'createdAt'])
         && data.keys().hasOnly(['uid', 'email', 'createdAt'])
         && isValidId(data.uid)
         && data.uid == adminId
         && data.email is string && data.email.size() > 3 && data.email.size() <= 254
+        && data.createdAt is timestamp;
+    }
+
+    function isValidScoutAccess(data) {
+      return data.keys().hasAll([
+          'email', 'uid', 'uidLocked', 'nombre', 'role',
+          'active', 'allowedModules', 'updatedBy', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'email', 'uid', 'uidLocked', 'nombre', 'role',
+          'active', 'allowedModules', 'updatedBy', 'updatedAt'
+        ])
+        && data.email is string && data.email.size() == 19 && data.email == 'asaguar04@gmail.com'
+        && data.uid is string && data.uid.size() <= 128
+        && data.uidLocked is bool
+        && data.nombre is string && data.nombre.size() > 0 && data.nombre.size() <= 120
+        && data.role is string && data.role.size() == 5 && data.role == 'scout'
+        && data.active is bool
+        && data.allowedModules is list && data.allowedModules.size() <= 10
+        && data.allowedModules.hasOnly([
+          'scouting', 'campograma', 'needs', 'gestion-equipo', 'estadisticas-rivales'
+        ])
+        && (data.allowedModules.size() == 0 || (data.allowedModules[0] is string && data.allowedModules[0].size() <= 40))
+        && data.updatedBy is string && data.updatedBy.size() >= 3 && data.updatedBy.size() <= 254
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidClubSyncDoc(data) {
+      return data.keys().hasAll([
+          'id', 'module', 'category', 'team', 'payload', 'updatedBy', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'module', 'category', 'team', 'payload', 'updatedBy', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.module is string && data.module.size() <= 40
+        && data.module in ['scouting', 'campograma', 'needs', 'gestion-equipo', 'estadisticas-rivales']
+        && data.category is string && data.category.size() > 0 && data.category.size() <= 80
+        && data.team is string && data.team.size() > 0 && data.team.size() <= 80
+        && data.payload is map && data.payload.keys().size() <= 40
+        && data.updatedBy is string && data.updatedBy.size() >= 3 && data.updatedBy.size() <= 254
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSecurityBackup(data, backupId) {
+      return data.keys().hasAll(['id', 'createdBy', 'sha256Checksum', 'summary', 'createdAt'])
+        && data.keys().hasOnly(['id', 'createdBy', 'sha256Checksum', 'summary', 'createdAt'])
+        && isValidId(data.id)
+        && data.id == backupId
+        && data.createdBy is string && data.createdBy.size() >= 3 && data.createdBy.size() <= 254
+        && data.sha256Checksum is string && data.sha256Checksum.size() == 64
+        && data.summary is map && data.summary.keys().size() <= 20
         && data.createdAt is timestamp;
     }
 
@@ -67,7 +144,7 @@ service cloud.firestore {
         && (!('goles_favor' in data) || data.goles_favor == null || (data.goles_favor is int && data.goles_favor >= 0 && data.goles_favor <= 99))
         && (!('goles_contra' in data) || data.goles_contra == null || (data.goles_contra is int && data.goles_contra >= 0 && data.goles_contra <= 99))
         && (!('acta' in data) || data.acta == null || (data.acta is string && data.acta.size() <= 5000))
-        && (!('convocatoria' in data) || (data.convocatoria is list && data.convocatoria.size() <= 40 && (data.convocatoria.size() == 0 || data.convocatoria[0] is string)))
+        && (!('convocatoria' in data) || (data.convocatoria is list && data.convocatoria.size() <= 40 && (data.convocatoria.size() == 0 || (data.convocatoria[0] is string && data.convocatoria[0].size() <= 128))))
         && (!('hora_citacion' in data) || (data.hora_citacion is string && data.hora_citacion.size() <= 120))
         && (!('lugar' in data) || (data.lugar is string && data.lugar.size() <= 200))
         && (!('equipacion' in data) || (data.equipacion is string && data.equipacion.size() <= 300))
@@ -97,7 +174,7 @@ service cloud.firestore {
         && data.fechaPartido is string && data.fechaPartido.size() > 0 && data.fechaPartido.size() <= 20
         && data.sistema is string && data.sistema.size() > 0 && data.sistema.size() <= 30
         && data.sistemaRival is string && data.sistemaRival.size() > 0 && data.sistemaRival.size() <= 30
-        && (!('convocatoria' in data) || (data.convocatoria is list && data.convocatoria.size() <= 40 && (data.convocatoria.size() == 0 || data.convocatoria[0] is string)))
+        && (!('convocatoria' in data) || (data.convocatoria is list && data.convocatoria.size() <= 40 && (data.convocatoria.size() == 0 || (data.convocatoria[0] is string && data.convocatoria[0].size() <= 128))))
         && (!('objetivos_tacticos' in data) || (data.objetivos_tacticos is string && data.objetivos_tacticos.size() <= 5000))
         && (!('alineacion_propuesta' in data) || (data.alineacion_propuesta is string && data.alineacion_propuesta.size() <= 3000))
         && (!('puntos_fuertes_rival' in data) || (data.puntos_fuertes_rival is string && data.puntos_fuertes_rival.size() <= 3000))
@@ -117,20 +194,94 @@ service cloud.firestore {
       allow delete: if isBootstrappedAdmin() && isValidId(adminId);
     }
 
-    match /team_matches/{matchId} {
-      allow get: if isVerifiedUser() && isValidId(matchId) && (existing().ownerId == request.auth.uid || isAdmin());
-      allow list: if isBootstrappedAdmin() || (isVerifiedUser() && existing().ownerId == request.auth.uid);
+    match /club_access/{accessId} {
+      allow get: if isValidId(accessId)
+        && accessId == 'alejandro_scout'
+        && (isAdmin() || isAlejandroEmail());
+      allow list: if isAdmin();
+      allow create: if isAdmin()
+        && isValidId(accessId)
+        && accessId == 'alejandro_scout'
+        && isValidScoutAccess(incoming())
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(accessId)
+        && accessId == 'alejandro_scout'
+        && isValidScoutAccess(incoming())
+        && incoming().email == existing().email
+        && incoming().role == existing().role
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            // Action: One-time atomic UID seal by Alejandro (asaguar04@gmail.com) upon verified Google sign-in
+            isAlejandroEmail()
+            && existing().active == true
+            && existing().uid == ''
+            && existing().uidLocked == false
+            && incoming().uid == request.auth.uid
+            && isValidId(incoming().uid)
+            && incoming().uidLocked == true
+            && incoming().active == existing().active
+            && incoming().nombre == existing().nombre
+            && incoming().allowedModules == existing().allowedModules
+            && incoming().updatedBy == 'asaguar04@gmail.com'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['uid', 'uidLocked', 'updatedBy', 'updatedAt'])
+          )
+        );
+      allow delete: if isAdmin() && isValidId(accessId) && accessId == 'alejandro_scout';
+    }
 
-      allow create: if isVerifiedUser()
-        && isValidId(matchId)
+    match /security_backups/{backupId} {
+      allow get: if isAdmin() && isValidId(backupId);
+      allow list: if isAdmin();
+      allow create: if isAdmin()
+        && isValidId(backupId)
+        && isValidSecurityBackup(incoming(), backupId)
+        && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(backupId);
+    }
+
+    match /club_sync/{docId} {
+      allow get: if isValidId(docId) && (isAdmin() || hasAlejandroModule(existing().module));
+      allow list: if isAdmin() || (hasAlejandroModule(existing().module) && existing().module is string);
+      allow create: if isValidId(docId)
+        && isValidClubSyncDoc(incoming())
+        && incoming().id == docId
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (hasAlejandroModule(incoming().module) && incoming().updatedBy == 'asaguar04@gmail.com')
+        );
+      allow update: if isValidId(docId)
+        && isValidClubSyncDoc(incoming())
+        && incoming().id == existing().id
+        && incoming().module == existing().module
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            hasAlejandroModule(existing().module)
+            && incoming().updatedBy == 'asaguar04@gmail.com'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['category', 'team', 'payload', 'updatedBy', 'updatedAt'])
+          )
+        );
+      allow delete: if isAdmin() && isValidId(docId);
+    }
+
+    match /team_matches/{matchId} {
+      allow get: if isValidId(matchId) && (isAdmin() || hasAlejandroModule('gestion-equipo'));
+      allow list: if isAdmin() || (hasAlejandroModule('gestion-equipo') && existing().team is string);
+
+      allow create: if isValidId(matchId)
         && isValidTeamMatch(incoming())
         && incoming().id == matchId
         && incoming().ownerId == request.auth.uid
         && incoming().createdAt == request.time
-        && incoming().updatedAt == request.time;
+        && incoming().updatedAt == request.time
+        && (isAdmin() || hasAlejandroModule('gestion-equipo'));
 
-      allow update: if isVerifiedUser()
-        && isValidId(matchId)
+      allow update: if isValidId(matchId)
         && isValidTeamMatch(incoming())
         && incoming().id == existing().id
         && incoming().ownerId == existing().ownerId
@@ -139,7 +290,7 @@ service cloud.firestore {
         && (
           isAdmin() ||
           (
-            existing().ownerId == request.auth.uid && (
+            hasAlejandroModule('gestion-equipo') && (
               // Action: Update match stats & score
               incoming().diff(existing()).affectedKeys().hasOnly(['goles_favor', 'goles_contra', 'estado', 'estadisticas', 'acta', 'updatedAt']) ||
               // Action: Update post-match feedback
@@ -152,23 +303,22 @@ service cloud.firestore {
           )
         );
 
-      allow delete: if isVerifiedUser() && isValidId(matchId) && (existing().ownerId == request.auth.uid || isAdmin());
+      allow delete: if isValidId(matchId) && isAdmin();
     }
 
     match /match_plans/{planId} {
-      allow get: if isVerifiedUser() && isValidId(planId) && (existing().ownerId == request.auth.uid || isAdmin());
-      allow list: if isBootstrappedAdmin() || (isVerifiedUser() && existing().ownerId == request.auth.uid);
+      allow get: if isValidId(planId) && (isAdmin() || hasAlejandroModule('gestion-equipo'));
+      allow list: if isAdmin() || (hasAlejandroModule('gestion-equipo') && existing().team is string);
 
-      allow create: if isVerifiedUser()
-        && isValidId(planId)
+      allow create: if isValidId(planId)
         && isValidMatchPlan(incoming())
         && incoming().id == planId
         && incoming().ownerId == request.auth.uid
         && incoming().createdAt == request.time
-        && incoming().updatedAt == request.time;
+        && incoming().updatedAt == request.time
+        && (isAdmin() || hasAlejandroModule('gestion-equipo'));
 
-      allow update: if isVerifiedUser()
-        && isValidId(planId)
+      allow update: if isValidId(planId)
         && isValidMatchPlan(incoming())
         && incoming().id == existing().id
         && incoming().ownerId == existing().ownerId
@@ -177,7 +327,7 @@ service cloud.firestore {
         && (
           isAdmin() ||
           (
-            existing().ownerId == request.auth.uid &&
+            hasAlejandroModule('gestion-equipo') &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'rivalName', 'fechaPartido', 'sistema', 'sistemaRival',
               'convocatoria', 'objetivos_tacticos', 'alineacion_propuesta',
@@ -186,11 +336,11 @@ service cloud.firestore {
           )
         );
 
-      allow delete: if isVerifiedUser() && isValidId(planId) && (existing().ownerId == request.auth.uid || isAdmin());
+      allow delete: if isValidId(planId) && isAdmin();
     }
 
     match /test/connection {
-      allow get: if isVerifiedUser();
+      allow get: if isAdmin() || isAuthorizedAlejandro() || isAlejandroEmail();
     }
   }
 }

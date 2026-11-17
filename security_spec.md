@@ -1,23 +1,30 @@
-# Security Specification — Firestore Rules
+# Security Specification (`security_spec.md`) — Captación y Scouting
 
 ## 1. Data Invariants
-1. Every document in `/team_matches/{matchId}` and `/match_plans/{planId}` must have a valid `id` matching the document ID (`^[a-zA-Z0-9_-]+$`, max 128 chars) and a verified `ownerId` matching `request.auth.uid` on creation (unless created by the verified admin).
-2. `ownerId`, `id`, and `createdAt` are strictly immutable after document creation.
-3. All `createdAt` and `updatedAt` timestamps must match the server timestamp (`request.time`).
-4. Every string field has strict `.size()` upper bounds to prevent storage exhaustion / denial-of-wallet attacks.
-5. `allow list` queries evaluate `resource.data.ownerId == request.auth.uid` or verified bootstrapped admin email without executing `get()`/`exists()` calls.
-6. Only verified users (`request.auth != null && request.auth.token.email_verified == true`) can perform reads or writes.
 
-## 2. The "Dirty Dozen" Payloads (Expected: PERMISSION_DENIED)
-1. **Unauthenticated Write**: `request.auth == null` writing to `/team_matches/match_1`.
-2. **Unverified Email Admin Spoof**: `request.auth.token.email == 'angel.saguar@telefonica.net'` with `email_verified: false`.
-3. **Shadow Field Injection**: Creating/updating a `TeamMatch` with an undocumented field such as `{ ..., isVerified: true }`.
-4. **Owner Spoofing on Create**: Non-admin user creating a match with `ownerId: "victim_uid"`.
-5. **Owner Mutation on Update**: Updating a match to reassign `ownerId` to a different UID.
-6. **Immutable Timestamp Tampering**: Creating or updating a match with client-forged `createdAt` or `updatedAt != request.time`.
-7. **ID Poisoning**: Creating a document with path ID containing special characters or exceeding 128 characters (`"x".repeat(200)`).
-8. **Type Poisoning on Update**: Updating `goles_favor` to a string `"5"` or negative number `-3`.
-9. **Oversized String Exhaustion**: Updating `acta` with a string larger than 5000 characters.
-10. **Unauthorized Blanket List**: Non-admin authenticated user executing `getDocs(collection(db, 'team_matches'))` without `where('ownerId', '==', uid)`.
-11. **Self-Privilege Escalation**: Non-admin user attempting to write their own UID into `/admins/{uid}`.
-12. **Status Enum Bypass**: Writing `estado: "Borrado"` or `tipo: "Neutral"` outside allowed enum values.
+1. **Two-Account Zero-Trust Perimeter**:
+   - Only `angel.saguar@telefonica.net` (`ADMIN`) and `asaguar04@gmail.com` (`SCOUT`, bound to his exact Firebase Auth UID) may read or write any document in Firestore.
+   - Revoked observers (`santi@...`, `javier@...`) and external Google accounts are denied all operations (`get`, `list`, `create`, `update`, `delete`), even if their Google email is verified.
+2. **Deny-by-Default Module Authorization (`allowedModules: []`)**:
+   - `/club_access/alejandro_scout` initializes with `allowedModules: []`.
+   - `asaguar04@gmail.com` cannot read or write `/team_matches`, `/match_plans`, or `/club_sync/{docId}` unless the administrator (`angel.saguar@telefonica.net`) has explicitly added the corresponding module (`'scouting'`, `'campograma'`, `'needs'`, `'gestion-equipo'`, `'estadisticas-rivales'`) to `allowedModules`.
+3. **One-Time Atomic UID Binding**:
+   - `asaguar04@gmail.com` may only update `/club_access/alejandro_scout` once, when `existing().uid == ''` and `existing().uidLocked == false`, to bind `incoming().uid == request.auth.uid` and `incoming().uidLocked == true`.
+   - `asaguar04@gmail.com` can NEVER modify `role`, `email`, `active`, or `allowedModules`, nor change `uid` once `uidLocked == true`.
+4. **Admin & Backup Isolation**:
+   - `/admins/{adminId}` and `/security_backups/{backupId}` are strictly restricted to the administrator (`angel.saguar@telefonica.net`).
+
+## 2. The "Dirty Dozen" Adversarial Payloads
+
+1. **Unauthenticated Read/Write**: `auth = null` attempting `get` or `create` on `/team_matches/m1`. -> `PERMISSION_DENIED`
+2. **Unverified Email Spoofing**: `auth = { uid: 'spoof', email: 'angel.saguar@telefonica.net', email_verified: false }` attempting `get` on `/admins/spoof`. -> `PERMISSION_DENIED`
+3. **Revoked Observer (Santi/Javier) Access**: `auth = { uid: 'santi_uid', email: 'santi@gmail.com', email_verified: true }` attempting `list` or `get` on `/club_sync/scouting_players_master`. -> `PERMISSION_DENIED`
+4. **Name-Substring Spoof (`alejandro.hacker@gmail.com`)**: Verified Google user with `'alejandro'` in email attempting `get` on `/club_access/alejandro_scout`. -> `PERMISSION_DENIED`
+5. **Privilege Escalation by Scout (`role: 'admin'`)**: `asaguar04@gmail.com` attempting to set `role: 'admin'` in `/club_access/alejandro_scout`. -> `PERMISSION_DENIED`
+6. **Self-Enabling Modules by Scout (`allowedModules: ['scouting']`)**: `asaguar04@gmail.com` attempting to add `'scouting'` to `allowedModules` during or after UID binding. -> `PERMISSION_DENIED`
+7. **UID Hijack After Lock**: `asaguar04@gmail.com` with a different UID (`uid_2`) attempting to overwrite `uid` after `uidLocked == true`. -> `PERMISSION_DENIED`
+8. **Disabled Module Access (`allowedModules: []`)**: `asaguar04@gmail.com` (with bound UID) attempting to read/write `/club_sync/scouting_players_master` (`module: 'scouting'`) while `allowedModules` is `[]`. -> `PERMISSION_DENIED`
+9. **Cross-Module Bypass**: `asaguar04@gmail.com` with only `['scouting']` enabled attempting to write to `/team_matches/m1` (which requires `'gestion-equipo'`). -> `PERMISSION_DENIED`
+10. **Shadow Field Injection**: Sending extra unauthorized key `isSuperAdmin: true` to `/team_matches/m1`. -> `PERMISSION_DENIED`
+11. **Client Timestamp Forgery**: Sending a past/future timestamp instead of `request.time` for `updatedAt`. -> `PERMISSION_DENIED`
+12. **Scout Accessing `/security_backups`**: `asaguar04@gmail.com` attempting to read `/security_backups/backup_1`. -> `PERMISSION_DENIED`

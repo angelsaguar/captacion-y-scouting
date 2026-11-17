@@ -122,8 +122,11 @@ export async function syncWithRFFMWeb(targetJornada: number = 5): Promise<RFFMSy
   let isLive = false;
 
   try {
+    const { getAuthBearerHeaders } = await import('@/lib/clubAccessAndSync');
+    const headers = await getAuthBearerHeaders();
+
     // 1. Try fetching classification proxy
-    const clasifRes = await fetch(`/api/rffm/clasificacion?jornada=${targetJornada}`);
+    const clasifRes = await fetch(`/api/rffm/clasificacion?jornada=${targetJornada}`, { headers });
     if (clasifRes.ok) {
       const clasifData = await clasifRes.json();
       if (clasifData?.clasificacion && Array.isArray(clasifData.clasificacion) && clasifData.clasificacion.length > 0) {
@@ -144,7 +147,7 @@ export async function syncWithRFFMWeb(targetJornada: number = 5): Promise<RFFMSy
     }
 
     // 2. Try fetching match results proxy
-    const resRes = await fetch(`/api/rffm/resultados?jornada=${targetJornada}`);
+    const resRes = await fetch(`/api/rffm/resultados?jornada=${targetJornada}`, { headers });
     if (resRes.ok) {
       const resData = await resRes.json();
       if (resData?.partidos && Array.isArray(resData.partidos) && resData.partidos.length > 0) {

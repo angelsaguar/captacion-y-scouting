@@ -142,9 +142,12 @@ export async function extractAndSyncFromCalendarUrl(
     throw new Error('Debes indicar la URL del calendario de la Federación (RFFM).');
   }
 
+  const { getAuthBearerHeaders } = await import('./clubAccessAndSync');
+  const headers = await getAuthBearerHeaders({ 'Content-Type': 'application/json' });
+
   const response = await fetch('/api/rffm/extract-calendar', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ calendarUrl: cleanUrl, teamName })
   });
 

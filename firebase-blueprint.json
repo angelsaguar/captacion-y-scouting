@@ -25,6 +25,135 @@
       },
       "required": ["uid", "email", "createdAt"]
     },
+    "ScoutAccess": {
+      "title": "ScoutAccess",
+      "description": "Access control and module permissions record for the single authorized scout (Alejandro: asaguar04@gmail.com) bound to exact email and real Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Exact Google email address of the authorized scout (asaguar04@gmail.com).",
+          "maxLength": 254
+        },
+        "uid": {
+          "type": "string",
+          "description": "Real Firebase Authentication UID sealed upon verified Google sign-in.",
+          "maxLength": 128
+        },
+        "uidLocked": {
+          "type": "boolean",
+          "description": "True once the real Firebase Auth UID has been cryptographically bound."
+        },
+        "nombre": {
+          "type": "string",
+          "description": "Full name of the authorized scout.",
+          "maxLength": 120
+        },
+        "role": {
+          "type": "string",
+          "enum": ["scout"],
+          "description": "Fixed scout role.",
+          "maxLength": 20
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Master switch controlled exclusively by the administrator."
+        },
+        "allowedModules": {
+          "type": "array",
+          "description": "List of club module identifiers explicitly enabled by the administrator (empty by default)."
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "Email of the user who performed the update.",
+          "maxLength": 254
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": ["email", "uid", "uidLocked", "nombre", "role", "active", "allowedModules", "updatedBy", "updatedAt"]
+    },
+    "ClubSyncDoc": {
+      "title": "ClubSyncDoc",
+      "description": "Cross-device (Mac and iPad) synchronization document scoped by module.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Document identifier.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "module": {
+          "type": "string",
+          "enum": ["scouting", "campograma", "needs", "gestion-equipo", "estadisticas-rivales"],
+          "description": "Module governing access permissions for this synchronized dataset.",
+          "maxLength": 40
+        },
+        "category": {
+          "type": "string",
+          "description": "Dataset category key.",
+          "maxLength": 80
+        },
+        "team": {
+          "type": "string",
+          "description": "Associated club team or 'ALL'.",
+          "maxLength": 80
+        },
+        "payload": {
+          "type": "object",
+          "description": "Structured synchronization payload map."
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "Email of the authorized user who synced the record.",
+          "maxLength": 254
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the last sync."
+        }
+      },
+      "required": ["id", "module", "category", "team", "payload", "updatedBy", "updatedAt"]
+    },
+    "SecurityBackupDoc": {
+      "title": "SecurityBackupDoc",
+      "description": "Administrator-only security audit and pre-revocation backup metadata record.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Backup document ID.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "Administrator email.",
+          "maxLength": 254
+        },
+        "sha256Checksum": {
+          "type": "string",
+          "description": "SHA-256 integrity hash of the backup.",
+          "maxLength": 128
+        },
+        "summary": {
+          "type": "object",
+          "description": "Inventory counts and metadata summary."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        }
+      },
+      "required": ["id", "createdBy", "sha256Checksum", "summary", "createdAt"]
+    },
     "TeamMatch": {
       "title": "TeamMatch",
       "description": "Official or friendly match record including convocatoria, live match statistics, and post-match technical feedback.",
@@ -233,6 +362,18 @@
     "/admins/{adminId}": {
       "schema": { "$ref": "#/entities/AdminUser" },
       "description": "Administrator registry used for role-based access control."
+    },
+    "/club_access/{accessId}": {
+      "schema": { "$ref": "#/entities/ScoutAccess" },
+      "description": "Strict access control and per-module authorization for Alejandro (asaguar04@gmail.com) bound to exact UID and email."
+    },
+    "/club_sync/{docId}": {
+      "schema": { "$ref": "#/entities/ClubSyncDoc" },
+      "description": "Cross-device (Mac and iPad) synchronized datasets for scouting, rosters, attendance sessions, campograma, and needs."
+    },
+    "/security_backups/{backupId}": {
+      "schema": { "$ref": "#/entities/SecurityBackupDoc" },
+      "description": "Administrator-only security audit and pre-revocation backup metadata."
     },
     "/team_matches/{matchId}": {
       "schema": { "$ref": "#/entities/TeamMatch" },
