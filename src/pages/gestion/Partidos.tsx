@@ -133,6 +133,7 @@ interface Match {
   equipacion?: string;
   observaciones?: string;
   mensaje_motivacional?: string;
+  _updatedAtMs?: number;
   estadisticas?: {
     jugadoras_stats?: MatchPlayerStat[];
     cambios?: Substitution[];
@@ -143,6 +144,9 @@ interface Match {
     observaciones?: string;
     mensaje_motivacional?: string;
     feedback_post_partido?: MatchPostFeedback;
+    totales_equipo?: any;
+    cronometro?: any;
+    has_live_stats?: boolean;
   };
 }
 
@@ -1312,9 +1316,10 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
           );
         }
       } else {
+        const teamSlug = sanitizeFirestoreId(selectedTeam.toLowerCase()).slice(0, 24) || 'club';
         const defaultMatchesList: Match[] = [
           { 
-            id: 'm-coslada', 
+            id: `m-coslada-${teamSlug}`, 
             rival: 'COSLADA', 
             fecha: '2026-09-12', 
             hora: '13:15', 
@@ -1326,11 +1331,13 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
             equipacion: '1ª Equipación Oficial (Camiseta Blanca, Pantalón Verde, Medias Verdes) + Chándal',
             observaciones: '• Acudir con puntualidad a la hora fijada.\n• Confirmar recepción del mensaje en el grupo de WhatsApp.'
           },
-          { id: 'm1', rival: 'A.D. Arganda', fecha: new Date().toISOString().split('T')[0], hora: '12:00', tipo: 'Local', competicion: 'Liga', estado: 'Programado' },
-          { id: 'm2', rival: 'F.C. Rivas Vaciamadrid', fecha: '2026-05-15', hora: '11:30', tipo: 'Visitante', competicion: 'Liga', estado: 'Finalizado', goles_favor: 3, goles_contra: 1, acta: 'Excelente partido de posesión y presión alta. Destacó el juego defensivo por bandas.' }
+          { id: `m1-${teamSlug}`, rival: 'A.D. Arganda', fecha: new Date().toISOString().split('T')[0], hora: '12:00', tipo: 'Local', competicion: 'Liga', estado: 'Programado' },
+          { id: `m2-${teamSlug}`, rival: 'F.C. Rivas Vaciamadrid', fecha: '2026-05-15', hora: '11:30', tipo: 'Visitante', competicion: 'Liga', estado: 'Finalizado', goles_favor: 3, goles_contra: 1, acta: 'Excelente partido de posesión y presión alta. Destacó el juego defensivo por bandas.' }
         ];
         const defaults: Match[] = defaultMatchesList.filter(m => !deletedMatchIds.has(String(m.id)));
-        localStorage.setItem(key, JSON.stringify(defaults));
+        try {
+          localStorage.setItem(key, JSON.stringify(defaults));
+        } catch {}
         setMatches(defaults);
       }
     };
@@ -1390,11 +1397,14 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
   };
 
   const handleSavePostMatchFeedback = async (matchId: string, feedback: MatchPostFeedback) => {
+    const now = Date.now();
+    const targetId = sanitizeFirestoreId(matchId);
     const updated = matches.map(m => {
-      if (m.id === matchId) {
+      if (sanitizeFirestoreId(m.id) === targetId || m.id === matchId) {
         return {
           ...m,
           estado: 'Finalizado' as const,
+          _updatedAtMs: now,
           feedback_post_partido: feedback,
           estadisticas: {
             ...(m.estadisticas || {}),
@@ -1405,29 +1415,60 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       return m;
     });
 
-    const updatedMatch = updated.find(m => m.id === matchId);
+    const updatedMatch = updated.find(m => sanitizeFirestoreId(m.id) === targetId || m.id === matchId);
     if (updatedMatch) {
-      setEditingMatch(prev => (prev && prev.id === matchId ? updatedMatch : prev));
-      setShowActaModal(prev => (prev && prev.id === matchId ? updatedMatch : prev));
+      setEditingMatch(prev => (prev && (prev.id === matchId || sanitizeFirestoreId(prev.id) === targetId) ? updatedMatch : prev));
+      setShowActaModal(prev => (prev && (prev.id === matchId || sanitizeFirestoreId(prev.id) === targetId) ? updatedMatch : prev));
     }
 
-    await saveMatches(updated);
+    await saveMatches(updated, targetId);
     setShowFeedbackModalMatch(null);
   };
 
-  const saveMatches = async (updated: Match[]) => {
-    const normalizedUpdated = updated.map(m => ({
+  const sanitizeMatchForStorage = (m: Match): Match => {
+    const rawStats = m.estadisticas ? { ...m.estadisticas } : undefined;
+    if (rawStats && Array.isArray(rawStats.jugadoras_stats)) {
+      rawStats.jugadoras_stats = rawStats.jugadoras_stats.map((st: any) => {
+        if (!st || typeof st !== 'object') return st;
+        const { foto_url, ...rest } = st;
+        if (typeof foto_url === 'string' && foto_url && !foto_url.startsWith('data:')) {
+          return { ...rest, foto_url };
+        }
+        return rest;
+      });
+    }
+    return {
       ...m,
       id: sanitizeFirestoreId(m.id),
-    }));
+      estadisticas: rawStats,
+    };
+  };
+
+  const saveMatches = async (updated: Match[], targetMatchId?: string) => {
+    const normalizedUpdated = updated.map(sanitizeMatchForStorage);
 
     setMatches(normalizedUpdated);
-    localStorage.setItem(`team_matches_${selectedTeam}`, JSON.stringify(normalizedUpdated));
+    try {
+      localStorage.setItem(`team_matches_${selectedTeam}`, JSON.stringify(normalizedUpdated));
+    } catch (storageErr) {
+      console.warn('Error saving team matches to localStorage (retrying after cleanup):', storageErr);
+      try {
+        localStorage.removeItem('ud_lapoveda_table_team_matches');
+        localStorage.setItem(`team_matches_${selectedTeam}`, JSON.stringify(normalizedUpdated));
+      } catch (retryErr) {
+        console.error('Failed to persist matches in localStorage:', retryErr);
+      }
+    }
     window.dispatchEvent(new CustomEvent('lapoveda_matches_updated', { detail: { team: selectedTeam } }));
 
     // Sync to local/Supabase team_matches table
     try {
-      for (const match of normalizedUpdated) {
+      const targetNorm = targetMatchId ? sanitizeFirestoreId(targetMatchId) : null;
+      const matchesForDb = targetNorm
+        ? normalizedUpdated.filter(m => m.id === targetNorm)
+        : normalizedUpdated;
+
+      for (const match of matchesForDb) {
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(match.id);
         const statsToSave = {
           ...(match.estadisticas || {}),
@@ -1468,7 +1509,9 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
           if (!error && data && data[0]) {
             match.id = data[0].id;
             setMatches([...normalizedUpdated]);
-            localStorage.setItem(`team_matches_${selectedTeam}`, JSON.stringify(normalizedUpdated));
+            try {
+              localStorage.setItem(`team_matches_${selectedTeam}`, JSON.stringify(normalizedUpdated));
+            } catch {}
           }
         }
       }
@@ -1476,9 +1519,18 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       console.warn('Failed to sync team matches to table store:', err);
     }
 
-    // Persist to Firebase Firestore when authenticated
+    // Persist to Firebase Firestore when authenticated (non-blocking if cloud fails so local save is never lost)
     if (isFirebaseAuthReady()) {
-      await upsertTeamMatchesToFirestore(normalizedUpdated, selectedTeam);
+      const targetNorm = targetMatchId ? sanitizeFirestoreId(targetMatchId) : null;
+      const matchesForCloud = targetNorm
+        ? normalizedUpdated.filter(m => m.id === targetNorm)
+        : normalizedUpdated;
+      try {
+        await upsertTeamMatchesToFirestore(matchesForCloud, selectedTeam);
+      } catch (cloudErr: any) {
+        console.error('Error sincronizando con Firebase Firestore:', cloudErr);
+        toast.warning('Cambios guardados en este dispositivo. No se pudo sincronizar con la nube Firebase.');
+      }
     }
   };
 
@@ -1509,6 +1561,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
         };
         return {
           ...m,
+          _updatedAtMs: Date.now(),
           convocatoria: cleanConv,
           hora_citacion: citacionHora,
           lugar: citacionLugar,
@@ -1521,7 +1574,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       return m;
     });
 
-    await saveMatches(updated);
+    await saveMatches(updated, showConvocatoriaModal.id);
     toast.success('¡Convocatoria y datos del partido guardados correctamente!');
     setShowConvocatoriaModal(null);
   };
@@ -1560,6 +1613,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       tipo: formData.tipo,
       competicion: formData.competicion,
       estado: formData.estado,
+      _updatedAtMs: Date.now(),
       hora_citacion: calculatedCitacion,
       lugar: defaultLugar,
       equipacion: defaultEquip,
@@ -1576,7 +1630,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
     };
 
     const updated = [newMatch, ...matches];
-    await saveMatches(updated);
+    await saveMatches(updated, newMatch.id);
     toast.success('Partido registrado en el calendario.');
     
     // Clear form
@@ -1651,6 +1705,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
         return {
           ...m,
           estado: 'Finalizado' as const,
+          _updatedAtMs: Date.now(),
           goles_favor: gf,
           goles_contra: gc,
           acta: showActaModal.acta || '',
@@ -1671,7 +1726,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       return m;
     });
 
-    await saveMatches(updated);
+    await saveMatches(updated, showActaModal.id);
     toast.success('Resultado, Acta y Estadísticas del partido actualizados correctamente.');
     setShowActaModal(null);
   };
@@ -1723,6 +1778,7 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
     const updatedMatch: Match = {
       ...editingMatch,
+      _updatedAtMs: Date.now(),
       feedback_post_partido: preservedFeedback,
       goles_favor: gf,
       goles_contra: gc,
@@ -1730,17 +1786,30 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
       estadisticas: updatedStats
     };
 
-    const updated = matches.map(m => m.id === editingMatch.id ? updatedMatch : m);
+    const targetId = sanitizeFirestoreId(editingMatch.id);
+    const existsInMatches = matches.some(m => sanitizeFirestoreId(m.id) === targetId || m.id === editingMatch.id);
+    const updated = existsInMatches
+      ? matches.map(m => (sanitizeFirestoreId(m.id) === targetId || m.id === editingMatch.id ? updatedMatch : m))
+      : [updatedMatch, ...matches];
 
-    await saveMatches(updated);
+    await saveMatches(updated, targetId);
     toast.success(`¡Partido contra ${editingMatch.rival} modificado y guardado correctamente!`);
     setEditingMatch(null);
   };
 
   const handleSaveStatsTracker = async (updatedMatch: Match) => {
-    const updated = matches.map(m => m.id === updatedMatch.id ? updatedMatch : m);
-    await saveMatches(updated);
-    window.dispatchEvent(new CustomEvent('lapoveda_matches_updated', { detail: { match: updatedMatch } }));
+    const targetId = sanitizeFirestoreId(updatedMatch.id);
+    const stampedMatch: Match = {
+      ...updatedMatch,
+      id: targetId,
+      _updatedAtMs: Date.now(),
+    };
+    const existsInMatches = matches.some(m => sanitizeFirestoreId(m.id) === targetId || m.id === updatedMatch.id);
+    const updated = existsInMatches
+      ? matches.map(m => (sanitizeFirestoreId(m.id) === targetId || m.id === updatedMatch.id ? stampedMatch : m))
+      : [stampedMatch, ...matches];
+    await saveMatches(updated, targetId);
+    window.dispatchEvent(new CustomEvent('lapoveda_matches_updated', { detail: { match: stampedMatch } }));
   };
 
   return (
@@ -2227,15 +2296,22 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
 
                   {/* SCORE BOARD */}
                   <div className="flex flex-col items-center justify-center w-1/3">
-                    {match.estado === 'Finalizado' ? (
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl md:text-3xl font-black text-white bg-slate-950/80 border border-slate-750 px-3 py-1 rounded-xl shadow-inner">
-                          {match.tipo === 'Local' ? (match.goles_favor ?? 0) : (match.goles_contra ?? 0)}
-                        </span>
-                        <span className="text-slate-400 font-black text-lg">-</span>
-                        <span className="text-2xl md:text-3xl font-black text-white bg-slate-950/80 border border-slate-750 px-3 py-1 rounded-xl shadow-inner">
-                          {match.tipo === 'Local' ? (match.goles_contra ?? 0) : (match.goles_favor ?? 0)}
-                        </span>
+                    {match.estado === 'Finalizado' || (match.goles_favor !== undefined && match.goles_favor !== null) || (match.goles_contra !== undefined && match.goles_contra !== null) ? (
+                      <div className="flex flex-col items-center gap-1">
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl md:text-3xl font-black text-white bg-slate-950/80 border border-slate-750 px-3 py-1 rounded-xl shadow-inner">
+                            {match.tipo === 'Local' ? (match.goles_favor ?? 0) : (match.goles_contra ?? 0)}
+                          </span>
+                          <span className="text-slate-400 font-black text-lg">-</span>
+                          <span className="text-2xl md:text-3xl font-black text-white bg-slate-950/80 border border-slate-750 px-3 py-1 rounded-xl shadow-inner">
+                            {match.tipo === 'Local' ? (match.goles_contra ?? 0) : (match.goles_favor ?? 0)}
+                          </span>
+                        </div>
+                        {match.estado !== 'Finalizado' && (
+                          <span className="text-[9px] font-black uppercase tracking-wider text-cyan-300 bg-cyan-950/80 border border-cyan-500/30 px-2 py-0.5 rounded-full">
+                            Marcador Registrado
+                          </span>
+                        )}
                       </div>
                     ) : (
                       <div className="text-xs text-white font-black bg-slate-950 px-3.5 py-1.5 rounded-full uppercase tracking-wider border border-slate-750 shadow-sm">
@@ -2347,7 +2423,22 @@ ${citObs || '• Acudir con puntualidad.\n• Confirmar asistencia en el grupo.'
                     >
                       <Zap className="w-3.5 h-3.5 text-cyan-400 fill-current" />
                       <span>Recoger Estadísticas</span>
-                      {((match.estadisticas?.totales_equipo?.recuperaciones_balon || 0) > 0 || (match.estadisticas?.jugadoras_stats?.some(s => (s.recuperaciones_balon || 0) > 0 || (s.goles_metidos || 0) > 0 || (s.perdidas_balon || 0) > 0))) && (
+                      {(
+                        match.estadisticas?.has_live_stats ||
+                        (match.goles_favor || 0) > 0 ||
+                        (match.goles_contra || 0) > 0 ||
+                        Object.values(match.estadisticas?.totales_equipo || {}).some((v: any) => Number(v) > 0) ||
+                        match.estadisticas?.jugadoras_stats?.some(s =>
+                          (s.recuperaciones_balon || 0) > 0 ||
+                          (s.goles_metidos || 0) > 0 ||
+                          (s.goles_encajados || 0) > 0 ||
+                          (s.asistencias || 0) > 0 ||
+                          (s.tarjetas_amarillas || 0) > 0 ||
+                          (s.tarjetas_rojas || 0) > 0 ||
+                          (s.perdidas_balon || 0) > 0 ||
+                          (s.minutos || 0) > 0
+                        )
+                      ) && (
                         <span className="bg-cyan-500 text-black text-[9px] font-extrabold px-1.5 py-0.2 rounded-full ml-1">
                           ✓
                         </span>

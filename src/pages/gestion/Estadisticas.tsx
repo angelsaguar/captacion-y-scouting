@@ -53,7 +53,8 @@ import { syncTeamWithFederationFull } from '@/lib/liveRivalStats';
 import {
   fetchTeamMatchesFromFirestore,
   isFirebaseAuthReady,
-  mergeMatchRecords
+  mergeMatchRecords,
+  sanitizeFirestoreId
 } from '@/lib/firestoreMatches';
 
 interface TeamPlayer {
@@ -100,7 +101,9 @@ interface Match {
   estado: string;
   goles_favor?: number;
   goles_contra?: number;
+  _updatedAtMs?: number;
   estadisticas?: {
+    has_live_stats?: boolean;
     jugadoras_stats?: MatchPlayerStat[];
     totales_equipo?: {
       recuperaciones_balon?: number;
@@ -268,14 +271,19 @@ export default function Estadisticas() {
       return norm;
     });
     if (matchesUpdated) {
-      localStorage.setItem(matchesKey, JSON.stringify(matchesList));
+      try {
+        localStorage.setItem(matchesKey, JSON.stringify(matchesList));
+      } catch {}
     }
     
-    // Consider games that are Finalized or have stats recorded
+    // Consider games that are Finalized or have any live/scoreboard/team stats recorded
     const gamesWithData = matchesList.filter(m => 
       m.estado === 'Finalizado' || 
+      (m.goles_favor ?? 0) > 0 ||
+      (m.goles_contra ?? 0) > 0 ||
+      Boolean(m.estadisticas?.has_live_stats) ||
       (m.estadisticas?.jugadoras_stats && m.estadisticas.jugadoras_stats.length > 0) ||
-      (m.estadisticas?.totales_equipo && (m.estadisticas.totales_equipo.recuperaciones_balon || 0) > 0)
+      (m.estadisticas?.totales_equipo && Object.values(m.estadisticas.totales_equipo).some(v => Number(v) > 0))
     );
     setFinishedMatchesCount(gamesWithData.length);
 
@@ -356,18 +364,27 @@ export default function Estadisticas() {
       totalGoalsScored += matchGolesF;
       totalGoalsConceded += matchGolesC;
 
+      const statsArr = Array.isArray(m.estadisticas?.jugadoras_stats) ? m.estadisticas!.jugadoras_stats : [];
+      const sumRec = statsArr.reduce((a: number, b: any) => a + (b.recuperaciones_balon || 0), 0);
+      const sumPer = statsArr.reduce((a: number, b: any) => a + (b.perdidas_balon || 0), 0);
+      const sumCF = statsArr.reduce((a: number, b: any) => a + (b.corners_favor || 0), 0);
+      const sumCC = statsArr.reduce((a: number, b: any) => a + (b.corners_contra || 0), 0);
+      const sumFF = statsArr.reduce((a: number, b: any) => a + (b.faltas_favor || 0), 0);
+      const sumFC = statsArr.reduce((a: number, b: any) => a + (b.faltas_contra || 0), 0);
+      const sumTA = statsArr.reduce((a: number, b: any) => a + (b.tarjetas_amarillas || 0), 0);
+      const sumTR = statsArr.reduce((a: number, b: any) => a + (b.tarjetas_rojas || 0), 0);
+      const sumAsist = statsArr.reduce((a: number, b: any) => a + (b.asistencias || 0), 0);
+
       const teamTotals = m.estadisticas?.totales_equipo;
-      if (teamTotals) {
-        teamRecuperaciones += teamTotals.recuperaciones_balon || 0;
-        teamPerdidas += teamTotals.perdidas_balon || 0;
-        teamCornersFavor += teamTotals.corners_favor || 0;
-        teamCornersContra += teamTotals.corners_contra || 0;
-        teamFaltasFavor += teamTotals.faltas_favor || 0;
-        teamFaltasContra += teamTotals.faltas_contra || 0;
-        teamAmarillas += teamTotals.tarjetas_amarillas || 0;
-        teamRojas += teamTotals.tarjetas_rojas || 0;
-        teamAsistencias += teamTotals.asistencias || 0;
-      }
+      teamRecuperaciones += Math.max(teamTotals?.recuperaciones_balon || 0, sumRec);
+      teamPerdidas += Math.max(teamTotals?.perdidas_balon || 0, sumPer);
+      teamCornersFavor += Math.max(teamTotals?.corners_favor || 0, sumCF);
+      teamCornersContra += Math.max(teamTotals?.corners_contra || 0, sumCC);
+      teamFaltasFavor += Math.max(teamTotals?.faltas_favor || 0, sumFF);
+      teamFaltasContra += Math.max(teamTotals?.faltas_contra || 0, sumFC);
+      teamAmarillas += Math.max(teamTotals?.tarjetas_amarillas || 0, sumTA);
+      teamRojas += Math.max(teamTotals?.tarjetas_rojas || 0, sumTR);
+      teamAsistencias += Math.max(teamTotals?.asistencias || 0, sumAsist);
 
       const stats = m.estadisticas?.jugadoras_stats;
       if (stats && Array.isArray(stats)) {
@@ -455,8 +472,8 @@ export default function Estadisticas() {
       const actaStats = getPlayerActaStats(selectedTeam, p);
       if (actaStats) {
         matchedActaKeys.add(actaStats.nombreCompleto);
-        p.amarillas = actaStats.amarillas;
-        p.rojas = actaStats.rojas;
+        p.amarillas = Math.max(p.amarillas, actaStats.amarillas);
+        p.rojas = Math.max(p.rojas, actaStats.rojas);
         p.goles = Math.max(p.goles, actaStats.goles);
         p.minutos = Math.max(p.minutos, actaStats.minutos);
         p.partidosJugados = Math.max(p.partidosJugados, actaStats.convocatorias);
@@ -707,8 +724,15 @@ export default function Estadisticas() {
           const matchesKey = `team_matches_${selectedTeam}`;
           const localRaw = localStorage.getItem(matchesKey);
           const localList = localRaw ? JSON.parse(localRaw) : [];
-          const merged = mergeMatchRecords(cloudMatches, Array.isArray(localList) ? localList : []);
-          localStorage.setItem(matchesKey, JSON.stringify(merged));
+          const deletedRaw = localStorage.getItem(`team_matches_deleted_${selectedTeam}`);
+          const deletedIds = new Set<string>(deletedRaw ? JSON.parse(deletedRaw) : []);
+          const filteredCloud = cloudMatches.filter(
+            (m: any) => !deletedIds.has(m.id) && !deletedIds.has(sanitizeFirestoreId(m.id))
+          );
+          const merged = mergeMatchRecords(filteredCloud, Array.isArray(localList) ? localList : []);
+          try {
+            localStorage.setItem(matchesKey, JSON.stringify(merged));
+          } catch {}
           loadAllData();
         }
       } catch (err) {

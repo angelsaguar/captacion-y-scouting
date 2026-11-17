@@ -609,41 +609,58 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         localStorage.setItem(sessionsKey, JSON.stringify(currentSessions));
       } else if (eventToSave.type === 'Partido') {
         const compVal = eventToSave.competicion || getMatchCompeticion(eventToSave);
-        // Upsert to Supabase team_matches
+        const matchesKey = `team_matches_${selectedTeam}`;
+        const savedMatchesStr = localStorage.getItem(matchesKey);
+        let currentMatches: any[] = [];
+        try {
+          currentMatches = savedMatchesStr ? JSON.parse(savedMatchesStr) : [];
+        } catch {
+          currentMatches = [];
+        }
+        const existingMatchIdx = currentMatches.findIndex((m: any) => m.fecha === editingDate);
+        const existingMatch = existingMatchIdx >= 0 ? currentMatches[existingMatchIdx] : null;
+        const resolvedRival = eventToSave.rival || eventToSave.title.replace(/^vs\s+/i, '').replace(/^@\s+/i, '') || existingMatch?.rival || 'Rival';
+        const resolvedTipo = eventToSave.condicion || (eventToSave.title.toLowerCase().includes('@') ? 'Visitante' : 'Local');
+        const resolvedHora = eventToSave.hora || existingMatch?.hora || '20:00 h';
+        const resolvedLugar = eventToSave.lugar || existingMatch?.lugar || 'Campo Municipal';
+
+        // Upsert to Supabase team_matches preserving existing stats/feedback
         await supabase
           .from('team_matches')
           .upsert({
+            ...(existingMatch || {}),
+            id: existingMatch?.id || crypto.randomUUID(),
             team_id: selectedTeam,
+            team: selectedTeam,
             fecha: editingDate,
-            rival: eventToSave.rival || eventToSave.title.replace(/^vs\s+/i, '').replace(/^@\s+/i, '') || 'Rival',
-            tipo: eventToSave.condicion || (eventToSave.title.toLowerCase().includes('@') ? 'Visitante' : 'Local'),
+            rival: resolvedRival,
+            tipo: resolvedTipo,
             competicion: compVal,
-            hora: eventToSave.hora || '20:00 h',
-            lugar: eventToSave.lugar || 'Campo Municipal',
-            estadisticas: {}
+            hora: resolvedHora,
+            lugar: resolvedLugar,
+            estadisticas: existingMatch?.estadisticas || {}
           });
 
-        // Sync local storage team_matches_${selectedTeam}
-        const matchesKey = `team_matches_${selectedTeam}`;
-        const savedMatchesStr = localStorage.getItem(matchesKey);
-        let currentMatches: any[] = savedMatchesStr ? JSON.parse(savedMatchesStr) : [];
-        const existingMatchIdx = currentMatches.findIndex((m: any) => m.fecha === editingDate);
         const matchPayload = {
-          id: existingMatchIdx >= 0 ? currentMatches[existingMatchIdx].id : crypto.randomUUID(),
+          ...(existingMatch || {}),
+          id: existingMatch?.id || crypto.randomUUID(),
           team_id: selectedTeam,
           fecha: editingDate,
-          rival: eventToSave.rival || eventToSave.title.replace(/^vs\s+/i, '').replace(/^@\s+/i, '') || 'Rival',
-          tipo: eventToSave.condicion || (eventToSave.title.toLowerCase().includes('@') ? 'Visitante' : 'Local'),
+          rival: resolvedRival,
+          tipo: resolvedTipo,
           competicion: compVal,
-          hora: eventToSave.hora || '20:00 h',
-          lugar: eventToSave.lugar || 'Campo Municipal'
+          hora: resolvedHora,
+          lugar: resolvedLugar,
+          _updatedAtMs: Date.now()
         };
         if (existingMatchIdx >= 0) {
           currentMatches[existingMatchIdx] = matchPayload;
         } else {
           currentMatches.push(matchPayload);
         }
-        localStorage.setItem(matchesKey, JSON.stringify(currentMatches));
+        try {
+          localStorage.setItem(matchesKey, JSON.stringify(currentMatches));
+        } catch {}
       }
 
       // Upsert master monthly calendar record to attendance_sessions

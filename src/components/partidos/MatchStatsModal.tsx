@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   X, 
   Save, 
@@ -456,6 +456,9 @@ export default function MatchStatsModal({
   // Recent events log for visual feedback on iPad touch
   const [eventLogs, setEventLogs] = useState<{ id: string; time: string; text: string; type: string }[]>([]);
 
+  // Track initialized match ID so background parent re-renders never wipe in-progress edits
+  const initializedMatchIdRef = useRef<string | null>(null);
+
   // Cronómetro de partido
   const [chronoSeconds, setChronoSeconds] = useState<number>(() => {
     return match.estadisticas?.cronometro?.seconds ?? 0;
@@ -701,6 +704,9 @@ export default function MatchStatsModal({
 
   // Initialize data on match open - ALWAYS includes ALL players from team roster
   useEffect(() => {
+    if (!isOpen || !match?.id) return;
+    if (initializedMatchIdRef.current === String(match.id) && playerStats.length > 0) return;
+    initializedMatchIdRef.current = String(match.id);
     // 1. Get convocadas IDs as strings for safe matching
     const convocadasRaw: any[] = 
       (match.convocatoria && Array.isArray(match.convocatoria) && match.convocatoria.length > 0)
@@ -1121,15 +1127,15 @@ export default function MatchStatsModal({
     setTeamTotals({
       goles_favor: initialGolesF,
       goles_contra: initialGolesC,
-      asistencias: sumAsist,
-      recuperaciones_balon: sumRec > 0 ? sumRec : (existingTotals?.recuperaciones_balon ?? 0),
-      perdidas_balon: sumPer > 0 ? sumPer : (existingTotals?.perdidas_balon ?? 0),
-      corners_favor: sumCF > 0 ? sumCF : (existingTotals?.corners_favor ?? 0),
-      corners_contra: sumCC > 0 ? sumCC : (existingTotals?.corners_contra ?? 0),
-      faltas_favor: sumFF > 0 ? sumFF : (existingTotals?.faltas_favor ?? 0),
-      faltas_contra: sumFC > 0 ? sumFC : (existingTotals?.faltas_contra ?? 0),
-      tarjetas_amarillas: sumTA,
-      tarjetas_rojas: sumTR
+      asistencias: Math.max(sumAsist, existingTotals?.asistencias ?? 0),
+      recuperaciones_balon: Math.max(sumRec, existingTotals?.recuperaciones_balon ?? 0),
+      perdidas_balon: Math.max(sumPer, existingTotals?.perdidas_balon ?? 0),
+      corners_favor: Math.max(sumCF, existingTotals?.corners_favor ?? 0),
+      corners_contra: Math.max(sumCC, existingTotals?.corners_contra ?? 0),
+      faltas_favor: Math.max(sumFF, existingTotals?.faltas_favor ?? 0),
+      faltas_contra: Math.max(sumFC, existingTotals?.faltas_contra ?? 0),
+      tarjetas_amarillas: Math.max(sumTA, existingTotals?.tarjetas_amarillas ?? 0),
+      tarjetas_rojas: Math.max(sumTR, existingTotals?.tarjetas_rojas ?? 0)
     });
 
     // 4. Initialize existing substitutions
@@ -1149,7 +1155,7 @@ export default function MatchStatsModal({
       timestamp: c.timestamp || ''
     }));
     setSubstitutions(initialCambios);
-  }, [match, allPlayers]);
+  }, [match, allPlayers, isOpen]);
 
   // Handler to switch player active position on field
   const handlePositionChange = (playerId: string, newPos: string) => {
@@ -1551,19 +1557,30 @@ export default function MatchStatsModal({
         nextGolesC = Math.max(prev.goles_contra, sumGolesC);
       }
 
+      const nextCollective = (
+        cat: StatCategory,
+        prevVal: number,
+        sumVal: number
+      ) => {
+        if (changedCategory === cat && delta !== undefined) {
+          return Math.max(0, Math.max(sumVal, prevVal + delta));
+        }
+        return Math.max(prevVal, sumVal);
+      };
+
       return {
         ...prev,
         goles_favor: nextGolesF,
         goles_contra: nextGolesC,
-        asistencias: sumAsist,
-        recuperaciones_balon: sumRec,
-        perdidas_balon: sumPer,
-        corners_favor: sumCF > 0 ? Math.max(prev.corners_favor, sumCF) : prev.corners_favor,
-        corners_contra: sumCC > 0 ? Math.max(prev.corners_contra, sumCC) : prev.corners_contra,
-        faltas_favor: sumFF > 0 ? Math.max(prev.faltas_favor, sumFF) : prev.faltas_favor,
-        faltas_contra: sumFC > 0 ? Math.max(prev.faltas_contra, sumFC) : prev.faltas_contra,
-        tarjetas_amarillas: sumTA,
-        tarjetas_rojas: sumTR
+        asistencias: nextCollective('asistencias', prev.asistencias, sumAsist),
+        recuperaciones_balon: nextCollective('recuperaciones_balon', prev.recuperaciones_balon, sumRec),
+        perdidas_balon: nextCollective('perdidas_balon', prev.perdidas_balon, sumPer),
+        corners_favor: nextCollective('corners_favor', prev.corners_favor, sumCF),
+        corners_contra: nextCollective('corners_contra', prev.corners_contra, sumCC),
+        faltas_favor: nextCollective('faltas_favor', prev.faltas_favor, sumFF),
+        faltas_contra: nextCollective('faltas_contra', prev.faltas_contra, sumFC),
+        tarjetas_amarillas: nextCollective('tarjetas_amarillas', prev.tarjetas_amarillas, sumTA),
+        tarjetas_rojas: nextCollective('tarjetas_rojas', prev.tarjetas_rojas, sumTR)
       };
     });
   };
@@ -1601,16 +1618,41 @@ export default function MatchStatsModal({
 
   // Save handler
   const handleSaveAndSync = async () => {
+    // Strip data: base64 photos before persistence to prevent localStorage QuotaExceededError and Firestore 1MB limit errors
+    const sanitizedPlayerStats = playerStats.map(({ foto_url, ...rest }) => {
+      if (typeof foto_url === 'string' && foto_url && !foto_url.startsWith('data:')) {
+        return { ...rest, foto_url };
+      }
+      return rest;
+    });
+
+    const hasScoreOrStats =
+      teamTotals.goles_favor > 0 ||
+      teamTotals.goles_contra > 0 ||
+      sanitizedPlayerStats.some(
+        (s) =>
+          (s.goles_metidos || 0) > 0 ||
+          (s.goles_encajados || 0) > 0 ||
+          (s.asistencias || 0) > 0 ||
+          (s.tarjetas_amarillas || 0) > 0 ||
+          (s.tarjetas_rojas || 0) > 0 ||
+          (s.recuperaciones_balon || 0) > 0 ||
+          (s.perdidas_balon || 0) > 0 ||
+          (s.minutos || 0) > 0
+      );
+
     const updatedMatch = {
       ...match,
       goles_favor: teamTotals.goles_favor,
       goles_contra: teamTotals.goles_contra,
       estado: chronoPhase === 'finalizado' ? 'Finalizado' : match.estado,
+      _updatedAtMs: Date.now(),
       estadisticas: {
         ...(match.estadisticas || {}),
-        jugadoras_stats: playerStats,
+        jugadoras_stats: sanitizedPlayerStats,
         cambios: substitutions,
         totales_equipo: teamTotals,
+        has_live_stats: hasScoreOrStats,
         cronometro: {
           seconds: chronoSeconds,
           phase: chronoPhase,

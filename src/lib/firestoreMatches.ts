@@ -74,38 +74,62 @@ export function isBootstrappedAdminEmail(email?: string | null): boolean {
   return (email || '').trim().toLowerCase() === 'angel.saguar@telefonica.net';
 }
 
+function stripJugadorasPhotos(jugadorasStats: any[]): any[] {
+  return jugadorasStats.map((st) => {
+    if (!st || typeof st !== 'object') return st;
+    const { foto_url, ...rest } = st;
+    if (typeof foto_url === 'string' && foto_url && !foto_url.startsWith('data:')) {
+      return { ...rest, foto_url };
+    }
+    return rest;
+  });
+}
+
+function capObjectKeys(obj: Record<string, any>, maxKeys: number): Record<string, any> {
+  const entries = Object.entries(obj);
+  if (entries.length <= maxKeys) return obj;
+  return Object.fromEntries(entries.slice(0, maxKeys));
+}
+
 function buildTeamMatchFields(match: any, teamName: string, docId: string) {
-  const stats = match.estadisticas ? stripUndefinedDeep({ ...match.estadisticas }) : {};
+  const rawStats = match.estadisticas ? stripUndefinedDeep({ ...match.estadisticas }) : {};
+  if (Array.isArray(rawStats.jugadoras_stats)) {
+    rawStats.jugadoras_stats = stripJugadorasPhotos(rawStats.jugadoras_stats);
+  }
   const convocatoriaArr: string[] = Array.isArray(match.convocatoria)
     ? match.convocatoria.map((id: any) => String(id)).filter(Boolean).slice(0, 40)
-    : Array.isArray(stats.convocatoria)
-    ? stats.convocatoria.map((id: any) => String(id)).filter(Boolean).slice(0, 40)
+    : Array.isArray(rawStats.convocatoria)
+    ? rawStats.convocatoria.map((id: any) => String(id)).filter(Boolean).slice(0, 40)
     : [];
 
-  const horaCitacion = clampString(match.hora_citacion || stats.hora_citacion || '', 120);
-  const lugar = clampString(match.lugar || stats.lugar || '', 200);
-  const equipacion = clampString(match.equipacion || stats.equipacion || '', 300);
-  const observaciones = clampString(match.observaciones || stats.observaciones || '', 3000);
+  const horaCitacion = clampString(match.hora_citacion || rawStats.hora_citacion || '', 120);
+  const lugar = clampString(match.lugar || rawStats.lugar || '', 200);
+  const equipacion = clampString(match.equipacion || rawStats.equipacion || '', 300);
+  const observaciones = clampString(match.observaciones || rawStats.observaciones || '', 3000);
   const mensajeMotivacional = clampString(
-    match.mensaje_motivacional || stats.mensaje_motivacional || '',
+    match.mensaje_motivacional || rawStats.mensaje_motivacional || '',
     500
   );
-  const feedback = match.feedback_post_partido
+  const rawFeedback = match.feedback_post_partido
     ? stripUndefinedDeep(match.feedback_post_partido)
-    : stats.feedback_post_partido
-    ? stripUndefinedDeep(stats.feedback_post_partido)
+    : rawStats.feedback_post_partido
+    ? stripUndefinedDeep(rawStats.feedback_post_partido)
     : null;
+  const feedback = rawFeedback && typeof rawFeedback === 'object' ? capObjectKeys(rawFeedback, 20) : null;
 
-  const fullStats = stripUndefinedDeep({
-    ...stats,
-    convocatoria: convocatoriaArr,
-    hora_citacion: horaCitacion,
-    lugar,
-    equipacion,
-    observaciones,
-    mensaje_motivacional: mensajeMotivacional,
-    feedback_post_partido: feedback,
-  });
+  const fullStats = capObjectKeys(
+    stripUndefinedDeep({
+      ...rawStats,
+      convocatoria: convocatoriaArr,
+      hora_citacion: horaCitacion,
+      lugar,
+      equipacion,
+      observaciones,
+      mensaje_motivacional: mensajeMotivacional,
+      feedback_post_partido: feedback,
+    }),
+    20
+  );
 
   return {
     id: docId,
@@ -179,15 +203,25 @@ export async function upsertTeamMatchesToFirestore(matchesList: any[], teamName:
   const user = auth.currentUser;
   if (!user || !user.emailVerified) return;
 
+  const normalizedTeam = clampString(teamName || 'SENIOR FEMENINO', 80) || 'SENIOR FEMENINO';
+  const teamPrefix = sanitizeFirestoreId(normalizedTeam.toLowerCase()).slice(0, 32);
+
   for (const match of matchesList) {
-    const docId = sanitizeFirestoreId(match.id);
-    match.id = docId;
-    const docPath = `team_matches/${docId}`;
-    const docRef = doc(db, 'team_matches', docId);
-    const fields = buildTeamMatchFields(match, teamName, docId);
+    let docId = sanitizeFirestoreId(match.id);
+    const docPathInitial = `team_matches/${docId}`;
+    let docRef = doc(db, 'team_matches', docId);
 
     try {
-      const existingSnap = await getDoc(docRef);
+      let existingSnap = await getDoc(docRef);
+      if (existingSnap.exists() && existingSnap.data()?.team && existingSnap.data()?.team !== normalizedTeam) {
+        docId = sanitizeFirestoreId(`${teamPrefix}-${docId}`);
+        docRef = doc(db, 'team_matches', docId);
+        existingSnap = await getDoc(docRef);
+      }
+
+      match.id = docId;
+      const fields = buildTeamMatchFields(match, normalizedTeam, docId);
+
       if (!existingSnap.exists()) {
         await setDoc(docRef, {
           ...fields,
@@ -207,7 +241,7 @@ export async function upsertTeamMatchesToFirestore(matchesList: any[], teamName:
         });
       }
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, docPath);
+      handleFirestoreError(error, OperationType.WRITE, docPathInitial);
     }
   }
 }
@@ -324,6 +358,29 @@ export async function deleteMatchPlanFromFirestore(planId: string): Promise<void
   }
 }
 
+function mergeTwoMatches(older: any, newer: any): any {
+  return {
+    ...older,
+    ...newer,
+    feedback_post_partido:
+      newer.feedback_post_partido ||
+      newer.estadisticas?.feedback_post_partido ||
+      older.feedback_post_partido ||
+      older.estadisticas?.feedback_post_partido ||
+      undefined,
+    estadisticas: {
+      ...(older.estadisticas || {}),
+      ...(newer.estadisticas || {}),
+      feedback_post_partido:
+        newer.feedback_post_partido ||
+        newer.estadisticas?.feedback_post_partido ||
+        older.feedback_post_partido ||
+        older.estadisticas?.feedback_post_partido ||
+        undefined,
+    },
+  };
+}
+
 export function mergeMatchRecords(primary: any[], secondary: any[]): any[] {
   const byId = new Map<string, any>();
   for (const item of secondary) {
@@ -337,26 +394,13 @@ export function mergeMatchRecords(primary: any[], secondary: any[]): any[] {
     if (!prev) {
       byId.set(String(item.id), item);
     } else {
-      byId.set(String(item.id), {
-        ...prev,
-        ...item,
-        feedback_post_partido:
-          item.feedback_post_partido ||
-          item.estadisticas?.feedback_post_partido ||
-          prev.feedback_post_partido ||
-          prev.estadisticas?.feedback_post_partido ||
-          undefined,
-        estadisticas: {
-          ...(prev.estadisticas || {}),
-          ...(item.estadisticas || {}),
-          feedback_post_partido:
-            item.feedback_post_partido ||
-            item.estadisticas?.feedback_post_partido ||
-            prev.feedback_post_partido ||
-            prev.estadisticas?.feedback_post_partido ||
-            undefined,
-        },
-      });
+      const itemTs = Number(item._updatedAtMs || 0);
+      const prevTs = Number(prev._updatedAtMs || 0);
+      if (prevTs > itemTs) {
+        byId.set(String(item.id), mergeTwoMatches(item, prev));
+      } else {
+        byId.set(String(item.id), mergeTwoMatches(prev, item));
+      }
     }
   }
   return Array.from(byId.values()).sort((a, b) =>

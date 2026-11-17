@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
 import { Player, CLUB_TEAMS, POSITION_STRUCTURED_ATTRIBUTES, COMMON_ATTRIBUTES } from '@/types';
 import { getCategoryMatchDuration } from '@/lib/matchDuration';
+import { mergeMatchRecords, sanitizeFirestoreId } from '@/lib/firestoreMatches';
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 import { 
   Users, 
@@ -3355,21 +3356,46 @@ export default function Plantilla() {
           .from('team_matches')
           .select('*')
           .eq('team', selectedTeam);
-        if (matchesData) {
-          const formatted = matchesData.map(item => ({
-            id: item.id,
-            rival: item.rival,
-            fecha: item.fecha,
-            hora: item.hora,
-            tipo: item.tipo,
-            competicion: item.competicion,
-            estado: item.estado,
-            goles_favor: item.goles_favor !== null ? item.goles_favor : undefined,
-            goles_contra: item.goles_contra !== null ? item.goles_contra : undefined,
-            acta: item.acta || undefined,
-            estadisticas: item.estadisticas || undefined
-          }));
-          localStorage.setItem(`team_matches_${selectedTeam}`, JSON.stringify(formatted));
+        if (Array.isArray(matchesData) && matchesData.length > 0) {
+          const matchesKey = `team_matches_${selectedTeam}`;
+          const deletedRaw = localStorage.getItem(`team_matches_deleted_${selectedTeam}`);
+          const deletedIds = new Set<string>(deletedRaw ? JSON.parse(deletedRaw) : []);
+          const formatted = matchesData
+            .filter(item => !deletedIds.has(item.id) && !deletedIds.has(sanitizeFirestoreId(item.id)))
+            .map(item => ({
+              id: item.id,
+              rival: item.rival,
+              fecha: item.fecha,
+              hora: item.hora,
+              tipo: item.tipo,
+              competicion: item.competicion,
+              estado: item.estado,
+              goles_favor: item.goles_favor !== null && item.goles_favor !== undefined ? item.goles_favor : undefined,
+              goles_contra: item.goles_contra !== null && item.goles_contra !== undefined ? item.goles_contra : undefined,
+              acta: item.acta || undefined,
+              convocatoria: item.convocatoria || item.estadisticas?.convocatoria || undefined,
+              hora_citacion: item.hora_citacion || item.estadisticas?.hora_citacion || undefined,
+              lugar: item.lugar || item.estadisticas?.lugar || undefined,
+              equipacion: item.equipacion || item.estadisticas?.equipacion || undefined,
+              observaciones: item.observaciones || item.estadisticas?.observaciones || undefined,
+              mensaje_motivacional: item.mensaje_motivacional || item.estadisticas?.mensaje_motivacional || undefined,
+              feedback_post_partido: item.feedback_post_partido || item.estadisticas?.feedback_post_partido || undefined,
+              estadisticas: item.estadisticas || undefined,
+              _updatedAtMs: item._updatedAtMs || undefined
+            }));
+          const existingRaw = localStorage.getItem(matchesKey);
+          let existingList: any[] = [];
+          try {
+            existingList = existingRaw ? JSON.parse(existingRaw) : [];
+          } catch {
+            existingList = [];
+          }
+          const merged = mergeMatchRecords(formatted, Array.isArray(existingList) ? existingList : []);
+          try {
+            localStorage.setItem(matchesKey, JSON.stringify(merged));
+          } catch (quotaErr) {
+            console.warn("Could not store synced matches in Plantilla:", quotaErr);
+          }
         }
       } catch (err) {
         console.warn("Failed background matches sync in Plantilla:", err);
