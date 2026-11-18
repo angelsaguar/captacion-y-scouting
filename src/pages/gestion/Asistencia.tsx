@@ -45,6 +45,12 @@ import {
   hydrateSessionFiles, 
   safeLocalStorageSetSessions 
 } from '@/lib/fileStorage';
+import {
+  doesRecordBelongToTeam,
+  extractRecordCanonicalTeamId,
+  resolveCanonicalTeamId,
+  runTrainingSessionsIsolationAuditAndMigration,
+} from '@/lib/trainingIsolation';
 
 interface TeamPlayer {
   id: string;
@@ -97,6 +103,9 @@ export interface SessionVideo {
 
 interface AttendanceSession {
   id: string;
+  teamId?: string;
+  team?: string;
+  isUserCreated?: boolean;
   fecha: string;
   hora?: string;
   tipo: 'Entrenamiento' | 'Partido' | 'Reunión' | 'Otro';
@@ -401,13 +410,20 @@ export default function Asistencia() {
 
   // Load roster and synchronize on team change and on storage/player-updated events
   useEffect(() => {
+    let isCancelled = false;
+    runTrainingSessionsIsolationAuditAndMigration();
+
+    const canonicalTeamId = resolveCanonicalTeamId(selectedTeam);
+
     try {
       localStorage.setItem('afe_active_team', selectedTeam);
     } catch {}
 
     const syncRoster = () => {
       const currentRoster = loadCompleteTeamRoster(selectedTeam);
-      setPlayers(currentRoster);
+      if (!isCancelled) {
+        setPlayers(currentRoster);
+      }
       return currentRoster;
     };
 
@@ -434,19 +450,21 @@ export default function Asistencia() {
 
     // 1. Synchronously load local storage first so user never loses their changes
     const savedSessions = localStorage.getItem(sessionsKey);
-    const isExplicitlyInitialized = localStorage.getItem(initKey) === 'true';
     let initialList: AttendanceSession[] = [];
 
     if (savedSessions !== null) {
       try {
         const parsed = JSON.parse(savedSessions);
         if (Array.isArray(parsed)) {
-          const cleanParsed = parsed.filter((item: any) => 
-            item && 
-            item.tipo !== 'CalendarioMensual' && 
-            !(typeof item.descripcion === 'string' && item.descripcion.trim().startsWith('{')) &&
-            !isSessionDeleted(selectedTeam, item.id, item.fecha)
-          );
+          const cleanParsed = parsed.filter((item: any) => {
+            if (!item || typeof item !== 'object') return false;
+            if (item.tipo === 'CalendarioMensual') return false;
+            if (typeof item.descripcion === 'string' && item.descripcion.trim().startsWith('{')) return false;
+            if (isSessionDeleted(selectedTeam, item.id, item.fecha)) return false;
+            const itemTeamId = extractRecordCanonicalTeamId(item);
+            if (itemTeamId && itemTeamId !== canonicalTeamId) return false;
+            return true;
+          });
 
           initialList = cleanParsed.map((item: any) => {
             const cleaned = cleanSessionRecords(item.records || [], currentRoster);
@@ -472,6 +490,8 @@ export default function Asistencia() {
             return {
               ...item,
               id: item.id || crypto.randomUUID(),
+              teamId: canonicalTeamId,
+              team: selectedTeam,
               records: completeRecords
             };
           });
@@ -481,64 +501,9 @@ export default function Asistencia() {
       } catch {}
     }
 
-    // Only build default training sessions if sessions were NEVER initialized before and local storage is empty
-    if (savedSessions === null && !isExplicitlyInitialized && initialList.length === 0) {
-      // Build default training sessions from current team calendar or standard pre-season
-      const defaultRecords = currentRoster.map(p => ({
-        playerId: p.id,
-        playerName: p.nombre,
-        playerLastName: p.apellidos,
-        playerDorsal: p.dorsal,
-        playerPosition: p.posicion,
-        foto_url: p.foto_url,
-        status: undefined
-      }));
-
-      // Gather scheduled training dates
-      const trainingDates: Array<{ fecha: string; hora: string; desc: string }> = [
-        { fecha: '2026-08-28', hora: '19:30 h', desc: 'Sesión de entrenamiento' },
-        { fecha: '2026-08-27', hora: '19:30 h', desc: 'Sesión de entrenamiento' },
-        { fecha: '2026-08-25', hora: '19:30 h', desc: 'Sesión de entrenamiento' }
-      ];
-
-      try {
-        const calKey = `team_monthly_calendar_${selectedTeam}_2026_7`;
-        const calSaved = localStorage.getItem(calKey);
-        if (calSaved) {
-          const calEvents = JSON.parse(calSaved);
-          const found: typeof trainingDates = [];
-          Object.values(calEvents).forEach((ev: any) => {
-            if (ev && ev.type === 'Entrenamiento' && ev.dateStr && !isSessionDeleted(selectedTeam, undefined, ev.dateStr)) {
-              found.push({
-                fecha: ev.dateStr,
-                hora: ev.hora || '19:30 h',
-                desc: ev.title === 'Entrenamiento' ? 'Sesión de entrenamiento' : ev.title
-              });
-            }
-          });
-          if (found.length > 0) {
-            found.sort((a, b) => b.fecha.localeCompare(a.fecha));
-            trainingDates.splice(0, trainingDates.length, ...found);
-          }
-        }
-      } catch {}
-
-      initialList = trainingDates
-        .filter(tr => !isSessionDeleted(selectedTeam, undefined, tr.fecha))
-        .map(tr => ({
-          id: crypto.randomUUID(),
-          fecha: tr.fecha,
-          hora: tr.hora,
-          tipo: 'Entrenamiento',
-          descripcion: tr.desc,
-          observaciones: '',
-          records: defaultRecords,
-          tareas: [],
-          archivos: [],
-          videos: []
-        }));
-
-      safeLocalStorageSetSessions(sessionsKey, initialList);
+    // Do NOT fabricate fake default training sessions when a team has no scheduled trainings.
+    // Mark initialized so each team starts clean until a real session is scheduled for its teamId.
+    if (savedSessions === null) {
       localStorage.setItem(initKey, 'true');
     }
 
@@ -547,7 +512,7 @@ export default function Asistencia() {
     const foundActive = (lastActiveId ? initialList.find(s => s.id === lastActiveId) : null) || initialList[0] || null;
     setSelectedSession(foundActive);
 
-    // 2. Fetch from Supabase in the background and safely merge without overwriting local changes or resurrecting deleted sessions
+    // 2. Fetch from Supabase in the background and safely merge ONLY verified sessions belonging to this teamId
     const syncFromSupabase = async () => {
       try {
         const { data, error } = await supabase
@@ -557,10 +522,15 @@ export default function Asistencia() {
           .neq('tipo', 'CalendarioMensual')
           .order('fecha', { ascending: false });
 
+        if (isCancelled) return;
+
         if (!error && data && data.length > 0) {
-          const cleanData = data.filter(item => 
+          const cleanData = data.filter((item: any) => 
+            item &&
             item.tipo !== 'CalendarioMensual' && 
-            !(typeof item.descripcion === 'string' && item.descripcion.trim().startsWith('{'))
+            !item.unverifiedOrigin &&
+            !(typeof item.descripcion === 'string' && item.descripcion.trim().startsWith('{')) &&
+            doesRecordBelongToTeam(item, canonicalTeamId)
           );
 
           if (cleanData.length > 0) {
@@ -575,21 +545,29 @@ export default function Asistencia() {
               }
             }
 
+            if (isCancelled) return;
+
             const currentSavedStr = localStorage.getItem(sessionsKey);
             const currentSaved: AttendanceSession[] = currentSavedStr ? JSON.parse(currentSavedStr) : [];
             const mergedMap = new Map<string, AttendanceSession>();
 
             // Put current local sessions first (they have highest priority for user edits)
             currentSaved.forEach(s => {
-              if (!isSessionDeleted(selectedTeam, s.id, s.fecha)) {
-                mergedMap.set(s.fecha, s);
+              const sTeamId = extractRecordCanonicalTeamId(s);
+              if ((!sTeamId || sTeamId === canonicalTeamId) && !isSessionDeleted(selectedTeam, s.id, s.fecha)) {
+                mergedMap.set(s.fecha, {
+                  ...s,
+                  teamId: canonicalTeamId,
+                  team: selectedTeam,
+                });
               }
             });
 
-            const hasInitializedLocal = localStorage.getItem(initKey) === 'true' || currentSavedStr !== null;
-
-            // Merge in cloud data safely
+            // Merge in cloud data safely for this exact canonicalTeamId
             cleanData.forEach(cloudItem => {
+              if (!doesRecordBelongToTeam(cloudItem, canonicalTeamId)) {
+                return;
+              }
               // Never restore deleted sessions!
               if (isSessionDeleted(selectedTeam, cloudItem.id, cloudItem.fecha)) {
                 return;
@@ -598,10 +576,11 @@ export default function Asistencia() {
               const cloudRecords = cleanSessionRecords(cloudItem.records || [], currentRoster);
               const existing = mergedMap.get(cloudItem.fecha);
               
-              if (!existing && !hasInitializedLocal) {
-                // New session from cloud ONLY if the app was completely uninitialized locally
+              if (!existing) {
                 mergedMap.set(cloudItem.fecha, {
                   id: cloudItem.id,
+                  teamId: canonicalTeamId,
+                  team: selectedTeam,
                   fecha: cloudItem.fecha,
                   hora: cloudItem.hora || '19:30 h',
                   tipo: cloudItem.tipo as any,
@@ -635,6 +614,8 @@ export default function Asistencia() {
               }
             });
 
+            if (isCancelled) return;
+
             const mergedList = Array.from(mergedMap.values()).sort((a, b) => b.fecha.localeCompare(a.fecha));
             setSessions(mergedList);
             safeLocalStorageSetSessions(sessionsKey, mergedList);
@@ -653,12 +634,15 @@ export default function Asistencia() {
     syncFromSupabase();
 
     const handlePlayerUpdate = () => {
-      syncRoster();
+      if (!isCancelled) {
+        syncRoster();
+      }
     };
 
     window.addEventListener('player-updated', handlePlayerUpdate);
     window.addEventListener('storage', handlePlayerUpdate);
     return () => {
+      isCancelled = true;
       window.removeEventListener('player-updated', handlePlayerUpdate);
       window.removeEventListener('storage', handlePlayerUpdate);
     };
@@ -686,6 +670,8 @@ export default function Asistencia() {
     focusCalendarMonth = false
   ) => {
     try {
+      const canonicalTeamId = resolveCanonicalTeamId(teamName);
+
       // If date changed during edit, remove old date entry from its monthly calendar
       if (oldDateStr && oldDateStr !== sess.fecha) {
         const oldParts = parseDateStrYearMonth(oldDateStr);
@@ -700,12 +686,14 @@ export default function Asistencia() {
               const oldFirst = `${oldParts.year}-${String(oldParts.month + 1).padStart(2, '0')}-01`;
               await supabase.from('attendance_sessions').upsert({
                 id: `cal_master_${teamName}_${oldParts.year}_${oldParts.month}`,
+                teamId: canonicalTeamId,
                 team: teamName,
                 fecha: oldFirst,
                 tipo: 'CalendarioMensual',
                 descripcion: JSON.stringify({
                   month: oldParts.month,
                   year: oldParts.year,
+                  teamId: canonicalTeamId,
                   team: teamName,
                   events: oldEvents,
                   updatedAt: new Date().toISOString()
@@ -738,6 +726,9 @@ export default function Asistencia() {
       if (!calEvents[sess.fecha] || calEvents[sess.fecha].type !== 'Partido' || sess.tipo === 'Partido') {
         calEvents[sess.fecha] = {
           dateStr: sess.fecha,
+          teamId: canonicalTeamId,
+          team: teamName,
+          sessionId: sess.id,
           title: sess.descripcion || (sess.tipo === 'Partido' ? 'Partido Programado' : 'Sesión de entrenamiento'),
           type: sess.tipo === 'Partido' ? 'Partido' : 'Entrenamiento',
           hora: sess.hora || '19:30 h'
@@ -749,18 +740,19 @@ export default function Asistencia() {
       if (focusCalendarMonth) {
         const focusPayload = JSON.stringify({ year, month });
         localStorage.setItem(`afe_calendar_focus_${teamName}`, focusPayload);
-        localStorage.setItem('afe_calendar_focus_global', focusPayload);
       }
 
       const firstOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
       await supabase.from('attendance_sessions').upsert({
         id: `cal_master_${teamName}_${year}_${month}`,
+        teamId: canonicalTeamId,
         team: teamName,
         fecha: firstOfMonth,
         tipo: 'CalendarioMensual',
         descripcion: JSON.stringify({
           month,
           year,
+          teamId: canonicalTeamId,
           team: teamName,
           events: calEvents,
           updatedAt: new Date().toISOString()
@@ -772,7 +764,7 @@ export default function Asistencia() {
 
       window.dispatchEvent(
         new CustomEvent('calendar-updated', {
-          detail: { team: teamName, year, month }
+          detail: { teamId: canonicalTeamId, team: teamName, year, month }
         })
       );
     } catch (err) {
@@ -781,22 +773,31 @@ export default function Asistencia() {
   };
 
   const saveSessions = async (updated: AttendanceSession[]) => {
-    // Ensure all sessions have valid UUIDs and strip inline base64 photos from records
-    const validSessions = updated.map(sess => {
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sess.id);
-      const cleanRecords = (sess.records || []).map(rec => {
-        const { foto_url, ...rest } = rec;
-        if (typeof foto_url === 'string' && foto_url && !foto_url.startsWith('data:')) {
-          return { ...rest, foto_url };
-        }
-        return rest;
+    const canonicalTeamId = resolveCanonicalTeamId(selectedTeam);
+
+    // Ensure all sessions have valid UUIDs, immutable teamId, and strip inline base64 photos from records
+    const validSessions = updated
+      .filter(sess => {
+        const sessTeamId = extractRecordCanonicalTeamId(sess);
+        return !sessTeamId || sessTeamId === canonicalTeamId;
+      })
+      .map(sess => {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sess.id);
+        const cleanRecords = (sess.records || []).map(rec => {
+          const { foto_url, ...rest } = rec;
+          if (typeof foto_url === 'string' && foto_url && !foto_url.startsWith('data:')) {
+            return { ...rest, foto_url };
+          }
+          return rest;
+        });
+        return {
+          ...sess,
+          id: isUuid ? sess.id : crypto.randomUUID(),
+          teamId: canonicalTeamId,
+          team: selectedTeam,
+          records: cleanRecords
+        };
       });
-      return {
-        ...sess,
-        id: isUuid ? sess.id : crypto.randomUUID(),
-        records: cleanRecords
-      };
-    });
 
     setSessions(validSessions);
     const sessionsKey = `team_sessions_${selectedTeam}`;
@@ -828,6 +829,7 @@ export default function Asistencia() {
     try {
       for (const sess of validSessions) {
         const payload = {
+          teamId: canonicalTeamId,
           team: selectedTeam,
           fecha: sess.fecha,
           hora: sess.hora || '19:30 h',
@@ -853,7 +855,7 @@ export default function Asistencia() {
       console.warn('Failed to sync attendance sessions to Supabase:', err);
     }
 
-    window.dispatchEvent(new CustomEvent('session-updated', { detail: { team: selectedTeam } }));
+    window.dispatchEvent(new CustomEvent('session-updated', { detail: { teamId: canonicalTeamId, team: selectedTeam } }));
     window.dispatchEvent(new Event('storage'));
   };
 
@@ -870,9 +872,13 @@ export default function Asistencia() {
   const handleSaveEditSession = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingSession) return;
+    const canonicalTeamId = resolveCanonicalTeamId(selectedTeam);
 
     const updatedSession: AttendanceSession = {
       ...editingSession,
+      teamId: canonicalTeamId,
+      team: selectedTeam,
+      isUserCreated: true,
       fecha: editSessionForm.fecha,
       hora: editSessionForm.hora,
       tipo: editSessionForm.tipo,
@@ -894,6 +900,7 @@ export default function Asistencia() {
    */
   const handleCreateSession = async (e: React.FormEvent) => {
     e.preventDefault();
+    const canonicalTeamId = resolveCanonicalTeamId(selectedTeam);
     const currentRoster = loadCompleteTeamRoster(selectedTeam);
 
     // ALL active players from the team's plantilla are automatically included with no option pre-selected
@@ -908,6 +915,9 @@ export default function Asistencia() {
 
     const newSession: AttendanceSession = {
       id: crypto.randomUUID(),
+      teamId: canonicalTeamId,
+      team: selectedTeam,
+      isUserCreated: true,
       fecha: newSessionData.fecha,
       hora: newSessionData.hora || '19:30 h',
       tipo: newSessionData.tipo,

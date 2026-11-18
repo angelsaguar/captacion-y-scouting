@@ -37,6 +37,16 @@ import {
   mergeMatchRecords,
   mergeTwoMatches,
 } from './src/lib/firestoreMatches';
+import {
+  PRE_TRAINING_ISOLATION_BACKUP_KEY,
+  UNASSIGNED_SESSIONS_AUDIT_KEY,
+  createAndVerifyTrainingSafetyBackup,
+  doesRecordBelongToTeam,
+  getTeamDisplayName,
+  resolveCanonicalTeamId,
+  restoreTrainingSafetyBackup,
+  runTrainingSessionsIsolationAuditAndMigration,
+} from './src/lib/trainingIsolation';
 
 async function isRealFirestoreEmulatorAvailable(): Promise<boolean> {
   try {
@@ -624,6 +634,215 @@ describe('Auditoría de Seguridad Previa a Publicación – Captación y Scoutin
       const plansToBackfill = findPlansNeedingCloudSync(mergedPlans, cloudPlans);
       assert.equal(plansToBackfill.length, 1);
       assert.equal(plansToBackfill[0].id, 'plan-2-local');
+    });
+  });
+
+  describe('7. Separación Estricta de Entrenamientos por Equipo (teamId Inmutable) y Verificación Bloqueante de Backup Pre-Migración', () => {
+    beforeEach(() => {
+      // Simulamos un localStorage completo en memoria para las pruebas de migración y aislamiento
+      const store = new Map<string, string>();
+      (globalThis as any).localStorage = {
+        get length() {
+          return store.size;
+        },
+        key(index: number) {
+          return Array.from(store.keys())[index] ?? null;
+        },
+        getItem(k: string) {
+          return store.has(k) ? store.get(k)! : null;
+        },
+        setItem(k: string, v: string) {
+          store.set(k, String(v));
+        },
+        removeItem(k: string) {
+          store.delete(k);
+        },
+        clear() {
+          store.clear();
+        },
+      };
+    });
+
+    it('asigna un identificador interno único e inmutable (teamId) a cada equipo independiente de su nombre visible', () => {
+      const idInfantilA = resolveCanonicalTeamId('INFANTIL A');
+      const idInfantilB = resolveCanonicalTeamId('INFANTIL B');
+      const idCadeteA = resolveCanonicalTeamId('CADETE A');
+
+      assert.equal(idInfantilA, 'team_07_infantil_a');
+      assert.equal(idInfantilB, 'team_08_infantil_b');
+      assert.equal(idCadeteA, 'team_05_cadete_a');
+
+      // El propio teamId resuelve de forma idempotente al mismo identificador interno
+      assert.equal(resolveCanonicalTeamId('team_08_infantil_b'), 'team_08_infantil_b');
+      assert.equal(getTeamDisplayName('team_08_infantil_b'), 'INFANTIL B');
+
+      // Un entrenamiento asociado a team_08_infantil_b pertenece exclusivamente a INFANTIL B aunque no tenga el texto visible o cambie el texto
+      const sessionInfantilB = {
+        id: 'sess-inf-b-1',
+        teamId: 'team_08_infantil_b',
+        fecha: '2026-11-18',
+        tipo: 'Entrenamiento',
+        descripcion: 'Sesión táctica Infantil B',
+      };
+
+      assert.equal(doesRecordBelongToTeam(sessionInfantilB, 'INFANTIL B'), true);
+      assert.equal(doesRecordBelongToTeam(sessionInfantilB, 'team_08_infantil_b'), true);
+      assert.equal(doesRecordBelongToTeam(sessionInfantilB, 'INFANTIL A'), false);
+      assert.equal(doesRecordBelongToTeam(sessionInfantilB, 'CADETE A'), false);
+    });
+
+    it('crea la copia de seguridad previa, verifica integridad y restauración en seco (dryRun), y aborta si la copia está corrupta', () => {
+      localStorage.setItem(
+        'team_sessions_INFANTIL B',
+        JSON.stringify([
+          {
+            id: 'sess-real-inf-b',
+            fecha: '2026-11-18',
+            hora: '18:30 h',
+            tipo: 'Entrenamiento',
+            descripcion: 'Entrenamiento Infantil B',
+            records: [{ playerId: 'p-inf-b-1', status: 'Presente' }],
+          },
+        ])
+      );
+
+      const backupCheck = createAndVerifyTrainingSafetyBackup();
+      assert.equal(backupCheck.verified, true);
+      assert.equal(backupCheck.keyCount, 1);
+
+      // Modificamos temporalmente el dato en vivo y comprobamos que restoreTrainingSafetyBackup lo restaura al 100%
+      localStorage.setItem('team_sessions_INFANTIL B', JSON.stringify([]));
+      const restoreRes = restoreTrainingSafetyBackup({ dryRun: false });
+      assert.equal(restoreRes.ok, true);
+      assert.equal(restoreRes.checksumMatched, true);
+      const restoredArr = JSON.parse(localStorage.getItem('team_sessions_INFANTIL B') || '[]');
+      assert.equal(restoredArr.length, 1);
+      assert.equal(restoredArr[0].id, 'sess-real-inf-b');
+    });
+
+    it('aísla estrictamente los entrenamientos entre INFANTIL B, INFANTIL A y CADETE A sin borrar sesiones originales y archivando huérfanos en auditoría', () => {
+      // 1. INFANTIL B tiene un entrenamiento real programado el 2026-11-18
+      localStorage.setItem(
+        'team_sessions_INFANTIL B',
+        JSON.stringify([
+          {
+            id: 'sess-infb-2026-11-18',
+            fecha: '2026-11-18',
+            hora: '19:30 h',
+            tipo: 'Entrenamiento',
+            descripcion: 'Entrenamiento específico Infantil B',
+            records: [{ playerId: 'p-b1', status: 'Presente' }],
+          },
+        ])
+      );
+      localStorage.setItem(
+        'team_monthly_calendar_INFANTIL B_2026_10',
+        JSON.stringify({
+          '2026-11-18': {
+            dateStr: '2026-11-18',
+            title: 'Entrenamiento específico Infantil B',
+            type: 'Entrenamiento',
+            hora: '19:30 h',
+          },
+        })
+      );
+
+      // 2. INFANTIL A y CADETE A tenían contaminado su calendario de Noviembre 2026 con ese entrenamiento de INFANTIL B
+      //    y además un registro huérfano sin teamId en attendance_sessions
+      localStorage.setItem(
+        'team_monthly_calendar_INFANTIL A_2026_10',
+        JSON.stringify({
+          '2026-11-18': {
+            dateStr: '2026-11-18',
+            title: 'Entrenamiento específico Infantil B',
+            type: 'Entrenamiento',
+            hora: '19:30 h',
+          },
+        })
+      );
+      localStorage.setItem(
+        'team_monthly_calendar_CADETE A_2026_10',
+        JSON.stringify({
+          '2026-11-18': {
+            dateStr: '2026-11-18',
+            teamId: 'team_08_infantil_b',
+            title: 'Entrenamiento específico Infantil B',
+            type: 'Entrenamiento',
+            hora: '19:30 h',
+          },
+        })
+      );
+      localStorage.setItem(
+        'ud_lapoveda_table_attendance_sessions',
+        JSON.stringify([
+          {
+            id: 'sess-infb-2026-11-18',
+            team: 'INFANTIL B',
+            fecha: '2026-11-18',
+            tipo: 'Entrenamiento',
+            descripcion: 'Entrenamiento específico Infantil B',
+            records: [{ playerId: 'p-b1', status: 'Presente' }],
+          },
+          {
+            id: 'sess-orphan-unknown',
+            fecha: '2026-11-19',
+            tipo: 'Entrenamiento',
+            descripcion: 'Sesión histórica sin equipo asignado',
+            records: [],
+          },
+        ])
+      );
+
+      // Ejecutamos la auditoría y migración con verificación previa de backup
+      const report = runTrainingSessionsIsolationAuditAndMigration(true);
+      assert.equal(report.aborted, false);
+      assert.equal(report.backupVerified, true);
+
+      // Comprobación 1: La copia de seguridad previa existe y contiene el estado previo íntegro
+      assert.ok(localStorage.getItem(PRE_TRAINING_ISOLATION_BACKUP_KEY));
+
+      // Comprobación 2: El entrenamiento de INFANTIL B permanece en INFANTIL B con su teamId inmutable 'team_08_infantil_b'
+      const calInfantilB = JSON.parse(
+        localStorage.getItem('team_monthly_calendar_INFANTIL B_2026_10') || '{}'
+      );
+      assert.ok(calInfantilB['2026-11-18']);
+      assert.equal(calInfantilB['2026-11-18'].teamId, 'team_08_infantil_b');
+      assert.equal(
+        calInfantilB['2026-11-18'].title,
+        'Entrenamiento específico Infantil B'
+      );
+
+      // Comprobación 3: INFANTIL A NO muestra ese entrenamiento (calendario limpio)
+      const calInfantilA = JSON.parse(
+        localStorage.getItem('team_monthly_calendar_INFANTIL A_2026_10') || '{}'
+      );
+      assert.equal(calInfantilA['2026-11-18'], undefined);
+      assert.equal(Object.keys(calInfantilA).length, 0);
+
+      // Comprobación 4: CADETE A TAMPOCO muestra ese entrenamiento (calendario limpio)
+      const calCadeteA = JSON.parse(
+        localStorage.getItem('team_monthly_calendar_CADETE A_2026_10') || '{}'
+      );
+      assert.equal(calCadeteA['2026-11-18'], undefined);
+      assert.equal(Object.keys(calCadeteA).length, 0);
+
+      // Comprobación 5: Cero borrado físico de sesiones originales o históricos; el huérfano se conserva en el archivo de auditoría
+      const tableAfter = JSON.parse(
+        localStorage.getItem('ud_lapoveda_table_attendance_sessions') || '[]'
+      );
+      assert.equal(tableAfter.length, 2);
+      const orphanInTable = tableAfter.find((r: any) => r.id === 'sess-orphan-unknown');
+      assert.ok(orphanInTable);
+      assert.equal(orphanInTable.unverifiedOrigin, true);
+      assert.equal(doesRecordBelongToTeam(orphanInTable, 'INFANTIL A'), false);
+
+      const auditArchive = JSON.parse(
+        localStorage.getItem(UNASSIGNED_SESSIONS_AUDIT_KEY) || '[]'
+      );
+      assert.ok(auditArchive.length >= 3);
+      assert.ok(
+        auditArchive.some((a: any) => a.record?.id === 'sess-orphan-unknown')
+      );
     });
   });
 });

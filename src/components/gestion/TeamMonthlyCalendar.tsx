@@ -45,6 +45,14 @@ import {
   sanitizeFirestoreId,
   upsertTeamMatchesToFirestore,
 } from '@/lib/firestoreMatches';
+import {
+  doesRecordBelongToTeam,
+  extractRecordCanonicalTeamId,
+  hasUserModifiedSessionContent,
+  isLegacyDefaultSampleCalendarMap,
+  resolveCanonicalTeamId,
+  runTrainingSessionsIsolationAuditAndMigration,
+} from '@/lib/trainingIsolation';
 import html2canvas from 'html2canvas';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
@@ -57,6 +65,10 @@ export type MatchCompeticion = 'Amistoso' | 'Liga' | 'Copa' | 'Torneo';
 
 export interface CalendarEvent {
   dateStr: string; // YYYY-MM-DD
+  teamId?: string;
+  team?: string;
+  sessionId?: string;
+  isManualCalendarTraining?: boolean;
   title: string;
   type: CalendarEventType;
   condicion?: 'Local' | 'Visitante';
@@ -105,6 +117,7 @@ export function getMatchCompeticion(ev?: CalendarEvent): MatchCompeticion {
 }
 
 interface TeamMonthlyCalendarProps {
+  key?: React.Key;
   selectedTeam: string;
 }
 
@@ -128,11 +141,14 @@ export function parseCalendarDateParts(dateStr?: string): { year: number; monthI
 }
 
 function getInitialCalendarFocus(teamName: string): { year: number; month: number } {
+  const canonicalTeamId = resolveCanonicalTeamId(teamName);
   if (typeof localStorage !== 'undefined') {
     try {
-      const rawTeam = localStorage.getItem(`afe_calendar_focus_${teamName}`);
-      if (rawTeam) {
-        const parsed = JSON.parse(rawTeam);
+      const rawById = localStorage.getItem(`afe_calendar_focus_${canonicalTeamId}`);
+      const rawByTeam = localStorage.getItem(`afe_calendar_focus_${teamName}`);
+      const rawFocus = rawById || rawByTeam;
+      if (rawFocus) {
+        const parsed = JSON.parse(rawFocus);
         if (
           parsed &&
           typeof parsed.year === 'number' &&
@@ -143,26 +159,19 @@ function getInitialCalendarFocus(teamName: string): { year: number; month: numbe
           return { year: parsed.year, month: parsed.month };
         }
       }
-      const rawGlobal = localStorage.getItem('afe_calendar_focus_global');
-      if (rawGlobal) {
-        const parsed = JSON.parse(rawGlobal);
-        if (
-          parsed &&
-          typeof parsed.year === 'number' &&
-          typeof parsed.month === 'number' &&
-          parsed.month >= 0 &&
-          parsed.month <= 11
-        ) {
-          return { year: parsed.year, month: parsed.month };
-        }
-      }
-      // Or if team already has training sessions, focus the month of the most recent session
+
+      // Or if this specific team already has verified training sessions, focus the month of its most recent session
       const sessionsRaw = localStorage.getItem(`team_sessions_${teamName}`);
       if (sessionsRaw) {
         const sessions = JSON.parse(sessionsRaw);
         if (Array.isArray(sessions) && sessions.length > 0) {
           const sorted = [...sessions]
-            .filter((s: any) => s && s.fecha && s.tipo !== 'CalendarioMensual')
+            .filter((s: any) => {
+              if (!s || !s.fecha || s.tipo === 'CalendarioMensual') return false;
+              const sTeamId = extractRecordCanonicalTeamId(s);
+              if (sTeamId && sTeamId !== canonicalTeamId) return false;
+              return hasUserModifiedSessionContent(s);
+            })
             .sort((a: any, b: any) => String(b.fecha).localeCompare(String(a.fecha)));
           if (sorted[0]?.fecha) {
             const parts = parseCalendarDateParts(sorted[0].fecha);
@@ -174,10 +183,18 @@ function getInitialCalendarFocus(teamName: string): { year: number; month: numbe
       }
     } catch {}
   }
-  return { year: 2026, month: 7 };
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth() };
 }
 
 export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalendarProps) {
+  // Run non-destructive audit & safety backup check before reading calendar state
+  runTrainingSessionsIsolationAuditAndMigration();
+
+  const canonicalTeamId = resolveCanonicalTeamId(selectedTeam);
+  const activeTeamIdRef = useRef<string>(canonicalTeamId);
+  activeTeamIdRef.current = canonicalTeamId;
+
   const initialFocus = getInitialCalendarFocus(selectedTeam);
   const [currentYear, setCurrentYear] = useState<number>(initialFocus.year);
   const [currentMonth, setCurrentMonth] = useState<number>(initialFocus.month);
@@ -209,14 +226,14 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
   const storageKey = `team_monthly_calendar_${selectedTeam}_${currentYear}_${currentMonth}`;
   const masterCalendarId = `cal_master_${selectedTeam}_${currentYear}_${currentMonth}`;
 
-  // Remember the active calendar month & year whenever user navigates
+  // Remember the active calendar month & year strictly per teamId whenever user navigates
   useEffect(() => {
     try {
-      const payload = JSON.stringify({ year: currentYear, month: currentMonth });
+      const payload = JSON.stringify({ year: currentYear, month: currentMonth, teamId: canonicalTeamId });
+      localStorage.setItem(`afe_calendar_focus_${canonicalTeamId}`, payload);
       localStorage.setItem(`afe_calendar_focus_${selectedTeam}`, payload);
-      localStorage.setItem('afe_calendar_focus_global', payload);
     } catch {}
-  }, [selectedTeam, currentYear, currentMonth]);
+  }, [canonicalTeamId, selectedTeam, currentYear, currentMonth]);
 
   // Helper to get formatted day grid for any month/year (100% timezone-safe YYYY-MM-DD strings)
   const getDaysGrid = (targetYear = currentYear, targetMonth = currentMonth) => {
@@ -291,74 +308,58 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
 
   // Load saved calendar events for this team & month and synchronize with sessions & matches
   useEffect(() => {
+    runTrainingSessionsIsolationAuditAndMigration();
+
+    // Clear in-memory state immediately when team or month changes so previous team events never flash or leak
     const saved = localStorage.getItem(storageKey);
     if (saved) {
       try {
-        setEvents(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && !isLegacyDefaultSampleCalendarMap(parsed)) {
+          const filteredForTeam: Record<string, CalendarEvent> = {};
+          Object.entries(parsed as Record<string, CalendarEvent>).forEach(([dateStr, ev]) => {
+            if (!ev || typeof ev !== 'object') return;
+            const evTeamId = extractRecordCanonicalTeamId(ev);
+            if (evTeamId && evTeamId !== canonicalTeamId) return;
+            filteredForTeam[dateStr] = {
+              ...ev,
+              dateStr,
+              teamId: canonicalTeamId,
+              team: selectedTeam,
+            };
+          });
+          setEvents(filteredForTeam);
+        } else {
+          setEvents({});
+        }
       } catch (e) {
         console.error('Error loading calendar events:', e);
         setEvents({});
       }
     } else {
-      // Default initial mock if August 2026 (Pretemporada sample matching user image if Agosto 2026)
-      if (currentYear === 2026 && currentMonth === 7) {
-        const defaultSample: Record<string, CalendarEvent> = {
-          '2026-08-24': { dateStr: '2026-08-24', title: 'Descanso', type: 'Descanso' },
-          '2026-08-25': { dateStr: '2026-08-25', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-08-26': { dateStr: '2026-08-26', title: 'Descanso', type: 'Descanso' },
-          '2026-08-27': { dateStr: '2026-08-27', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-08-28': { dateStr: '2026-08-28', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-08-29': { dateStr: '2026-08-29', title: 'vs AD PARLA', type: 'Partido', condicion: 'Local', competicion: 'Amistoso', rival: 'AD PARLA', hora: '20:00 h', lugar: 'Campo Municipal' },
-          '2026-08-30': { dateStr: '2026-08-30', title: 'Descanso', type: 'Descanso' },
-
-          '2026-08-31': { dateStr: '2026-08-31', title: 'Descanso', type: 'Descanso' },
-          '2026-09-01': { dateStr: '2026-09-01', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-02': { dateStr: '2026-09-02', title: 'Descanso', type: 'Descanso' },
-          '2026-09-03': { dateStr: '2026-09-03', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-04': { dateStr: '2026-09-04', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-05': { dateStr: '2026-09-05', title: 'vs AD LA PLATA', type: 'Partido', condicion: 'Local', competicion: 'Amistoso', rival: 'AD LA PLATA', hora: '13:15 h', lugar: 'Campo Municipal' },
-          '2026-09-06': { dateStr: '2026-09-06', title: 'Descanso', type: 'Descanso' },
-
-          '2026-09-07': { dateStr: '2026-09-07', title: 'Descanso', type: 'Descanso' },
-          '2026-09-08': { dateStr: '2026-09-08', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-09': { dateStr: '2026-09-09', title: 'Descanso', type: 'Descanso' },
-          '2026-09-10': { dateStr: '2026-09-10', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-11': { dateStr: '2026-09-11', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-12': { dateStr: '2026-09-12', title: 'vs SPORTING HORTALEZA', type: 'Partido', condicion: 'Visitante', competicion: 'Amistoso', rival: 'SPORTING HORTALEZA', hora: '18:00 h', lugar: 'Campo Hortaleza' },
-          '2026-09-13': { dateStr: '2026-09-13', title: 'Descanso', type: 'Descanso' },
-
-          '2026-09-14': { dateStr: '2026-09-14', title: 'Descanso', type: 'Descanso' },
-          '2026-09-15': { dateStr: '2026-09-15', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-16': { dateStr: '2026-09-16', title: 'Descanso', type: 'Descanso' },
-          '2026-09-17': { dateStr: '2026-09-17', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-18': { dateStr: '2026-09-18', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-19': { dateStr: '2026-09-19', title: 'vs CD INTER PROMESAS', type: 'Partido', condicion: 'Local', competicion: 'Amistoso', rival: 'CD INTER PROMESAS', hora: '20:00 h', lugar: 'Campo Municipal' },
-          '2026-09-20': { dateStr: '2026-09-20', title: 'Descanso', type: 'Descanso' },
-
-          '2026-09-21': { dateStr: '2026-09-21', title: 'Descanso', type: 'Descanso' },
-          '2026-09-22': { dateStr: '2026-09-22', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-23': { dateStr: '2026-09-23', title: 'Descanso', type: 'Descanso' },
-          '2026-09-24': { dateStr: '2026-09-24', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-25': { dateStr: '2026-09-25', title: 'Entrenamiento', type: 'Entrenamiento', hora: '19:30 h' },
-          '2026-09-27': { dateStr: '2026-09-27', title: 'INICIO LIGA', type: 'Inicio Liga', competicion: 'Liga' }
-        };
-        setEvents(defaultSample);
-        localStorage.setItem(storageKey, JSON.stringify(defaultSample));
-      } else {
-        setEvents({});
-      }
+      // Show a clean, empty calendar when a team has no scheduled events
+      setEvents({});
     }
 
-    // Trigger auto synchronization from Supabase / localStorage matches & attendance
+    // Trigger auto synchronization from Supabase / localStorage matches & attendance for this exact teamId
     syncAutoData(false);
 
     const handleSync = (evt?: Event) => {
-      // If calendar-updated specifies a new year/month for this team, switch to it if appropriate
       const customEvt = evt as CustomEvent | undefined;
+      if (customEvt?.detail) {
+        const evtTeamRaw = customEvt.detail.teamId || customEvt.detail.team;
+        if (evtTeamRaw) {
+          const evtTeamId = resolveCanonicalTeamId(evtTeamRaw);
+          if (evtTeamId && evtTeamId !== canonicalTeamId) {
+            // Ignore events emitted for a different team
+            return;
+          }
+        }
+      }
+
       if (
         customEvt?.type === 'calendar-updated' &&
         customEvt.detail &&
-        customEvt.detail.team === selectedTeam &&
         typeof customEvt.detail.year === 'number' &&
         typeof customEvt.detail.month === 'number'
       ) {
@@ -383,29 +384,56 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       window.removeEventListener('lapoveda_club_data_synced', handleSync);
       window.removeEventListener('storage', handleSync);
     };
-  }, [selectedTeam, currentYear, currentMonth]);
+  }, [canonicalTeamId, selectedTeam, currentYear, currentMonth]);
 
-  // Save changes to localStorage
-  const saveEvents = (newEvents: Record<string, CalendarEvent>) => {
-    setEvents(newEvents);
+  // Save changes to localStorage strictly bound to the target teamId and storageKey
+  const saveEvents = (
+    newEvents: Record<string, CalendarEvent>,
+    targetTeamId: string = canonicalTeamId,
+    targetStorageKey: string = storageKey
+  ) => {
+    const stampedEvents: Record<string, CalendarEvent> = {};
+    Object.entries(newEvents || {}).forEach(([k, v]) => {
+      if (!v || typeof v !== 'object') return;
+      const vTeamId = extractRecordCanonicalTeamId(v);
+      if (vTeamId && vTeamId !== targetTeamId) return;
+      stampedEvents[k] = {
+        ...v,
+        dateStr: k,
+        teamId: targetTeamId,
+      };
+    });
+
+    if (activeTeamIdRef.current === targetTeamId) {
+      setEvents(stampedEvents);
+    }
     try {
-      localStorage.setItem(storageKey, JSON.stringify(newEvents));
+      localStorage.setItem(targetStorageKey, JSON.stringify(stampedEvents));
     } catch (e) {
       console.warn('Error saving calendar events to localStorage:', e);
     }
   };
 
-  const persistMasterCalendarRecord = async (targetEvents: Record<string, CalendarEvent>) => {
-    const firstOfMonth = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
+  const persistMasterCalendarRecord = async (
+    targetEvents: Record<string, CalendarEvent>,
+    targetTeamName: string = selectedTeam,
+    targetTeamId: string = canonicalTeamId,
+    targetYear: number = currentYear,
+    targetMonth: number = currentMonth,
+    targetMasterId: string = masterCalendarId
+  ) => {
+    const firstOfMonth = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-01`;
     const masterPayload = {
-      id: masterCalendarId,
-      team: selectedTeam,
+      id: targetMasterId,
+      teamId: targetTeamId,
+      team: targetTeamName,
       fecha: firstOfMonth,
       tipo: 'CalendarioMensual',
       descripcion: JSON.stringify({
-        month: currentMonth,
-        year: currentYear,
-        team: selectedTeam,
+        month: targetMonth,
+        year: targetYear,
+        teamId: targetTeamId,
+        team: targetTeamName,
         events: targetEvents,
         updatedAt: new Date().toISOString()
       }),
@@ -426,7 +454,10 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       let savedMatches = 0;
       let savedSessions = 0;
 
-      const allEntries = Object.values(targetEvents) as CalendarEvent[];
+      const allEntries = (Object.values(targetEvents) as CalendarEvent[]).filter((ev) => {
+        const evTeamId = extractRecordCanonicalTeamId(ev);
+        return !evTeamId || evTeamId === canonicalTeamId;
+      });
 
       // 1. Upsert training sessions into attendance_sessions & localStorage team_sessions_${selectedTeam}
       const trainingEntries = allEntries.filter(e => e.type === 'Entrenamiento');
@@ -449,6 +480,9 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         if (existingIdx >= 0) {
           currentSessions[existingIdx] = {
             ...currentSessions[existingIdx],
+            teamId: canonicalTeamId,
+            team: selectedTeam,
+            isUserCreated: true,
             descripcion: tr.title || 'Entrenamiento',
             hora: tr.hora || '19:30 h',
             tipo: 'Entrenamiento'
@@ -456,6 +490,9 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         } else {
           currentSessions.unshift({
             id: sessionId,
+            teamId: canonicalTeamId,
+            team: selectedTeam,
+            isUserCreated: true,
             fecha: tr.dateStr,
             hora: tr.hora || '19:30 h',
             tipo: 'Entrenamiento',
@@ -467,6 +504,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
 
         const payload = {
           id: sessionId,
+          teamId: canonicalTeamId,
           team: selectedTeam,
           fecha: tr.dateStr,
           tipo: 'Entrenamiento',
@@ -493,6 +531,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       for (const m of matchEntries) {
         const payload = {
           id: `cal_match_${selectedTeam}_${m.dateStr}`.replace(/[^a-zA-Z0-9_-]/g, '_'),
+          teamId: canonicalTeamId,
           team_id: selectedTeam,
           team: selectedTeam,
           fecha: m.dateStr,
@@ -512,7 +551,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       await persistMasterCalendarRecord(targetEvents);
 
       // Keep localStorage in sync
-      localStorage.setItem(storageKey, JSON.stringify(targetEvents));
+      saveEvents(targetEvents, canonicalTeamId, storageKey);
 
       toast.success(`¡Sincronizado con Supabase! Se han guardado los eventos, entrenamientos y partidos en la base de datos de Supabase.`, { id: toastId });
     } catch (err) {
@@ -523,21 +562,38 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
     }
   };
 
-  // Automatic Data Feeding Engine (Pulling from Partidos and Entrenamientos)
+  // Automatic Data Feeding Engine (Pulling from Partidos and Entrenamientos strictly for canonicalTeamId)
   const syncAutoData = async (showToast = true) => {
+    const requestTeamName = selectedTeam;
+    const requestTeamId = canonicalTeamId;
+    const requestYear = currentYear;
+    const requestMonth = currentMonth;
+    const requestStorageKey = storageKey;
+    const requestMasterCalendarId = masterCalendarId;
+
     setIsSyncing(true);
     let matchesCount = 0;
     let sessionsCount = 0;
 
     try {
-      // Read directly from localStorage for the active storageKey to avoid stale React state closures
+      // Read directly from localStorage for the active requestStorageKey to avoid stale React state closures
       let baseEvents: Record<string, CalendarEvent> = {};
-      const savedStr = localStorage.getItem(storageKey);
+      const savedStr = localStorage.getItem(requestStorageKey);
       if (savedStr) {
         try {
           const parsed = JSON.parse(savedStr);
-          if (parsed && typeof parsed === 'object') {
-            baseEvents = { ...parsed };
+          if (parsed && typeof parsed === 'object' && !isLegacyDefaultSampleCalendarMap(parsed)) {
+            Object.entries(parsed as Record<string, CalendarEvent>).forEach(([k, v]) => {
+              if (!v || typeof v !== 'object') return;
+              const vTeamId = extractRecordCanonicalTeamId(v);
+              if (vTeamId && vTeamId !== requestTeamId) return;
+              baseEvents[k] = {
+                ...v,
+                dateStr: k,
+                teamId: requestTeamId,
+                team: requestTeamName,
+              };
+            });
           }
         } catch {}
       }
@@ -546,7 +602,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
 
       // Build set of all dates visible in the current month's 7-column grid (including padding days)
       const visibleGridDates = new Set<string>();
-      getDaysGrid(currentYear, currentMonth).forEach(row => {
+      getDaysGrid(requestYear, requestMonth).forEach(row => {
         row.forEach(cell => {
           if (cell.dateStr) visibleGridDates.add(cell.dateStr);
         });
@@ -556,34 +612,47 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         if (!dateStr) return false;
         if (visibleGridDates.has(dateStr)) return true;
         const parts = parseCalendarDateParts(dateStr);
-        return Boolean(parts && parts.year === currentYear && parts.monthIndex === currentMonth);
+        return Boolean(parts && parts.year === requestYear && parts.monthIndex === requestMonth);
       };
 
-      // 0. Fetch master monthly calendar record from Supabase if present (pick the most recent one)
-      const firstOfMonth = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
+      // 0. Fetch master monthly calendar record from Supabase if present (strictly for requestTeamId)
+      const firstOfMonth = `${requestYear}-${String(requestMonth + 1).padStart(2, '0')}-01`;
       const { data: dbMaster } = await supabase
         .from('attendance_sessions')
         .select('*')
-        .eq('team', selectedTeam)
+        .eq('team', requestTeamName)
         .eq('fecha', firstOfMonth)
         .eq('tipo', 'CalendarioMensual');
 
       if (dbMaster && dbMaster.length > 0) {
-        // Sort descending by updatedAt inside JSON or row updated_at so we never pick an outdated first row
-        const sortedMasters = [...dbMaster].sort((a, b) => {
+        const validMasters = dbMaster.filter((m: any) => doesRecordBelongToTeam(m, requestTeamId));
+        const sortedMasters = [...validMasters].sort((a, b) => {
           const tsA = a.updated_at || a.created_at || '';
           const tsB = b.updated_at || b.created_at || '';
           return String(tsB).localeCompare(String(tsA));
         });
-        const latestMaster = sortedMasters.find(m => m.id === masterCalendarId) || sortedMasters[0];
+        const latestMaster = sortedMasters.find(m => m.id === requestMasterCalendarId) || sortedMasters[0];
         if (latestMaster?.descripcion) {
           try {
             const parsedMaster = JSON.parse(latestMaster.descripcion);
-            if (parsedMaster && parsedMaster.events && typeof parsedMaster.events === 'object') {
-              // Merge master events as base, letting current localStorage storageKey take precedence
+            const masterTeamId = resolveCanonicalTeamId(parsedMaster?.teamId || parsedMaster?.team || latestMaster.team);
+            if (
+              parsedMaster &&
+              masterTeamId === requestTeamId &&
+              parsedMaster.events &&
+              typeof parsedMaster.events === 'object' &&
+              !isLegacyDefaultSampleCalendarMap(parsedMaster.events)
+            ) {
               Object.entries(parsedMaster.events as Record<string, CalendarEvent>).forEach(([k, v]) => {
                 if (!autoEvents[k] && v) {
-                  autoEvents[k] = v;
+                  const vTeamId = extractRecordCanonicalTeamId(v);
+                  if (vTeamId && vTeamId !== requestTeamId) return;
+                  autoEvents[k] = {
+                    ...v,
+                    dateStr: k,
+                    teamId: requestTeamId,
+                    team: requestTeamName,
+                  };
                 }
               });
             }
@@ -593,38 +662,65 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         }
       }
 
-      // 1. Fetch matches from Supabase, Firestore, and localStorage
+      // 1. Fetch matches from Supabase, Firestore, and localStorage for this exact team
       const { data: dbMatches } = await supabase
         .from('team_matches')
-        .select('*');
+        .select('*')
+        .eq('team', requestTeamName);
 
       let cloudMatches: any[] = [];
       if (isFirebaseAuthReady()) {
         try {
-          const fetched = await fetchTeamMatchesFromFirestore(selectedTeam);
+          const fetched = await fetchTeamMatchesFromFirestore(requestTeamName);
           if (Array.isArray(fetched)) cloudMatches = fetched;
         } catch {}
       }
 
-      const localMatchesStr = localStorage.getItem(`team_matches_${selectedTeam}`);
+      // Abort if the user switched teams while awaiting network calls
+      if (activeTeamIdRef.current !== requestTeamId) {
+        return;
+      }
+
+      const localMatchesStr = localStorage.getItem(`team_matches_${requestTeamName}`);
       const localMatches = localMatchesStr ? JSON.parse(localMatchesStr) : [];
-      const deletedMatchesRaw = localStorage.getItem(`team_matches_deleted_${selectedTeam}`);
+      const deletedMatchesRaw = localStorage.getItem(`team_matches_deleted_${requestTeamName}`);
       const deletedMatchIds = new Set<string>(deletedMatchesRaw ? JSON.parse(deletedMatchesRaw) : []);
 
       const allMatchesMap = new Map<string, any>();
-      (dbMatches || []).forEach(m => {
-        const mTeam = (m.team || m.team_id || '').trim();
-        if (m.fecha && mTeam === selectedTeam && !deletedMatchIds.has(String(m.id)) && !m.isDeleted && !m.estadisticas?.isDeleted) {
+      (dbMatches || []).forEach((m: any) => {
+        if (
+          m &&
+          m.fecha &&
+          doesRecordBelongToTeam(m, requestTeamId) &&
+          !deletedMatchIds.has(String(m.id)) &&
+          !m.isDeleted &&
+          !m.estadisticas?.isDeleted
+        ) {
           allMatchesMap.set(m.fecha, m);
         }
       });
       (Array.isArray(localMatches) ? localMatches : []).forEach((m: any) => {
-        if (m && m.fecha && !deletedMatchIds.has(String(m.id)) && !m.isDeleted && !m.estadisticas?.isDeleted) {
+        const mTeamId = extractRecordCanonicalTeamId(m);
+        if (
+          m &&
+          m.fecha &&
+          (!mTeamId || mTeamId === requestTeamId) &&
+          !deletedMatchIds.has(String(m.id)) &&
+          !m.isDeleted &&
+          !m.estadisticas?.isDeleted
+        ) {
           allMatchesMap.set(m.fecha, m);
         }
       });
       cloudMatches.forEach((m: any) => {
-        if (m && m.fecha && !deletedMatchIds.has(String(m.id)) && !m.isDeleted && !m.estadisticas?.isDeleted) {
+        if (
+          m &&
+          m.fecha &&
+          doesRecordBelongToTeam(m, requestTeamId) &&
+          !deletedMatchIds.has(String(m.id)) &&
+          !m.isDeleted &&
+          !m.estadisticas?.isDeleted
+        ) {
           allMatchesMap.set(m.fecha, m);
         }
       });
@@ -634,6 +730,8 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           const compDetermined = m.competicion || (dateStr.startsWith('2026-08') || dateStr.startsWith('2026-09-0') || dateStr.startsWith('2026-09-1') || dateStr.startsWith('2026-09-20') || dateStr.startsWith('2026-09-19') ? 'Amistoso' : 'Liga');
           autoEvents[dateStr] = {
             dateStr,
+            teamId: requestTeamId,
+            team: requestTeamName,
             title: m.tipo === 'Local' ? `vs ${m.rival}` : `@ ${m.rival}`,
             type: 'Partido',
             condicion: m.tipo === 'Local' ? 'Local' : 'Visitante',
@@ -646,13 +744,19 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         }
       });
 
-      // 2. Fetch training / attendance sessions from Supabase and localStorage for this exact team
+      // 2. Fetch training / attendance sessions from Supabase and localStorage strictly for requestTeamId
       const { data: dbSessions } = await supabase
         .from('attendance_sessions')
         .select('*')
+        .eq('team', requestTeamName)
         .neq('tipo', 'CalendarioMensual');
 
-      const localSessionsStr = localStorage.getItem(`team_sessions_${selectedTeam}`) || localStorage.getItem(`attendance_sessions_${selectedTeam}`);
+      // Abort if the user switched teams while awaiting network calls
+      if (activeTeamIdRef.current !== requestTeamId) {
+        return;
+      }
+
+      const localSessionsStr = localStorage.getItem(`team_sessions_${requestTeamName}`);
       let localSessions: any[] = [];
       try {
         localSessions = localSessionsStr ? JSON.parse(localSessionsStr) : [];
@@ -660,7 +764,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         localSessions = [];
       }
 
-      const deletedRaw = localStorage.getItem(`team_deleted_sessions_${selectedTeam}`);
+      const deletedRaw = localStorage.getItem(`team_deleted_sessions_${requestTeamName}`);
       const deletedList: { id?: string; fecha: string }[] = deletedRaw ? JSON.parse(deletedRaw) : [];
       const isDel = (id?: string, f?: string) => deletedList.some(d => (id && d.id && d.id === id) || (f && d.fecha && d.fecha === f));
 
@@ -672,23 +776,62 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       });
 
       const allSessionsMap = new Map<string, any>();
-      (dbSessions || []).forEach(s => {
-        const sTeam = (s.team || s.team_id || s.team_name || '').trim();
-        const isJsonMaster = typeof s.descripcion === 'string' && s.descripcion.trim().startsWith('{');
+      (dbSessions || []).forEach((s: any) => {
+        const isJsonMaster = typeof s?.descripcion === 'string' && s.descripcion.trim().startsWith('{');
         if (
+          s &&
           s.fecha &&
           s.tipo !== 'CalendarioMensual' &&
+          !s.unverifiedOrigin &&
           !isJsonMaster &&
-          sTeam === selectedTeam &&
+          doesRecordBelongToTeam(s, requestTeamId) &&
+          hasUserModifiedSessionContent(s) &&
           !isDel(s.id, s.fecha)
         ) {
           allSessionsMap.set(s.fecha, s);
         }
       });
+
       (Array.isArray(localSessions) ? localSessions : []).forEach((s: any) => {
         const isJsonMaster = typeof s?.descripcion === 'string' && s.descripcion.trim().startsWith('{');
-        if (s && s.fecha && s.tipo !== 'CalendarioMensual' && !isJsonMaster && !isDel(s.id, s.fecha)) {
-          allSessionsMap.set(s.fecha, s);
+        const sTeamId = extractRecordCanonicalTeamId(s);
+        if (
+          s &&
+          s.fecha &&
+          s.tipo !== 'CalendarioMensual' &&
+          !s.unverifiedOrigin &&
+          !isJsonMaster &&
+          (!sTeamId || sTeamId === requestTeamId) &&
+          hasUserModifiedSessionContent(s) &&
+          !isDel(s.id, s.fecha)
+        ) {
+          allSessionsMap.set(s.fecha, {
+            ...s,
+            teamId: requestTeamId,
+            team: requestTeamName,
+          });
+        }
+      });
+
+      // Reconcile existing 'Entrenamiento' events in autoEvents:
+      // Any 'Entrenamiento' event in the current calendar view that does NOT belong to requestTeamId
+      // or does NOT match a verified session of requestTeamId (unless explicitly created as a manual calendar training for requestTeamId)
+      // is removed from the calendar view so no other team's trainings ever appear here.
+      Object.keys(autoEvents).forEach((dateStr) => {
+        const ev = autoEvents[dateStr];
+        if (!ev || ev.type !== 'Entrenamiento') return;
+        const evTeamId = extractRecordCanonicalTeamId(ev);
+        if (evTeamId && evTeamId !== requestTeamId) {
+          delete autoEvents[dateStr];
+          return;
+        }
+        if (isDateInCurrentCalendarView(dateStr)) {
+          const isVerifiedSession = allSessionsMap.has(dateStr);
+          const isManualForThisTeam =
+            evTeamId === requestTeamId && ev.isManualCalendarTraining === true;
+          if (!isVerifiedSession && !isManualForThisTeam) {
+            delete autoEvents[dateStr];
+          }
         }
       });
 
@@ -708,6 +851,9 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
 
             autoEvents[dateStr] = {
               dateStr,
+              teamId: requestTeamId,
+              team: requestTeamName,
+              sessionId: s.id,
               title: cleanDesc || preservedTitle,
               type: evType,
               hora: s.hora || existingEvent?.hora || '19:30 h',
@@ -718,7 +864,11 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         }
       });
 
-      saveEvents(autoEvents);
+      if (activeTeamIdRef.current !== requestTeamId) {
+        return;
+      }
+
+      saveEvents(autoEvents, requestTeamId, requestStorageKey);
       if (showToast) {
         if (matchesCount > 0 || sessionsCount > 0 || dbMaster?.length) {
           toast.success(`Datos sincronizados: ${matchesCount} partidos y ${sessionsCount} entrenamientos cargados en el calendario.`);
@@ -730,11 +880,13 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       console.warn('Error syncing auto data from Supabase:', err);
       if (showToast) toast.error('Error al sincronizar datos del calendario.');
     } finally {
-      setIsSyncing(false);
+      if (activeTeamIdRef.current === requestTeamId) {
+        setIsSyncing(false);
+      }
     }
   };
 
-  // Fill standard training pattern (Tue, Thu, Fri -> Training, Mon, Wed, Sun -> Rest)
+  // Fill standard training pattern (Tue, Thu, Fri -> Training, Mon, Wed, Sun -> Rest) ONLY when explicitly clicked by user
   const handleFillStandardWeeklyPattern = () => {
     const gridRows = getDaysGrid();
     const updated = { ...events };
@@ -747,6 +899,9 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           if (dayIdx === 1 || dayIdx === 3 || dayIdx === 4) {
             updated[cell.dateStr] = {
               dateStr: cell.dateStr,
+              teamId: canonicalTeamId,
+              team: selectedTeam,
+              isManualCalendarTraining: true,
               title: 'Entrenamiento',
               type: 'Entrenamiento',
               hora: '19:30 h'
@@ -755,6 +910,8 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           } else if (dayIdx === 0 || dayIdx === 2 || dayIdx === 6) {
             updated[cell.dateStr] = {
               dateStr: cell.dateStr,
+              teamId: canonicalTeamId,
+              team: selectedTeam,
               title: 'Descanso',
               type: 'Descanso'
             };
@@ -764,7 +921,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       });
     });
 
-    saveEvents(updated);
+    saveEvents(updated, canonicalTeamId, storageKey);
     persistMasterCalendarRecord(updated).catch(() => {});
     toast.success(`Se han completado ${count} días con el patrón semanal estándar.`);
   };
@@ -778,6 +935,8 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
     } else {
       setEventForm({
         dateStr,
+        teamId: canonicalTeamId,
+        team: selectedTeam,
         title: 'Entrenamiento',
         type: 'Entrenamiento',
         hora: '19:30 h',
@@ -794,7 +953,10 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
 
     const eventToSave: CalendarEvent = {
       ...eventForm,
-      dateStr: editingDate
+      dateStr: editingDate,
+      teamId: canonicalTeamId,
+      team: selectedTeam,
+      isManualCalendarTraining: eventForm.type === 'Entrenamiento' ? true : undefined,
     };
 
     const updatedEvents = {
@@ -802,7 +964,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       [editingDate]: eventToSave
     };
 
-    saveEvents(updatedEvents);
+    saveEvents(updatedEvents, canonicalTeamId, storageKey);
 
     try {
       if (eventToSave.type === 'Entrenamiento') {
@@ -827,6 +989,9 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         if (existingIdx >= 0) {
           currentSessions[existingIdx] = {
             ...currentSessions[existingIdx],
+            teamId: canonicalTeamId,
+            team: selectedTeam,
+            isUserCreated: true,
             descripcion: eventToSave.title || 'Entrenamiento',
             hora: eventToSave.hora || '19:30 h',
             tipo: 'Entrenamiento'
@@ -834,6 +999,9 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         } else {
           currentSessions.unshift({
             id: sessionId,
+            teamId: canonicalTeamId,
+            team: selectedTeam,
+            isUserCreated: true,
             fecha: editingDate,
             hora: eventToSave.hora || '19:30 h',
             tipo: 'Entrenamiento',
@@ -843,11 +1011,12 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         }
         localStorage.setItem(sessionsKey, JSON.stringify(currentSessions));
 
-        // Upsert to Supabase attendance_sessions with deterministic ID
+        // Upsert to Supabase attendance_sessions with deterministic ID and canonicalTeamId
         await supabase
           .from('attendance_sessions')
           .upsert({
             id: sessionId,
+            teamId: canonicalTeamId,
             team: selectedTeam,
             fecha: editingDate,
             tipo: 'Entrenamiento',
@@ -858,7 +1027,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
             archivos: existingIdx >= 0 ? (currentSessions[existingIdx].archivos || []) : []
           });
 
-        window.dispatchEvent(new CustomEvent('session-updated', { detail: { team: selectedTeam } }));
+        window.dispatchEvent(new CustomEvent('session-updated', { detail: { teamId: canonicalTeamId, team: selectedTeam } }));
       } else if (eventToSave.type === 'Partido') {
         const compVal = eventToSave.competicion || getMatchCompeticion(eventToSave);
         const matchesKey = `team_matches_${selectedTeam}`;
@@ -881,6 +1050,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           .upsert({
             ...(existingMatch || {}),
             id: existingMatch?.id || crypto.randomUUID(),
+            teamId: canonicalTeamId,
             team_id: selectedTeam,
             team: selectedTeam,
             fecha: editingDate,
@@ -895,6 +1065,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         const matchPayload = {
           ...(existingMatch || {}),
           id: sanitizeFirestoreId(existingMatch?.id || crypto.randomUUID()),
+          teamId: canonicalTeamId,
           team_id: selectedTeam,
           team: selectedTeam,
           fecha: editingDate,
@@ -921,7 +1092,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
             console.warn('Error syncing calendar match to Firestore:', fbErr);
           }
         }
-        window.dispatchEvent(new CustomEvent('lapoveda_matches_updated', { detail: { team: selectedTeam } }));
+        window.dispatchEvent(new CustomEvent('lapoveda_matches_updated', { detail: { teamId: canonicalTeamId, team: selectedTeam } }));
       }
 
       // Upsert master monthly calendar record to attendance_sessions
@@ -940,7 +1111,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
     const existing = events[dateStr];
     const updated = { ...events };
     delete updated[dateStr];
-    saveEvents(updated);
+    saveEvents(updated, canonicalTeamId, storageKey);
     persistMasterCalendarRecord(updated).catch(() => {});
 
     // If deleting a training session from the calendar, also record tombstone so syncAutoData does not resurrect it
@@ -968,7 +1139,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
   // Clear entire month
   const handleClearMonth = () => {
     if (window.confirm('¿Seguro que deseas borrar todos los eventos de este mes?')) {
-      saveEvents({});
+      saveEvents({}, canonicalTeamId, storageKey);
       persistMasterCalendarRecord({}).catch(() => {});
       toast.success('Calendario del mes limpiado.');
     }

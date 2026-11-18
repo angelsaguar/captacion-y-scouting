@@ -81,25 +81,124 @@ export interface Coach {
   created_at?: string;
 }
 
-export const CLUB_TEAMS = [
-  'SENIOR FEMENINO',
-  'SENIOR MASCULINO',
-  'JUVENIL A',
-  'JUVENIL B',
-  'CADETE A',
-  'CADETE B',
-  'INFANTIL A',
-  'INFANTIL B',
-  'INFANTIL C',
-  'ALEVIN A F11',
-  'ALEVIN A F7',
-  'ALEVIN B F7',
-  'BENJAMIN A',
-  'BENJAMIN B',
-  'BENJAMIN C',
-  'PRE BENJAMIN A',
-  'PREBENJAMIN B'
+export interface ClubTeamRegistryItem {
+  /** Identificador interno único e inmutable del equipo (independiente del nombre visible) */
+  teamId: string;
+  /** Código interno estable */
+  code: string;
+  /** Nombre visible actual del equipo en la interfaz */
+  displayName: string;
+  /** Alias históricos o alternativos reconocidos para este mismo equipo */
+  aliases: string[];
+}
+
+export const CLUB_TEAM_REGISTRY: readonly ClubTeamRegistryItem[] = [
+  {
+    teamId: 'team_01_senior_femenino',
+    code: 'SENIOR_FEMENINO',
+    displayName: 'SENIOR FEMENINO',
+    aliases: ['SENIOR FEMENINO', 'SENIOR FEM', 'team_01_senior_femenino'],
+  },
+  {
+    teamId: 'team_02_senior_masculino',
+    code: 'SENIOR_MASCULINO',
+    displayName: 'SENIOR MASCULINO',
+    aliases: ['SENIOR MASCULINO', 'SENIOR MASC', 'team_02_senior_masculino'],
+  },
+  {
+    teamId: 'team_03_juvenil_a',
+    code: 'JUVENIL_A',
+    displayName: 'JUVENIL A',
+    aliases: ['JUVENIL A', 'team_03_juvenil_a'],
+  },
+  {
+    teamId: 'team_04_juvenil_b',
+    code: 'JUVENIL_B',
+    displayName: 'JUVENIL B',
+    aliases: ['JUVENIL B', 'team_04_juvenil_b'],
+  },
+  {
+    teamId: 'team_05_cadete_a',
+    code: 'CADETE_A',
+    displayName: 'CADETE A',
+    aliases: ['CADETE A', 'team_05_cadete_a'],
+  },
+  {
+    teamId: 'team_06_cadete_b',
+    code: 'CADETE_B',
+    displayName: 'CADETE B',
+    aliases: ['CADETE B', 'team_06_cadete_b'],
+  },
+  {
+    teamId: 'team_07_infantil_a',
+    code: 'INFANTIL_A',
+    displayName: 'INFANTIL A',
+    aliases: ['INFANTIL A', 'team_07_infantil_a'],
+  },
+  {
+    teamId: 'team_08_infantil_b',
+    code: 'INFANTIL_B',
+    displayName: 'INFANTIL B',
+    aliases: ['INFANTIL B', 'team_08_infantil_b'],
+  },
+  {
+    teamId: 'team_09_infantil_c',
+    code: 'INFANTIL_C',
+    displayName: 'INFANTIL C',
+    aliases: ['INFANTIL C', 'team_09_infantil_c'],
+  },
+  {
+    teamId: 'team_10_alevin_a_f11',
+    code: 'ALEVIN_A_F11',
+    displayName: 'ALEVIN A F11',
+    aliases: ['ALEVIN A F11', 'ALEVÍN A F11', 'team_10_alevin_a_f11'],
+  },
+  {
+    teamId: 'team_11_alevin_a_f7',
+    code: 'ALEVIN_A_F7',
+    displayName: 'ALEVIN A F7',
+    aliases: ['ALEVIN A F7', 'ALEVÍN A F7', 'team_11_alevin_a_f7'],
+  },
+  {
+    teamId: 'team_12_alevin_b_f7',
+    code: 'ALEVIN_B_F7',
+    displayName: 'ALEVIN B F7',
+    aliases: ['ALEVIN B F7', 'ALEVÍN B F7', 'team_12_alevin_b_f7'],
+  },
+  {
+    teamId: 'team_13_benjamin_a',
+    code: 'BENJAMIN_A',
+    displayName: 'BENJAMIN A',
+    aliases: ['BENJAMIN A', 'BENJAMÍN A', 'team_13_benjamin_a'],
+  },
+  {
+    teamId: 'team_14_benjamin_b',
+    code: 'BENJAMIN_B',
+    displayName: 'BENJAMIN B',
+    aliases: ['BENJAMIN B', 'BENJAMÍN B', 'team_14_benjamin_b'],
+  },
+  {
+    teamId: 'team_15_benjamin_c',
+    code: 'BENJAMIN_C',
+    displayName: 'BENJAMIN C',
+    aliases: ['BENJAMIN C', 'BENJAMÍN C', 'team_15_benjamin_c'],
+  },
+  {
+    teamId: 'team_16_pre_benjamin_a',
+    code: 'PRE_BENJAMIN_A',
+    displayName: 'PRE BENJAMIN A',
+    aliases: ['PRE BENJAMIN A', 'PREBENJAMIN A', 'PRE BENJAMÍN A', 'team_16_pre_benjamin_a'],
+  },
+  {
+    teamId: 'team_17_prebenjamin_b',
+    code: 'PREBENJAMIN_B',
+    displayName: 'PREBENJAMIN B',
+    aliases: ['PREBENJAMIN B', 'PRE BENJAMIN B', 'PREBENJAMÍN B', 'team_17_prebenjamin_b'],
+  },
 ];
+
+export const CLUB_TEAMS = CLUB_TEAM_REGISTRY.map((t) => t.displayName);
+
 
 export interface AttributeGroup {
   category: string;

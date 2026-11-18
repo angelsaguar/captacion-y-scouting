@@ -10,6 +10,12 @@ import {
   sanitizeFirestoreId,
   upsertTeamMatchesToFirestore,
 } from '@/lib/firestoreMatches';
+import {
+  doesRecordBelongToTeam,
+  extractRecordCanonicalTeamId,
+  resolveCanonicalTeamId,
+  runTrainingSessionsIsolationAuditAndMigration,
+} from '@/lib/trainingIsolation';
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 import { 
   Users, 
@@ -3420,6 +3426,8 @@ export default function Plantilla() {
       }
 
       try {
+        runTrainingSessionsIsolationAuditAndMigration();
+        const canonicalTeamId = resolveCanonicalTeamId(selectedTeam);
         const localSessionsKey = `team_sessions_${selectedTeam}`;
         const localSaved = localStorage.getItem(localSessionsKey);
         const initKey = `team_sessions_initialized_${selectedTeam}`;
@@ -3439,13 +3447,19 @@ export default function Plantilla() {
 
             const formatted = sessionsData
               .filter(item => 
+                item &&
                 item.tipo !== 'CalendarioMensual' && 
+                !item.unverifiedOrigin &&
                 !(typeof item.descripcion === 'string' && item.descripcion.trim().startsWith('{')) &&
+                doesRecordBelongToTeam(item, canonicalTeamId) &&
                 !isDel(item.id, item.fecha)
               )
               .map(item => ({
                 id: item.id,
+                teamId: canonicalTeamId,
+                team: selectedTeam,
                 fecha: item.fecha,
+                hora: item.hora || '19:30 h',
                 tipo: item.tipo,
                 descripcion: item.descripcion || '',
                 records: item.records || [],
@@ -3454,8 +3468,8 @@ export default function Plantilla() {
               }));
             if (formatted.length > 0) {
               localStorage.setItem(localSessionsKey, JSON.stringify(formatted));
-              localStorage.setItem(initKey, 'true');
             }
+            localStorage.setItem(initKey, 'true');
           }
         }
       } catch (err) {
@@ -3905,6 +3919,7 @@ export default function Plantilla() {
       }
 
       // 3. Sync Attendance Sessions
+      const canonicalTeamId = resolveCanonicalTeamId(selectedTeam);
       const sessionsKey = `team_sessions_${selectedTeam}`;
       const savedSessions = localStorage.getItem(sessionsKey);
       let sessionsSuccess = 0;
@@ -3913,7 +3928,10 @@ export default function Plantilla() {
 
       if (savedSessions) {
         const localSessions = JSON.parse(savedSessions);
-        const updatedSessions = [...localSessions];
+        const updatedSessions = (Array.isArray(localSessions) ? localSessions : []).filter((s: any) => {
+          const sTeamId = extractRecordCanonicalTeamId(s);
+          return !sTeamId || sTeamId === canonicalTeamId;
+        });
 
         for (let i = 0; i < updatedSessions.length; i++) {
           const session = updatedSessions[i];
@@ -3922,14 +3940,19 @@ export default function Plantilla() {
           let targetId = session.id;
           if (!isUuid) {
             targetId = crypto.randomUUID();
-            updatedSessions[i] = { ...session, id: targetId };
+            sessionsChanges = true;
+          }
+          if (session.teamId !== canonicalTeamId || session.team !== selectedTeam || targetId !== session.id) {
+            updatedSessions[i] = { ...session, id: targetId, teamId: canonicalTeamId, team: selectedTeam };
             sessionsChanges = true;
           }
 
           const sessionPayload = {
             id: targetId,
+            teamId: canonicalTeamId,
             team: selectedTeam,
             fecha: session.fecha,
+            hora: session.hora || '19:30 h',
             tipo: session.tipo,
             descripcion: session.descripcion || null,
             records: session.records || [],
@@ -4404,7 +4427,10 @@ export default function Plantilla() {
 
       {/* Content View */}
       {subView === 'calendar' ? (
-        <TeamMonthlyCalendar selectedTeam={selectedTeam} />
+        <TeamMonthlyCalendar
+          key={resolveCanonicalTeamId(selectedTeam)}
+          selectedTeam={selectedTeam}
+        />
       ) : (
         <>
           {/* Add Player Form */}

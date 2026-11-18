@@ -26,6 +26,12 @@ import {
   upsertMatchPlansToFirestore,
   upsertTeamMatchesToFirestore,
 } from './firestoreMatches';
+import {
+  extractRecordCanonicalTeamId,
+  hasUserModifiedSessionContent,
+  resolveCanonicalTeamId,
+  runTrainingSessionsIsolationAuditAndMigration,
+} from './trainingIsolation';
 
 export const ADMIN_EMAIL = 'angel.saguar@telefonica.net';
 export const ALEJANDRO_EMAIL = 'asaguar04@gmail.com';
@@ -500,8 +506,9 @@ export async function syncAllClubDataWithFirestore(options?: {
   let pushed = 0;
   let pulled = 0;
 
-  // Guarantee non-destructive pre-sync backup before any cross-device merge
+  // Guarantee non-destructive pre-sync backups before any cross-device merge
   ensurePreSyncMatchSafetyBackup();
+  runTrainingSessionsIsolationAuditAndMigration();
 
   // 1. PULL from Firestore /club_sync for permitted modules
   if (direction === 'pull' || direction === 'bidirectional') {
@@ -561,6 +568,7 @@ export async function syncAllClubDataWithFirestore(options?: {
             pulled++;
           }
         } else if (data.category === 'team_sessions' && data.team && Array.isArray(items)) {
+          const targetCanonicalTeamId = resolveCanonicalTeamId(data.team);
           const key = `team_sessions_${data.team}`;
           const localRaw = localStorage.getItem(key);
           const localArr: any[] = localRaw ? JSON.parse(localRaw) : [];
@@ -571,13 +579,28 @@ export async function syncAllClubDataWithFirestore(options?: {
 
           const byFecha = new Map<string, any>();
           items.forEach((s: any) => {
-            if (s && s.fecha && s.tipo !== 'CalendarioMensual' && !isDel(s.id, s.fecha)) {
-              byFecha.set(String(s.fecha), s);
+            if (!s || !s.fecha || s.tipo === 'CalendarioMensual' || s.unverifiedOrigin) return;
+            const sTeamId = extractRecordCanonicalTeamId(s);
+            if (sTeamId && sTeamId !== targetCanonicalTeamId) return;
+            if (!hasUserModifiedSessionContent(s)) return;
+            if (!isDel(s.id, s.fecha)) {
+              byFecha.set(String(s.fecha), {
+                ...s,
+                teamId: targetCanonicalTeamId,
+                team: data.team,
+              });
             }
           });
           localArr.forEach((ls: any) => {
-            if (ls && ls.fecha && ls.tipo !== 'CalendarioMensual' && !isDel(ls.id, ls.fecha)) {
-              byFecha.set(String(ls.fecha), ls);
+            if (!ls || !ls.fecha || ls.tipo === 'CalendarioMensual' || ls.unverifiedOrigin) return;
+            const lsTeamId = extractRecordCanonicalTeamId(ls);
+            if (lsTeamId && lsTeamId !== targetCanonicalTeamId) return;
+            if (!isDel(ls.id, ls.fecha)) {
+              byFecha.set(String(ls.fecha), {
+                ...ls,
+                teamId: targetCanonicalTeamId,
+                team: data.team,
+              });
             }
           });
           const mergedSessions = Array.from(byFecha.values()).sort((a, b) =>
@@ -756,33 +779,44 @@ export async function syncAllClubDataWithFirestore(options?: {
             if (sessionsRaw) {
               const parsed = JSON.parse(sessionsRaw);
               if (Array.isArray(parsed) && parsed.length > 0) {
-                const lightSessions = parsed.map((sess: any) => ({
-                  ...sess,
-                  records: Array.isArray(sess?.records)
-                    ? sess.records.map((rec: any) => {
-                        if (!rec || typeof rec !== 'object') return rec;
-                        const { foto_url, ...rest } = rec;
-                        return typeof foto_url === 'string' && !foto_url.startsWith('data:')
-                          ? { ...rest, foto_url }
-                          : rest;
-                      })
-                    : [],
-                  archivos: Array.isArray(sess?.archivos)
-                    ? sess.archivos.map((f: any) => {
-                        if (!f || typeof f !== 'object') return f;
-                        const { dataUrl, ...rest } = f;
-                        return rest;
-                      })
-                    : [],
-                }));
-                await upsertClubSyncDoc({
-                  id: `sessions_${slug}`,
-                  module: 'gestion-equipo',
-                  category: 'team_sessions',
-                  team,
-                  items: lightSessions,
+                const canonicalTeamId = resolveCanonicalTeamId(team);
+                const verifiedForTeam = parsed.filter((sess: any) => {
+                  if (!sess || sess.tipo === 'CalendarioMensual' || sess.unverifiedOrigin) return false;
+                  const sTeamId = extractRecordCanonicalTeamId(sess);
+                  if (sTeamId && sTeamId !== canonicalTeamId) return false;
+                  return hasUserModifiedSessionContent(sess);
                 });
-                pushed++;
+                if (verifiedForTeam.length > 0) {
+                  const lightSessions = verifiedForTeam.map((sess: any) => ({
+                    ...sess,
+                    teamId: canonicalTeamId,
+                    team,
+                    records: Array.isArray(sess?.records)
+                      ? sess.records.map((rec: any) => {
+                          if (!rec || typeof rec !== 'object') return rec;
+                          const { foto_url, ...rest } = rec;
+                          return typeof foto_url === 'string' && !foto_url.startsWith('data:')
+                            ? { ...rest, foto_url }
+                            : rest;
+                        })
+                      : [],
+                    archivos: Array.isArray(sess?.archivos)
+                      ? sess.archivos.map((f: any) => {
+                          if (!f || typeof f !== 'object') return f;
+                          const { dataUrl, ...rest } = f;
+                          return rest;
+                        })
+                      : [],
+                  }));
+                  await upsertClubSyncDoc({
+                    id: `sessions_${slug}`,
+                    module: 'gestion-equipo',
+                    category: 'team_sessions',
+                    team,
+                    items: lightSessions,
+                  });
+                  pushed++;
+                }
               }
             }
           }
