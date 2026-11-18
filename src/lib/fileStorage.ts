@@ -173,14 +173,31 @@ export async function hydrateSessionFiles<T extends { id: string; nombre: string
 
 // Safe localStorage setter that strips heavy dataUrls if quota is exceeded
 export function safeLocalStorageSetSessions(key: string, sessions: any[]): void {
+  const stripRecordBase64Photos = (list: any[]) =>
+    (list || []).map((sess) => ({
+      ...sess,
+      records: Array.isArray(sess?.records)
+        ? sess.records.map((rec: any) => {
+            if (!rec || typeof rec !== 'object') return rec;
+            const { foto_url, ...rest } = rec;
+            if (typeof foto_url === 'string' && foto_url && !foto_url.startsWith('data:')) {
+              return { ...rest, foto_url };
+            }
+            return rest;
+          })
+        : [],
+    }));
+
+  const cleanedSessions = stripRecordBase64Photos(sessions);
+
   try {
-    localStorage.setItem(key, JSON.stringify(sessions));
+    localStorage.setItem(key, JSON.stringify(cleanedSessions));
   } catch (err: any) {
     console.warn('localStorage quota warning when saving sessions. Sanitizing heavy files payload:', err);
     try {
       // Create a lightweight version of sessions keeping file metadata but omitting massive base64 strings
       // (The base64 data is preserved safely in IndexedDB)
-      const lightweightSessions = sessions.map((sess) => ({
+      const lightweightSessions = cleanedSessions.map((sess) => ({
         ...sess,
         archivos: (sess.archivos || []).map((file: any) => {
           // Save to IndexedDB first

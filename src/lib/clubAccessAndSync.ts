@@ -540,17 +540,51 @@ export async function syncAllClubDataWithFirestore(options?: {
         } else if (data.category === 'team_roster' && data.team && Array.isArray(items)) {
           const key = `team_roster_${data.team}`;
           const localRaw = localStorage.getItem(key);
-          const localArr = localRaw ? JSON.parse(localRaw) : [];
-          if (items.length >= localArr.length) {
-            localStorage.setItem(key, JSON.stringify(items));
+          const localArr: any[] = localRaw ? JSON.parse(localRaw) : [];
+          const byId = new Map<string, any>();
+          items.forEach((p: any) => {
+            if (p && p.id) byId.set(String(p.id), p);
+          });
+          localArr.forEach((lp: any) => {
+            if (lp && lp.id) {
+              const cloudP = byId.get(String(lp.id));
+              byId.set(String(lp.id), {
+                ...(cloudP || {}),
+                ...lp,
+                foto_url: lp.foto_url || cloudP?.foto_url,
+              });
+            }
+          });
+          const mergedRoster = Array.from(byId.values());
+          if (mergedRoster.length > 0) {
+            localStorage.setItem(key, JSON.stringify(mergedRoster));
             pulled++;
           }
         } else if (data.category === 'team_sessions' && data.team && Array.isArray(items)) {
           const key = `team_sessions_${data.team}`;
           const localRaw = localStorage.getItem(key);
-          const localArr = localRaw ? JSON.parse(localRaw) : [];
-          if (items.length >= localArr.length) {
-            localStorage.setItem(key, JSON.stringify(items));
+          const localArr: any[] = localRaw ? JSON.parse(localRaw) : [];
+          const deletedRaw = localStorage.getItem(`team_deleted_sessions_${data.team}`);
+          const deletedList: { id?: string; fecha: string }[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+          const isDel = (id?: string, f?: string) =>
+            deletedList.some((d) => (id && d.id && d.id === id) || (f && d.fecha && d.fecha === f));
+
+          const byFecha = new Map<string, any>();
+          items.forEach((s: any) => {
+            if (s && s.fecha && s.tipo !== 'CalendarioMensual' && !isDel(s.id, s.fecha)) {
+              byFecha.set(String(s.fecha), s);
+            }
+          });
+          localArr.forEach((ls: any) => {
+            if (ls && ls.fecha && ls.tipo !== 'CalendarioMensual' && !isDel(ls.id, ls.fecha)) {
+              byFecha.set(String(ls.fecha), ls);
+            }
+          });
+          const mergedSessions = Array.from(byFecha.values()).sort((a, b) =>
+            String(b.fecha).localeCompare(String(a.fecha))
+          );
+          if (mergedSessions.length > 0 || localRaw !== null) {
+            localStorage.setItem(key, JSON.stringify(mergedSessions));
             pulled++;
           }
         } else if (data.category === 'team_matches_deleted' && data.team && Array.isArray(items)) {
@@ -722,12 +756,31 @@ export async function syncAllClubDataWithFirestore(options?: {
             if (sessionsRaw) {
               const parsed = JSON.parse(sessionsRaw);
               if (Array.isArray(parsed) && parsed.length > 0) {
+                const lightSessions = parsed.map((sess: any) => ({
+                  ...sess,
+                  records: Array.isArray(sess?.records)
+                    ? sess.records.map((rec: any) => {
+                        if (!rec || typeof rec !== 'object') return rec;
+                        const { foto_url, ...rest } = rec;
+                        return typeof foto_url === 'string' && !foto_url.startsWith('data:')
+                          ? { ...rest, foto_url }
+                          : rest;
+                      })
+                    : [],
+                  archivos: Array.isArray(sess?.archivos)
+                    ? sess.archivos.map((f: any) => {
+                        if (!f || typeof f !== 'object') return f;
+                        const { dataUrl, ...rest } = f;
+                        return rest;
+                      })
+                    : [],
+                }));
                 await upsertClubSyncDoc({
                   id: `sessions_${slug}`,
                   module: 'gestion-equipo',
                   category: 'team_sessions',
                   team,
-                  items: parsed,
+                  items: lightSessions,
                 });
                 pushed++;
               }

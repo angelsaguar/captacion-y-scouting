@@ -115,10 +115,72 @@ const MONTH_NAMES = [
 
 const WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
+export function parseCalendarDateParts(dateStr?: string): { year: number; monthIndex: number; day: number } | null {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const parts = dateStr.trim().split('-');
+  if (parts.length !== 3) return null;
+  const year = Number(parts[0]);
+  const monthIndex = Number(parts[1]) - 1;
+  const day = Number(parts[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || !Number.isFinite(day)) return null;
+  if (monthIndex < 0 || monthIndex > 11 || day < 1 || day > 31) return null;
+  return { year, monthIndex, day };
+}
+
+function getInitialCalendarFocus(teamName: string): { year: number; month: number } {
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const rawTeam = localStorage.getItem(`afe_calendar_focus_${teamName}`);
+      if (rawTeam) {
+        const parsed = JSON.parse(rawTeam);
+        if (
+          parsed &&
+          typeof parsed.year === 'number' &&
+          typeof parsed.month === 'number' &&
+          parsed.month >= 0 &&
+          parsed.month <= 11
+        ) {
+          return { year: parsed.year, month: parsed.month };
+        }
+      }
+      const rawGlobal = localStorage.getItem('afe_calendar_focus_global');
+      if (rawGlobal) {
+        const parsed = JSON.parse(rawGlobal);
+        if (
+          parsed &&
+          typeof parsed.year === 'number' &&
+          typeof parsed.month === 'number' &&
+          parsed.month >= 0 &&
+          parsed.month <= 11
+        ) {
+          return { year: parsed.year, month: parsed.month };
+        }
+      }
+      // Or if team already has training sessions, focus the month of the most recent session
+      const sessionsRaw = localStorage.getItem(`team_sessions_${teamName}`);
+      if (sessionsRaw) {
+        const sessions = JSON.parse(sessionsRaw);
+        if (Array.isArray(sessions) && sessions.length > 0) {
+          const sorted = [...sessions]
+            .filter((s: any) => s && s.fecha && s.tipo !== 'CalendarioMensual')
+            .sort((a: any, b: any) => String(b.fecha).localeCompare(String(a.fecha)));
+          if (sorted[0]?.fecha) {
+            const parts = parseCalendarDateParts(sorted[0].fecha);
+            if (parts) {
+              return { year: parts.year, month: parts.monthIndex };
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+  return { year: 2026, month: 7 };
+}
+
 export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalendarProps) {
-  // Current view date (Default to current date or August 2026 for preseason)
-  const [currentYear, setCurrentYear] = useState<number>(2026);
-  const [currentMonth, setCurrentMonth] = useState<number>(7); // 7 = Agosto (0-indexed)
+  const initialFocus = getInitialCalendarFocus(selectedTeam);
+  const [currentYear, setCurrentYear] = useState<number>(initialFocus.year);
+  const [currentMonth, setCurrentMonth] = useState<number>(initialFocus.month);
   const [seasonLabel, setSeasonLabel] = useState<string>('2026-2027');
   
   // Events stored by dateStr (YYYY-MM-DD)
@@ -145,8 +207,89 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
 
   // Storage key based on team
   const storageKey = `team_monthly_calendar_${selectedTeam}_${currentYear}_${currentMonth}`;
+  const masterCalendarId = `cal_master_${selectedTeam}_${currentYear}_${currentMonth}`;
 
-  // Load saved calendar events for this team & month
+  // Remember the active calendar month & year whenever user navigates
+  useEffect(() => {
+    try {
+      const payload = JSON.stringify({ year: currentYear, month: currentMonth });
+      localStorage.setItem(`afe_calendar_focus_${selectedTeam}`, payload);
+      localStorage.setItem('afe_calendar_focus_global', payload);
+    } catch {}
+  }, [selectedTeam, currentYear, currentMonth]);
+
+  // Helper to get formatted day grid for any month/year (100% timezone-safe YYYY-MM-DD strings)
+  const getDaysGrid = (targetYear = currentYear, targetMonth = currentMonth) => {
+    const firstDayOfMonth = new Date(targetYear, targetMonth, 1);
+    const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+
+    let startDayOfWeek = firstDayOfMonth.getDay() - 1; 
+    if (startDayOfWeek === -1) startDayOfWeek = 6; // Sunday -> 6 in Mon-Sun indexing
+
+    const days: { date: Date | null; dateStr: string; label: string; isCurrentMonth: boolean }[] = [];
+
+    // Previous month padding days if needed to complete week
+    const prevMonthLastDay = new Date(targetYear, targetMonth, 0).getDate();
+    for (let i = startDayOfWeek - 1; i >= 0; i--) {
+      const pDay = prevMonthLastDay - i;
+      const prevDate = new Date(targetYear, targetMonth - 1, pDay);
+      const year = prevDate.getFullYear();
+      const month = String(prevDate.getMonth() + 1).padStart(2, '0');
+      const day = String(pDay).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+      const monthAbbr = MONTH_NAMES[prevDate.getMonth()].substring(0, 3).toLowerCase();
+      days.push({
+        date: prevDate,
+        dateStr,
+        label: `${pDay}-${monthAbbr}`,
+        isCurrentMonth: false
+      });
+    }
+
+    // Days of current month
+    for (let d = 1; d <= daysInMonth; d++) {
+      const cDate = new Date(targetYear, targetMonth, d);
+      const year = cDate.getFullYear();
+      const month = String(cDate.getMonth() + 1).padStart(2, '0');
+      const day = String(d).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+      const monthAbbr = MONTH_NAMES[targetMonth].substring(0, 3).toLowerCase();
+      days.push({
+        date: cDate,
+        dateStr,
+        label: `${d}-${monthAbbr}`,
+        isCurrentMonth: true
+      });
+    }
+
+    // Next month padding days to complete grid rows
+    const totalSoFar = days.length;
+    const remainingInGrid = (7 - (totalSoFar % 7)) % 7;
+    for (let n = 1; n <= remainingInGrid; n++) {
+      const nextDate = new Date(targetYear, targetMonth + 1, n);
+      const year = nextDate.getFullYear();
+      const month = String(nextDate.getMonth() + 1).padStart(2, '0');
+      const day = String(n).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+      const monthAbbr = MONTH_NAMES[nextDate.getMonth()].substring(0, 3).toLowerCase();
+      days.push({
+        date: nextDate,
+        dateStr,
+        label: `${n}-${monthAbbr}`,
+        isCurrentMonth: false
+      });
+    }
+
+    // Group into 7-day rows
+    const rows: (typeof days)[] = [];
+    for (let i = 0; i < days.length; i += 7) {
+      rows.push(days.slice(i, i + 7));
+    }
+
+    return rows;
+  };
+
+  // Load saved calendar events for this team & month and synchronize with sessions & matches
   useEffect(() => {
     const saved = localStorage.getItem(storageKey);
     if (saved) {
@@ -209,26 +352,68 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
     // Trigger auto synchronization from Supabase / localStorage matches & attendance
     syncAutoData(false);
 
-    const handleSync = () => {
-      const refreshed = localStorage.getItem(storageKey);
-      if (refreshed) {
-        try {
-          setEvents(JSON.parse(refreshed));
-        } catch {}
+    const handleSync = (evt?: Event) => {
+      // If calendar-updated specifies a new year/month for this team, switch to it if appropriate
+      const customEvt = evt as CustomEvent | undefined;
+      if (
+        customEvt?.type === 'calendar-updated' &&
+        customEvt.detail &&
+        customEvt.detail.team === selectedTeam &&
+        typeof customEvt.detail.year === 'number' &&
+        typeof customEvt.detail.month === 'number'
+      ) {
+        if (customEvt.detail.year !== currentYear || customEvt.detail.month !== currentMonth) {
+          setCurrentYear(customEvt.detail.year);
+          setCurrentMonth(customEvt.detail.month);
+          return;
+        }
       }
+      syncAutoData(false);
     };
+
     window.addEventListener('calendar-updated', handleSync);
     window.addEventListener('session-updated', handleSync);
+    window.addEventListener('lapoveda_matches_updated', handleSync);
+    window.addEventListener('lapoveda_club_data_synced', handleSync);
+    window.addEventListener('storage', handleSync);
     return () => {
       window.removeEventListener('calendar-updated', handleSync);
       window.removeEventListener('session-updated', handleSync);
+      window.removeEventListener('lapoveda_matches_updated', handleSync);
+      window.removeEventListener('lapoveda_club_data_synced', handleSync);
+      window.removeEventListener('storage', handleSync);
     };
   }, [selectedTeam, currentYear, currentMonth]);
 
-  // Save changes to localStorage and optionally sync to Supabase
+  // Save changes to localStorage
   const saveEvents = (newEvents: Record<string, CalendarEvent>) => {
     setEvents(newEvents);
-    localStorage.setItem(storageKey, JSON.stringify(newEvents));
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(newEvents));
+    } catch (e) {
+      console.warn('Error saving calendar events to localStorage:', e);
+    }
+  };
+
+  const persistMasterCalendarRecord = async (targetEvents: Record<string, CalendarEvent>) => {
+    const firstOfMonth = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
+    const masterPayload = {
+      id: masterCalendarId,
+      team: selectedTeam,
+      fecha: firstOfMonth,
+      tipo: 'CalendarioMensual',
+      descripcion: JSON.stringify({
+        month: currentMonth,
+        year: currentYear,
+        team: selectedTeam,
+        events: targetEvents,
+        updatedAt: new Date().toISOString()
+      }),
+      records: [],
+      tareas: [],
+      archivos: []
+    };
+    await supabase.from('attendance_sessions').upsert(masterPayload);
   };
 
   // Upload current month's calendar state to Supabase database tables
@@ -243,18 +428,53 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
 
       const allEntries = Object.values(targetEvents) as CalendarEvent[];
 
-      // 1. Upsert training sessions into attendance_sessions
+      // 1. Upsert training sessions into attendance_sessions & localStorage team_sessions_${selectedTeam}
       const trainingEntries = allEntries.filter(e => e.type === 'Entrenamiento');
+      const sessionsKey = `team_sessions_${selectedTeam}`;
+      const savedSessionsStr = localStorage.getItem(sessionsKey);
+      let currentSessions: any[] = [];
+      try {
+        currentSessions = savedSessionsStr ? JSON.parse(savedSessionsStr) : [];
+      } catch {
+        currentSessions = [];
+      }
+      let localSessionsChanged = false;
+
       for (const tr of trainingEntries) {
+        const existingIdx = currentSessions.findIndex((s: any) => s.fecha === tr.dateStr);
+        const sessionId = existingIdx >= 0 && currentSessions[existingIdx]?.id
+          ? currentSessions[existingIdx].id
+          : crypto.randomUUID();
+
+        if (existingIdx >= 0) {
+          currentSessions[existingIdx] = {
+            ...currentSessions[existingIdx],
+            descripcion: tr.title || 'Entrenamiento',
+            hora: tr.hora || '19:30 h',
+            tipo: 'Entrenamiento'
+          };
+        } else {
+          currentSessions.unshift({
+            id: sessionId,
+            fecha: tr.dateStr,
+            hora: tr.hora || '19:30 h',
+            tipo: 'Entrenamiento',
+            descripcion: tr.title || 'Entrenamiento',
+            records: []
+          });
+        }
+        localSessionsChanged = true;
+
         const payload = {
+          id: sessionId,
           team: selectedTeam,
           fecha: tr.dateStr,
           tipo: 'Entrenamiento',
           descripcion: tr.title || 'Entrenamiento',
           hora: tr.hora || '19:30 h',
-          records: [],
-          tareas: [],
-          archivos: []
+          records: existingIdx >= 0 ? (currentSessions[existingIdx].records || []) : [],
+          tareas: existingIdx >= 0 ? (currentSessions[existingIdx].tareas || []) : [],
+          archivos: existingIdx >= 0 ? (currentSessions[existingIdx].archivos || []) : []
         };
         const { error } = await supabase
           .from('attendance_sessions')
@@ -262,11 +482,19 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         if (!error) savedSessions++;
       }
 
+      if (localSessionsChanged) {
+        try {
+          localStorage.setItem(sessionsKey, JSON.stringify(currentSessions));
+        } catch {}
+      }
+
       // 2. Upsert matches into team_matches
       const matchEntries = allEntries.filter(e => e.type === 'Partido');
       for (const m of matchEntries) {
         const payload = {
+          id: `cal_match_${selectedTeam}_${m.dateStr}`.replace(/[^a-zA-Z0-9_-]/g, '_'),
           team_id: selectedTeam,
+          team: selectedTeam,
           fecha: m.dateStr,
           rival: m.rival || m.title.replace(/^vs\s+/i, '').replace(/^@\s+/i, '') || 'Rival',
           tipo: m.title.toLowerCase().includes('@') ? 'Visitante' : 'Local',
@@ -281,26 +509,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       }
 
       // 3. Upsert full master monthly calendar record into attendance_sessions
-      const firstOfMonth = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
-      const masterPayload = {
-        team: selectedTeam,
-        fecha: firstOfMonth,
-        tipo: 'CalendarioMensual',
-        descripcion: JSON.stringify({
-          month: currentMonth,
-          year: currentYear,
-          team: selectedTeam,
-          events: targetEvents,
-          updatedAt: new Date().toISOString()
-        }),
-        records: [],
-        tareas: [],
-        archivos: []
-      };
-
-      await supabase
-        .from('attendance_sessions')
-        .upsert(masterPayload);
+      await persistMasterCalendarRecord(targetEvents);
 
       // Keep localStorage in sync
       localStorage.setItem(storageKey, JSON.stringify(targetEvents));
@@ -321,9 +530,36 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
     let sessionsCount = 0;
 
     try {
-      const autoEvents: Record<string, CalendarEvent> = { ...events };
+      // Read directly from localStorage for the active storageKey to avoid stale React state closures
+      let baseEvents: Record<string, CalendarEvent> = {};
+      const savedStr = localStorage.getItem(storageKey);
+      if (savedStr) {
+        try {
+          const parsed = JSON.parse(savedStr);
+          if (parsed && typeof parsed === 'object') {
+            baseEvents = { ...parsed };
+          }
+        } catch {}
+      }
 
-      // 0. Fetch master monthly calendar record from Supabase if present
+      const autoEvents: Record<string, CalendarEvent> = { ...baseEvents };
+
+      // Build set of all dates visible in the current month's 7-column grid (including padding days)
+      const visibleGridDates = new Set<string>();
+      getDaysGrid(currentYear, currentMonth).forEach(row => {
+        row.forEach(cell => {
+          if (cell.dateStr) visibleGridDates.add(cell.dateStr);
+        });
+      });
+
+      const isDateInCurrentCalendarView = (dateStr?: string): boolean => {
+        if (!dateStr) return false;
+        if (visibleGridDates.has(dateStr)) return true;
+        const parts = parseCalendarDateParts(dateStr);
+        return Boolean(parts && parts.year === currentYear && parts.monthIndex === currentMonth);
+      };
+
+      // 0. Fetch master monthly calendar record from Supabase if present (pick the most recent one)
       const firstOfMonth = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
       const { data: dbMaster } = await supabase
         .from('attendance_sessions')
@@ -332,22 +568,35 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         .eq('fecha', firstOfMonth)
         .eq('tipo', 'CalendarioMensual');
 
-      if (dbMaster && dbMaster.length > 0 && dbMaster[0].descripcion) {
-        try {
-          const parsedMaster = JSON.parse(dbMaster[0].descripcion);
-          if (parsedMaster && parsedMaster.events) {
-            Object.assign(autoEvents, parsedMaster.events);
+      if (dbMaster && dbMaster.length > 0) {
+        // Sort descending by updatedAt inside JSON or row updated_at so we never pick an outdated first row
+        const sortedMasters = [...dbMaster].sort((a, b) => {
+          const tsA = a.updated_at || a.created_at || '';
+          const tsB = b.updated_at || b.created_at || '';
+          return String(tsB).localeCompare(String(tsA));
+        });
+        const latestMaster = sortedMasters.find(m => m.id === masterCalendarId) || sortedMasters[0];
+        if (latestMaster?.descripcion) {
+          try {
+            const parsedMaster = JSON.parse(latestMaster.descripcion);
+            if (parsedMaster && parsedMaster.events && typeof parsedMaster.events === 'object') {
+              // Merge master events as base, letting current localStorage storageKey take precedence
+              Object.entries(parsedMaster.events as Record<string, CalendarEvent>).forEach(([k, v]) => {
+                if (!autoEvents[k] && v) {
+                  autoEvents[k] = v;
+                }
+              });
+            }
+          } catch (e) {
+            console.warn('Could not parse master calendar json from Supabase:', e);
           }
-        } catch (e) {
-          console.warn('Could not parse master calendar json from Supabase:', e);
         }
       }
 
       // 1. Fetch matches from Supabase, Firestore, and localStorage
       const { data: dbMatches } = await supabase
         .from('team_matches')
-        .select('*')
-        .eq('team_id', selectedTeam);
+        .select('*');
 
       let cloudMatches: any[] = [];
       if (isFirebaseAuthReady()) {
@@ -357,18 +606,31 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         } catch {}
       }
 
-      // Combine with local storage matches
       const localMatchesStr = localStorage.getItem(`team_matches_${selectedTeam}`);
       const localMatches = localMatchesStr ? JSON.parse(localMatchesStr) : [];
+      const deletedMatchesRaw = localStorage.getItem(`team_matches_deleted_${selectedTeam}`);
+      const deletedMatchIds = new Set<string>(deletedMatchesRaw ? JSON.parse(deletedMatchesRaw) : []);
 
       const allMatchesMap = new Map<string, any>();
-      (dbMatches || []).forEach(m => { if (m.fecha) allMatchesMap.set(m.fecha, m); });
-      localMatches.forEach((m: any) => { if (m.fecha) allMatchesMap.set(m.fecha, m); });
-      cloudMatches.forEach((m: any) => { if (m.fecha) allMatchesMap.set(m.fecha, m); });
+      (dbMatches || []).forEach(m => {
+        const mTeam = (m.team || m.team_id || '').trim();
+        if (m.fecha && mTeam === selectedTeam && !deletedMatchIds.has(String(m.id)) && !m.isDeleted && !m.estadisticas?.isDeleted) {
+          allMatchesMap.set(m.fecha, m);
+        }
+      });
+      (Array.isArray(localMatches) ? localMatches : []).forEach((m: any) => {
+        if (m && m.fecha && !deletedMatchIds.has(String(m.id)) && !m.isDeleted && !m.estadisticas?.isDeleted) {
+          allMatchesMap.set(m.fecha, m);
+        }
+      });
+      cloudMatches.forEach((m: any) => {
+        if (m && m.fecha && !deletedMatchIds.has(String(m.id)) && !m.isDeleted && !m.estadisticas?.isDeleted) {
+          allMatchesMap.set(m.fecha, m);
+        }
+      });
 
       allMatchesMap.forEach((m, dateStr) => {
-        const d = new Date(dateStr);
-        if (d.getFullYear() === currentYear && d.getMonth() === currentMonth) {
+        if (isDateInCurrentCalendarView(dateStr)) {
           const compDetermined = m.competicion || (dateStr.startsWith('2026-08') || dateStr.startsWith('2026-09-0') || dateStr.startsWith('2026-09-1') || dateStr.startsWith('2026-09-20') || dateStr.startsWith('2026-09-19') ? 'Amistoso' : 'Liga');
           autoEvents[dateStr] = {
             dateStr,
@@ -384,40 +646,69 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         }
       });
 
-      // 2. Fetch training / attendance sessions from Supabase
+      // 2. Fetch training / attendance sessions from Supabase and localStorage for this exact team
       const { data: dbSessions } = await supabase
         .from('attendance_sessions')
         .select('*')
         .neq('tipo', 'CalendarioMensual');
 
-      // Combine with local storage sessions
       const localSessionsStr = localStorage.getItem(`team_sessions_${selectedTeam}`) || localStorage.getItem(`attendance_sessions_${selectedTeam}`);
-      const localSessions = localSessionsStr ? JSON.parse(localSessionsStr) : [];
+      let localSessions: any[] = [];
+      try {
+        localSessions = localSessionsStr ? JSON.parse(localSessionsStr) : [];
+      } catch {
+        localSessions = [];
+      }
 
       const deletedRaw = localStorage.getItem(`team_deleted_sessions_${selectedTeam}`);
       const deletedList: { id?: string; fecha: string }[] = deletedRaw ? JSON.parse(deletedRaw) : [];
       const isDel = (id?: string, f?: string) => deletedList.some(d => (id && d.id && d.id === id) || (f && d.fecha && d.fecha === f));
 
-      const allSessionsMap = new Map<string, any>();
-      (dbSessions || []).forEach(s => { 
-        if (s.fecha && s.tipo !== 'CalendarioMensual' && !isDel(s.id, s.fecha) && (s.team_name === selectedTeam || s.team_id === selectedTeam || s.team === selectedTeam || !s.team_id)) {
-          allSessionsMap.set(s.fecha, s); 
+      // Remove any training event that was explicitly deleted in Asistencia
+      deletedList.forEach(d => {
+        if (d.fecha && autoEvents[d.fecha]?.type === 'Entrenamiento') {
+          delete autoEvents[d.fecha];
         }
       });
-      localSessions.forEach((s: any) => { 
-        if (s.fecha && s.tipo !== 'CalendarioMensual' && !isDel(s.id, s.fecha)) allSessionsMap.set(s.fecha, s); 
+
+      const allSessionsMap = new Map<string, any>();
+      (dbSessions || []).forEach(s => {
+        const sTeam = (s.team || s.team_id || s.team_name || '').trim();
+        const isJsonMaster = typeof s.descripcion === 'string' && s.descripcion.trim().startsWith('{');
+        if (
+          s.fecha &&
+          s.tipo !== 'CalendarioMensual' &&
+          !isJsonMaster &&
+          sTeam === selectedTeam &&
+          !isDel(s.id, s.fecha)
+        ) {
+          allSessionsMap.set(s.fecha, s);
+        }
+      });
+      (Array.isArray(localSessions) ? localSessions : []).forEach((s: any) => {
+        const isJsonMaster = typeof s?.descripcion === 'string' && s.descripcion.trim().startsWith('{');
+        if (s && s.fecha && s.tipo !== 'CalendarioMensual' && !isJsonMaster && !isDel(s.id, s.fecha)) {
+          allSessionsMap.set(s.fecha, s);
+        }
       });
 
       allSessionsMap.forEach((s, dateStr) => {
-        const d = new Date(dateStr);
-        if (d.getFullYear() === currentYear && d.getMonth() === currentMonth) {
-          // Keep match if already set
+        if (isDateInCurrentCalendarView(dateStr)) {
+          // Keep match if already set on that day
           if (!autoEvents[dateStr] || autoEvents[dateStr].type !== 'Partido') {
             const evType: CalendarEventType = s.tipo === 'Partido' ? 'Partido' : 'Entrenamiento';
             const existingEvent = autoEvents[dateStr];
+            const cleanDesc = typeof s.descripcion === 'string' ? s.descripcion.trim() : '';
+            const preservedTitle =
+              existingEvent && existingEvent.type === evType && existingEvent.title
+                ? existingEvent.title
+                : evType === 'Partido'
+                ? 'Partido Programado'
+                : 'Sesión de entrenamiento';
+
             autoEvents[dateStr] = {
               dateStr,
-              title: s.descripcion || existingEvent?.title || (s.tipo === 'Partido' ? 'Partido Programado' : 'Entrenamiento'),
+              title: cleanDesc || preservedTitle,
               type: evType,
               hora: s.hora || existingEvent?.hora || '19:30 h',
               lugar: s.lugar || existingEvent?.lugar || ''
@@ -430,88 +721,17 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       saveEvents(autoEvents);
       if (showToast) {
         if (matchesCount > 0 || sessionsCount > 0 || dbMaster?.length) {
-          toast.success(`Datos sincronizados desde Supabase: ${matchesCount} partidos y ${sessionsCount} entrenamientos cargados.`);
+          toast.success(`Datos sincronizados: ${matchesCount} partidos y ${sessionsCount} entrenamientos cargados en el calendario.`);
         } else {
-          toast.info('Sincronización completada desde Supabase.');
+          toast.info('Sincronización completada.');
         }
       }
     } catch (err) {
       console.warn('Error syncing auto data from Supabase:', err);
-      if (showToast) toast.error('Error al sincronizar datos desde Supabase.');
+      if (showToast) toast.error('Error al sincronizar datos del calendario.');
     } finally {
       setIsSyncing(false);
     }
-  };
-
-  // Helper to get formatted day grid for the selected month/year
-  const getDaysGrid = () => {
-    // First day of month
-    const firstDayOfMonth = new Date(currentYear, currentMonth, 1);
-    // Number of days in month
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-
-    // Day of week for first day (0 = Sun, 1 = Mon, ..., 6 = Sat)
-    let startDayOfWeek = firstDayOfMonth.getDay() - 1; 
-    if (startDayOfWeek === -1) startDayOfWeek = 6; // Sunday -> 6 in Mon-Sun indexing
-
-    const days: { date: Date | null; dateStr: string; label: string; isCurrentMonth: boolean }[] = [];
-
-    // Previous month padding days if needed to complete week
-    const prevMonthLastDay = new Date(currentYear, currentMonth, 0).getDate();
-    for (let i = startDayOfWeek - 1; i >= 0; i--) {
-      const pDay = prevMonthLastDay - i;
-      const prevDate = new Date(currentYear, currentMonth - 1, pDay);
-      const dateStr = prevDate.toISOString().split('T')[0];
-      const monthAbbr = MONTH_NAMES[prevDate.getMonth()].substring(0, 3).toLowerCase();
-      days.push({
-        date: prevDate,
-        dateStr,
-        label: `${pDay}-${monthAbbr}`,
-        isCurrentMonth: false
-      });
-    }
-
-    // Days of current month
-    for (let d = 1; d <= daysInMonth; d++) {
-      const cDate = new Date(currentYear, currentMonth, d);
-      const year = cDate.getFullYear();
-      const month = String(cDate.getMonth() + 1).padStart(2, '0');
-      const day = String(d).padStart(2, '0');
-      const dateStr = `${year}-${month}-${day}`;
-      const monthAbbr = MONTH_NAMES[currentMonth].substring(0, 3).toLowerCase();
-      days.push({
-        date: cDate,
-        dateStr,
-        label: `${d}-${monthAbbr}`,
-        isCurrentMonth: true
-      });
-    }
-
-    // Next month padding days to complete grid rows
-    const totalSoFar = days.length;
-    const remainingInGrid = (7 - (totalSoFar % 7)) % 7;
-    for (let n = 1; n <= remainingInGrid; n++) {
-      const nextDate = new Date(currentYear, currentMonth + 1, n);
-      const year = nextDate.getFullYear();
-      const month = String(nextDate.getMonth() + 1).padStart(2, '0');
-      const day = String(n).padStart(2, '0');
-      const dateStr = `${year}-${month}-${day}`;
-      const monthAbbr = MONTH_NAMES[nextDate.getMonth()].substring(0, 3).toLowerCase();
-      days.push({
-        date: nextDate,
-        dateStr,
-        label: `${n}-${monthAbbr}`,
-        isCurrentMonth: false
-      });
-    }
-
-    // Group into 7-day rows
-    const rows: (typeof days)[] = [];
-    for (let i = 0; i < days.length; i += 7) {
-      rows.push(days.slice(i, i + 7));
-    }
-
-    return rows;
   };
 
   // Fill standard training pattern (Tue, Thu, Fri -> Training, Mon, Wed, Sun -> Rest)
@@ -545,6 +765,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
     });
 
     saveEvents(updated);
+    persistMasterCalendarRecord(updated).catch(() => {});
     toast.success(`Se han completado ${count} días con el patrón semanal estándar.`);
   };
 
@@ -585,25 +806,24 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
 
     try {
       if (eventToSave.type === 'Entrenamiento') {
-        // Upsert to Supabase attendance_sessions
-        await supabase
-          .from('attendance_sessions')
-          .upsert({
-            team: selectedTeam,
-            fecha: editingDate,
-            tipo: 'Entrenamiento',
-            descripcion: eventToSave.title || 'Entrenamiento',
-            hora: eventToSave.hora || '19:30 h',
-            records: [],
-            tareas: [],
-            archivos: []
-          });
+        // Remove any deletion tombstone for this date
+        try {
+          const deletedKey = `team_deleted_sessions_${selectedTeam}`;
+          const deletedRaw = localStorage.getItem(deletedKey);
+          const deletedList: { id?: string; fecha: string }[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+          const filteredDeleted = deletedList.filter(d => d.fecha !== editingDate);
+          localStorage.setItem(deletedKey, JSON.stringify(filteredDeleted));
+        } catch {}
 
         // Sync local storage team_sessions_${selectedTeam}
         const sessionsKey = `team_sessions_${selectedTeam}`;
         const savedSessionsStr = localStorage.getItem(sessionsKey);
         let currentSessions: any[] = savedSessionsStr ? JSON.parse(savedSessionsStr) : [];
         const existingIdx = currentSessions.findIndex((s: any) => s.fecha === editingDate);
+        const sessionId = existingIdx >= 0 && currentSessions[existingIdx]?.id
+          ? currentSessions[existingIdx].id
+          : crypto.randomUUID();
+
         if (existingIdx >= 0) {
           currentSessions[existingIdx] = {
             ...currentSessions[existingIdx],
@@ -613,7 +833,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           };
         } else {
           currentSessions.unshift({
-            id: crypto.randomUUID(),
+            id: sessionId,
             fecha: editingDate,
             hora: eventToSave.hora || '19:30 h',
             tipo: 'Entrenamiento',
@@ -622,6 +842,23 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           });
         }
         localStorage.setItem(sessionsKey, JSON.stringify(currentSessions));
+
+        // Upsert to Supabase attendance_sessions with deterministic ID
+        await supabase
+          .from('attendance_sessions')
+          .upsert({
+            id: sessionId,
+            team: selectedTeam,
+            fecha: editingDate,
+            tipo: 'Entrenamiento',
+            descripcion: eventToSave.title || 'Entrenamiento',
+            hora: eventToSave.hora || '19:30 h',
+            records: existingIdx >= 0 ? (currentSessions[existingIdx].records || []) : [],
+            tareas: existingIdx >= 0 ? (currentSessions[existingIdx].tareas || []) : [],
+            archivos: existingIdx >= 0 ? (currentSessions[existingIdx].archivos || []) : []
+          });
+
+        window.dispatchEvent(new CustomEvent('session-updated', { detail: { team: selectedTeam } }));
       } else if (eventToSave.type === 'Partido') {
         const compVal = eventToSave.competicion || getMatchCompeticion(eventToSave);
         const matchesKey = `team_matches_${selectedTeam}`;
@@ -639,7 +876,6 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         const resolvedHora = eventToSave.hora || existingMatch?.hora || '20:00 h';
         const resolvedLugar = eventToSave.lugar || existingMatch?.lugar || 'Campo Municipal';
 
-        // Upsert to Supabase team_matches preserving existing stats/feedback
         await supabase
           .from('team_matches')
           .upsert({
@@ -689,23 +925,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       }
 
       // Upsert master monthly calendar record to attendance_sessions
-      const firstOfMonth = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
-      const masterPayload = {
-        team: selectedTeam,
-        fecha: firstOfMonth,
-        tipo: 'CalendarioMensual',
-        descripcion: JSON.stringify({
-          month: currentMonth,
-          year: currentYear,
-          team: selectedTeam,
-          events: updatedEvents,
-          updatedAt: new Date().toISOString()
-        }),
-        records: [],
-        tareas: [],
-        archivos: []
-      };
-      await supabase.from('attendance_sessions').upsert(masterPayload);
+      await persistMasterCalendarRecord(updatedEvents);
 
     } catch (err) {
       console.warn('Error syncing edited event to Supabase:', err);
@@ -717,9 +937,30 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
 
   // Delete event
   const handleDeleteEvent = (dateStr: string) => {
+    const existing = events[dateStr];
     const updated = { ...events };
     delete updated[dateStr];
     saveEvents(updated);
+    persistMasterCalendarRecord(updated).catch(() => {});
+
+    // If deleting a training session from the calendar, also record tombstone so syncAutoData does not resurrect it
+    if (existing?.type === 'Entrenamiento') {
+      try {
+        const deletedKey = `team_deleted_sessions_${selectedTeam}`;
+        const deletedRaw = localStorage.getItem(deletedKey);
+        const deletedList: { id?: string; fecha: string }[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+        deletedList.push({ fecha: dateStr });
+        localStorage.setItem(deletedKey, JSON.stringify(deletedList));
+
+        const sessionsKey = `team_sessions_${selectedTeam}`;
+        const sessionsRaw = localStorage.getItem(sessionsKey);
+        if (sessionsRaw) {
+          const sessions = JSON.parse(sessionsRaw).filter((s: any) => s.fecha !== dateStr);
+          localStorage.setItem(sessionsKey, JSON.stringify(sessions));
+        }
+      } catch {}
+    }
+
     setEditingDate(null);
     toast.success('Evento eliminado.');
   };
@@ -728,6 +969,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
   const handleClearMonth = () => {
     if (window.confirm('¿Seguro que deseas borrar todos los eventos de este mes?')) {
       saveEvents({});
+      persistMasterCalendarRecord({}).catch(() => {});
       toast.success('Calendario del mes limpiado.');
     }
   };

@@ -190,7 +190,10 @@ export const loadCompleteTeamRoster = (teamName: string): TeamPlayer[] => {
           const cleanSPLast = (sp.apellidos || '').trim();
           if (!cleanSPName) return;
           if (cleanSPName.toUpperCase() === 'JUGADORA' && (!cleanSPLast || cleanSPLast.toUpperCase() === 'JUGADORA')) return;
-          if (cleanSPName === 'Carlos' || cleanSPName === 'Marcos' || cleanSPName === 'Sofía') return;
+          if (
+            (teamName || '').toUpperCase().includes('FEMENINO') &&
+            (cleanSPName === 'Carlos' || cleanSPName === 'Marcos' || cleanSPName === 'Sofía')
+          ) return;
 
           const matchTeam = sp.equipo_asignado ? (sp.equipo_asignado.toUpperCase() === teamName.toUpperCase()) : (teamName === 'SENIOR FEMENINO');
           if (matchTeam && !isDeletedPlayer(sp.id, cleanSPName, cleanSPLast)) {
@@ -283,7 +286,15 @@ export const isSessionDeleted = (teamName: string, id?: string, fecha?: string):
 };
 
 export default function Asistencia() {
-  const [selectedTeam, setSelectedTeam] = useState<string>(CLUB_TEAMS[0]);
+  const [selectedTeam, setSelectedTeam] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('afe_active_team');
+      if (saved && (CLUB_TEAMS as readonly string[]).includes(saved)) {
+        return saved;
+      }
+    } catch {}
+    return CLUB_TEAMS[0];
+  });
   const [players, setPlayers] = useState<TeamPlayer[]>([]);
   const [sessions, setSessions] = useState<AttendanceSession[]>([]);
   const [selectedSession, setSelectedSession] = useState<AttendanceSession | null>(null);
@@ -390,6 +401,10 @@ export default function Asistencia() {
 
   // Load roster and synchronize on team change and on storage/player-updated events
   useEffect(() => {
+    try {
+      localStorage.setItem('afe_active_team', selectedTeam);
+    } catch {}
+
     const syncRoster = () => {
       const currentRoster = loadCompleteTeamRoster(selectedTeam);
       setPlayers(currentRoster);
@@ -405,7 +420,10 @@ export default function Asistencia() {
         const a = (p?.apellidos || rec.playerLastName || '').trim();
         if (!n) return false;
         if (n.toUpperCase() === 'JUGADORA' && (!a || a.toUpperCase() === 'JUGADORA')) return false;
-        if (n === 'Carlos' || n === 'Marcos' || n === 'Sofía') return false;
+        if (
+          (selectedTeam || '').toUpperCase().includes('FEMENINO') &&
+          (n === 'Carlos' || n === 'Marcos' || n === 'Sofía')
+        ) return false;
         return true;
       });
     };
@@ -651,19 +669,139 @@ export default function Asistencia() {
     localStorage.setItem(`active_session_id_${selectedTeam}`, sess.id);
   };
 
+  const parseDateStrYearMonth = (dateStr?: string): { year: number; month: number } | null => {
+    if (!dateStr || typeof dateStr !== 'string') return null;
+    const parts = dateStr.trim().split('-');
+    if (parts.length !== 3) return null;
+    const year = Number(parts[0]);
+    const month = Number(parts[1]) - 1;
+    if (!Number.isFinite(year) || !Number.isFinite(month) || month < 0 || month > 11) return null;
+    return { year, month };
+  };
+
+  const syncSessionToCalendarStorage = async (
+    teamName: string,
+    sess: AttendanceSession,
+    oldDateStr?: string,
+    focusCalendarMonth = false
+  ) => {
+    try {
+      // If date changed during edit, remove old date entry from its monthly calendar
+      if (oldDateStr && oldDateStr !== sess.fecha) {
+        const oldParts = parseDateStrYearMonth(oldDateStr);
+        if (oldParts) {
+          const oldCalKey = `team_monthly_calendar_${teamName}_${oldParts.year}_${oldParts.month}`;
+          const oldCalRaw = localStorage.getItem(oldCalKey);
+          if (oldCalRaw) {
+            const oldEvents = JSON.parse(oldCalRaw);
+            if (oldEvents && oldEvents[oldDateStr]) {
+              delete oldEvents[oldDateStr];
+              localStorage.setItem(oldCalKey, JSON.stringify(oldEvents));
+              const oldFirst = `${oldParts.year}-${String(oldParts.month + 1).padStart(2, '0')}-01`;
+              await supabase.from('attendance_sessions').upsert({
+                id: `cal_master_${teamName}_${oldParts.year}_${oldParts.month}`,
+                team: teamName,
+                fecha: oldFirst,
+                tipo: 'CalendarioMensual',
+                descripcion: JSON.stringify({
+                  month: oldParts.month,
+                  year: oldParts.year,
+                  team: teamName,
+                  events: oldEvents,
+                  updatedAt: new Date().toISOString()
+                }),
+                records: [],
+                tareas: [],
+                archivos: []
+              });
+            }
+          }
+        }
+      }
+
+      const targetParts = parseDateStrYearMonth(sess.fecha);
+      if (!targetParts) return;
+
+      const { year, month } = targetParts;
+      const calKey = `team_monthly_calendar_${teamName}_${year}_${month}`;
+      const existingCalStr = localStorage.getItem(calKey);
+      let calEvents: Record<string, any> = {};
+      if (existingCalStr) {
+        try {
+          calEvents = JSON.parse(existingCalStr) || {};
+        } catch {
+          calEvents = {};
+        }
+      }
+
+      // Preserve 'Partido' if there is already a match on that date and this session is not a match
+      if (!calEvents[sess.fecha] || calEvents[sess.fecha].type !== 'Partido' || sess.tipo === 'Partido') {
+        calEvents[sess.fecha] = {
+          dateStr: sess.fecha,
+          title: sess.descripcion || (sess.tipo === 'Partido' ? 'Partido Programado' : 'Sesión de entrenamiento'),
+          type: sess.tipo === 'Partido' ? 'Partido' : 'Entrenamiento',
+          hora: sess.hora || '19:30 h'
+        };
+      }
+
+      localStorage.setItem(calKey, JSON.stringify(calEvents));
+
+      if (focusCalendarMonth) {
+        const focusPayload = JSON.stringify({ year, month });
+        localStorage.setItem(`afe_calendar_focus_${teamName}`, focusPayload);
+        localStorage.setItem('afe_calendar_focus_global', focusPayload);
+      }
+
+      const firstOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+      await supabase.from('attendance_sessions').upsert({
+        id: `cal_master_${teamName}_${year}_${month}`,
+        team: teamName,
+        fecha: firstOfMonth,
+        tipo: 'CalendarioMensual',
+        descripcion: JSON.stringify({
+          month,
+          year,
+          team: teamName,
+          events: calEvents,
+          updatedAt: new Date().toISOString()
+        }),
+        records: [],
+        tareas: [],
+        archivos: []
+      });
+
+      window.dispatchEvent(
+        new CustomEvent('calendar-updated', {
+          detail: { team: teamName, year, month }
+        })
+      );
+    } catch (err) {
+      console.warn('Could not sync monthly calendar for session:', err);
+    }
+  };
+
   const saveSessions = async (updated: AttendanceSession[]) => {
-    // Ensure all sessions have valid UUIDs
+    // Ensure all sessions have valid UUIDs and strip inline base64 photos from records
     const validSessions = updated.map(sess => {
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sess.id);
-      return isUuid ? sess : { ...sess, id: crypto.randomUUID() };
+      const cleanRecords = (sess.records || []).map(rec => {
+        const { foto_url, ...rest } = rec;
+        if (typeof foto_url === 'string' && foto_url && !foto_url.startsWith('data:')) {
+          return { ...rest, foto_url };
+        }
+        return rest;
+      });
+      return {
+        ...sess,
+        id: isUuid ? sess.id : crypto.randomUUID(),
+        records: cleanRecords
+      };
     });
 
     setSessions(validSessions);
     const sessionsKey = `team_sessions_${selectedTeam}`;
     safeLocalStorageSetSessions(sessionsKey, validSessions);
     localStorage.setItem(`team_sessions_initialized_${selectedTeam}`, 'true');
-    window.dispatchEvent(new CustomEvent('session-updated', { detail: { team: selectedTeam } }));
-    window.dispatchEvent(new Event('storage'));
 
     // Update selectedSession reference
     if (selectedSession) {
@@ -698,7 +836,12 @@ export default function Asistencia() {
           observaciones: sess.observaciones || '',
           records: sess.records,
           tareas: sess.tareas || [],
-          archivos: sess.archivos || [],
+          archivos: (sess.archivos || []).map(f => ({
+            id: f.id,
+            nombre: f.nombre,
+            tamano: f.tamano,
+            tipo: f.tipo
+          })),
           videos: sess.videos || []
         };
 
@@ -709,6 +852,9 @@ export default function Asistencia() {
     } catch (err) {
       console.warn('Failed to sync attendance sessions to Supabase:', err);
     }
+
+    window.dispatchEvent(new CustomEvent('session-updated', { detail: { team: selectedTeam } }));
+    window.dispatchEvent(new Event('storage'));
   };
 
   const handleOpenEditSession = (sess: AttendanceSession) => {
@@ -736,67 +882,19 @@ export default function Asistencia() {
     const updatedSessions = sessions.map(s => s.id === editingSession.id ? updatedSession : s);
     setSelectedSession(updatedSession);
     await saveSessions(updatedSessions);
-
-    // Sync monthly calendar storage as well so calendar view gets updated immediately
-    try {
-      const d = new Date(editSessionForm.fecha);
-      if (!isNaN(d.getTime())) {
-        const year = d.getFullYear();
-        const month = d.getMonth();
-        const calKey = `team_monthly_calendar_${selectedTeam}_${year}_${month}`;
-        const existingCalStr = localStorage.getItem(calKey);
-        let calEvents: Record<string, any> = existingCalStr ? JSON.parse(existingCalStr) : {};
-        
-        if (editingSession.fecha !== editSessionForm.fecha && calEvents[editingSession.fecha]) {
-          delete calEvents[editingSession.fecha];
-        }
-
-        calEvents[editSessionForm.fecha] = {
-          dateStr: editSessionForm.fecha,
-          title: editSessionForm.descripcion,
-          type: editSessionForm.tipo === 'Partido' ? 'Partido' : 'Entrenamiento',
-          hora: editSessionForm.hora || '19:30 h'
-        };
-
-        localStorage.setItem(calKey, JSON.stringify(calEvents));
-
-        const firstOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-        await supabase.from('attendance_sessions').upsert({
-          team: selectedTeam,
-          fecha: firstOfMonth,
-          tipo: 'CalendarioMensual',
-          descripcion: JSON.stringify({
-            month,
-            year,
-            team: selectedTeam,
-            events: calEvents,
-            updatedAt: new Date().toISOString()
-          }),
-          records: [],
-          tareas: [],
-          archivos: []
-        });
-      }
-    } catch (err) {
-      console.warn('Could not sync monthly calendar after session edit:', err);
-    }
+    await syncSessionToCalendarStorage(selectedTeam, updatedSession, editingSession.fecha, true);
 
     setEditingSession(null);
-    toast.success('Sesión actualizada correctamente.');
+    toast.success('Sesión actualizada y sincronizada con el calendario.');
   };
 
   /**
    * Creates a new training / match session, pulling EVERY active player currently
    * in the team's official plantilla so none are left out.
    */
-  const handleCreateSession = (e: React.FormEvent) => {
+  const handleCreateSession = async (e: React.FormEvent) => {
     e.preventDefault();
     const currentRoster = loadCompleteTeamRoster(selectedTeam);
-
-    if (currentRoster.length === 0) {
-      toast.error('No se pueden crear sesiones si la plantilla está vacía. Añade jugadoras primero.');
-      return;
-    }
 
     // ALL active players from the team's plantilla are automatically included with no option pre-selected
     const defaultRecords: AttendanceRecord[] = currentRoster.map(p => ({
@@ -805,7 +903,6 @@ export default function Asistencia() {
       playerLastName: p.apellidos,
       playerDorsal: p.dorsal,
       playerPosition: p.posicion,
-      foto_url: p.foto_url,
       status: undefined
     }));
 
@@ -814,7 +911,7 @@ export default function Asistencia() {
       fecha: newSessionData.fecha,
       hora: newSessionData.hora || '19:30 h',
       tipo: newSessionData.tipo,
-      descripcion: newSessionData.descripcion,
+      descripcion: newSessionData.descripcion || 'Sesión de entrenamiento',
       observaciones: '',
       records: defaultRecords,
       tareas: [],
@@ -829,12 +926,13 @@ export default function Asistencia() {
       localStorage.setItem(deletedKey, JSON.stringify(filtered));
     } catch {}
 
-    const updated = [newSession, ...sessions];
-    saveSessions(updated);
+    const updated = [newSession, ...sessions.filter(s => s.fecha !== newSession.fecha)];
+    await saveSessions(updated);
+    await syncSessionToCalendarStorage(selectedTeam, newSession, undefined, true);
     setSelectedSession(newSession);
     localStorage.setItem(`active_session_id_${selectedTeam}`, newSession.id);
     setShowNewForm(false);
-    toast.success(`Nueva sesión de ${newSessionData.tipo} creada con las ${currentRoster.length} jugadoras de la plantilla.`);
+    toast.success(`Nueva sesión de ${newSessionData.tipo} programada para el ${newSession.fecha} y añadida al calendario mensual.`);
   };
 
   // Filter out any ghost/dummy/empty records from active session
@@ -846,10 +944,13 @@ export default function Asistencia() {
       const a = (pInfo?.apellidos || rec.playerLastName || '').trim();
       if (!n) return false;
       if (n.toUpperCase() === 'JUGADORA' && (!a || a.toUpperCase() === 'JUGADORA')) return false;
-      if (n === 'Carlos' || n === 'Marcos' || n === 'Sofía') return false;
+      if (
+        (selectedTeam || '').toUpperCase().includes('FEMENINO') &&
+        (n === 'Carlos' || n === 'Marcos' || n === 'Sofía')
+      ) return false;
       return true;
     });
-  }, [selectedSession, players]);
+  }, [selectedSession, players, selectedTeam]);
 
   // Real-time live status counters for the 5 attendance options
   const sessionCounts = useMemo(() => {
@@ -1274,16 +1375,34 @@ export default function Asistencia() {
     // 5. Also if calendar has this date as 'Entrenamiento', remove from calendar events
     try {
       if (fechaToDelete) {
-        const d = new Date(fechaToDelete);
-        if (!isNaN(d.getTime())) {
-          const calKey = `team_monthly_calendar_${selectedTeam}_${d.getFullYear()}_${d.getMonth()}`;
+        const parts = parseDateStrYearMonth(fechaToDelete);
+        if (parts) {
+          const { year, month } = parts;
+          const calKey = `team_monthly_calendar_${selectedTeam}_${year}_${month}`;
           const calSaved = localStorage.getItem(calKey);
           if (calSaved) {
             const calEvents = JSON.parse(calSaved);
             if (calEvents[fechaToDelete] && calEvents[fechaToDelete].type === 'Entrenamiento') {
               delete calEvents[fechaToDelete];
               localStorage.setItem(calKey, JSON.stringify(calEvents));
-              window.dispatchEvent(new CustomEvent('calendar-updated', { detail: { team: selectedTeam } }));
+              const firstOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+              await supabase.from('attendance_sessions').upsert({
+                id: `cal_master_${selectedTeam}_${year}_${month}`,
+                team: selectedTeam,
+                fecha: firstOfMonth,
+                tipo: 'CalendarioMensual',
+                descripcion: JSON.stringify({
+                  month,
+                  year,
+                  team: selectedTeam,
+                  events: calEvents,
+                  updatedAt: new Date().toISOString()
+                }),
+                records: [],
+                tareas: [],
+                archivos: []
+              });
+              window.dispatchEvent(new CustomEvent('calendar-updated', { detail: { team: selectedTeam, year, month } }));
             }
           }
         }

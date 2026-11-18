@@ -2704,7 +2704,15 @@ const calculateFifaStatsFromScouting = (position: string, scoutAttrs: Record<str
 };
 
 export default function Plantilla() {
-  const [selectedTeam, setSelectedTeam] = useState<string>(CLUB_TEAMS[0]);
+  const [selectedTeam, setSelectedTeam] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('afe_active_team');
+      if (saved && (CLUB_TEAMS as readonly string[]).includes(saved)) {
+        return saved;
+      }
+    } catch {}
+    return CLUB_TEAMS[0];
+  });
   const [subView, setSubView] = useState<'roster' | 'calendar'>('roster');
   const [players, setPlayers] = useState<TeamPlayer[]>([]);
   const [scoutingSignedPlayers, setScoutingSignedPlayers] = useState<Player[]>([]);
@@ -3341,6 +3349,9 @@ export default function Plantilla() {
 
   // Load team roster from localStorage on team change and listen for updates
   useEffect(() => {
+    try {
+      localStorage.setItem('afe_active_team', selectedTeam);
+    } catch {}
     loadTeamRoster();
 
     const handleSync = () => {
