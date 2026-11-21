@@ -1,4 +1,5 @@
 import { CLUB_TEAM_REGISTRY, ClubTeamRegistryItem } from '@/types';
+import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 
 export const PRE_TRAINING_ISOLATION_BACKUP_KEY = 'afe_pre_training_isolation_backup_v1';
 export const UNASSIGNED_SESSIONS_AUDIT_KEY = 'afe_unassigned_sessions_audit_v1';
@@ -61,7 +62,7 @@ export function resolveCanonicalTeamId(teamOrId?: string | null): string {
     return raw.toLowerCase();
   }
 
-  // Fallback for any custom user-created team: persist a deterministic immutable teamId
+  // Fallback for any custom user-created team: resolve deterministic immutable teamId without writing on read
   const token = normalizeTeamLookupToken(raw);
   const customMap = getCustomTeamRegistry();
   if (customMap[token]?.teamId) {
@@ -74,13 +75,6 @@ export function resolveCanonicalTeamId(teamOrId?: string | null): string {
     .replace(/^_+|_+$/g, '')
     .slice(0, 48);
   const generatedId = `team_custom_${slug || 'unknown'}`;
-
-  if (typeof localStorage !== 'undefined') {
-    try {
-      customMap[token] = { teamId: generatedId, displayName: raw };
-      localStorage.setItem(CUSTOM_TEAM_REGISTRY_KEY, JSON.stringify(customMap));
-    } catch {}
-  }
 
   return generatedId;
 }
@@ -132,6 +126,257 @@ export function doesRecordBelongToTeam(record: any, targetTeamOrId?: string | nu
 
   if (!targetTeamId || !recordTeamId) return false;
   return targetTeamId === recordTeamId;
+}
+
+/**
+ * FASE A — Parses a YYYY-MM-DD date string into { year, monthIndex (0-11), day } or null if invalid.
+ */
+export function parseStrictYearMonthFromDateStr(
+  dateStr?: string | null
+): { year: number; monthIndex: number; day: number } | null {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(monthIndex) ||
+    !Number.isFinite(day) ||
+    monthIndex < 0 ||
+    monthIndex > 11 ||
+    day < 1 ||
+    day > 31
+  ) {
+    return null;
+  }
+  return { year, monthIndex, day };
+}
+
+/**
+ * FASE A — Validates that a YYYY-MM-DD date string belongs strictly to the target (year, monthIndex 0-11).
+ * Prevents out-of-month training events from being dragged or persisted across monthly calendars.
+ */
+export function isDateStrictlyInMonth(
+  dateStr: string | undefined | null,
+  targetYear: number,
+  targetMonthIndex: number
+): boolean {
+  const parsed = parseStrictYearMonthFromDateStr(dateStr);
+  if (!parsed) return false;
+  return parsed.year === targetYear && parsed.monthIndex === targetMonthIndex;
+}
+
+/**
+ * FASE A — Detects if a text (description/title) explicitly names one of the club's registered teams.
+ */
+export function detectExplicitClubTeamInText(text?: string | null): string {
+  const normText = normalizeTeamLookupToken(text);
+  if (!normText) return '';
+  for (const reg of CLUB_TEAM_REGISTRY) {
+    const normDisplay = normalizeTeamLookupToken(reg.displayName);
+    if (normDisplay && normText.includes(normDisplay)) {
+      return reg.teamId;
+    }
+  }
+  return '';
+}
+
+/**
+ * FASE A — Computes a deterministic 32-bit FNV-1a hex fingerprint of a full session's sporting content
+ * (`fecha`, `hora`, `tipo`, `descripcion`, `observaciones`, marked attendance `playerId:status` pairs, and `tareas`).
+ * Excludes unmarked roster padding (`status === undefined`) so the same session before/after roster hydration
+ * produces the exact same content fingerprint across `localStorage`, `Supabase`, and `Firestore`.
+ */
+export function computeSessionContentFingerprint(session: any): string {
+  const fecha = String(session?.fecha || session?.dateStr || '').trim();
+  const hora = String(session?.hora || '19:30 h').trim().toLowerCase();
+  const tipo = String(session?.tipo || session?.type || 'Entrenamiento').trim().toLowerCase();
+  const desc = String(session?.descripcion || session?.title || 'Sesión de entrenamiento')
+    .trim()
+    .toLowerCase();
+  const obs = String(session?.observaciones || '').trim().toLowerCase();
+
+  const markedSig = (Array.isArray(session?.records) ? session.records : [])
+    .filter(
+      (r: any) =>
+        r &&
+        r.status !== undefined &&
+        r.status !== null &&
+        String(r.status).trim() !== '' &&
+        String(r.status).trim() !== 'Pendiente'
+    )
+    .map((r: any) => `${String(r.playerId || r.id || '').trim()}:${String(r.status).trim()}`)
+    .sort()
+    .join('|');
+
+  const tasksSig = (Array.isArray(session?.tareas) ? session.tareas : [])
+    .map((t: any) => String(t?.id || t?.titulo || '').trim().toLowerCase())
+    .sort()
+    .join('|');
+
+  const raw = `${fecha}__${hora}__${tipo}__${desc}__${obs}__${markedSig}__${tasksSig}`;
+  let hash = 2166136261;
+  for (let i = 0; i < raw.length; i++) {
+    hash ^= raw.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * FASE A — Strict deduplication key generator for Full Sessions (`AttendanceSession`).
+ * Guarantees simultaneously:
+ * 1. Two different sessions on the same day NEVER merge (different `id`s, or one with `id` and one without,
+ *    or both without `id` with different content, or both without `id` in the same store via `seenCounterInCurrentStore`).
+ * 2. The exact same session replicated across `localStorage`, `Supabase`, and `Firestore` (with or without `id`)
+ *    produces the exact same `dedupKey` and NEVER appears duplicated.
+ * 3. Historical identifiers (`1773944162835`, UUIDs, etc.) are NEVER modified.
+ */
+export function getStrictFullSessionDeduplicationKey(
+  session: any,
+  seenCounterInCurrentStore?: Map<string, number>
+): {
+  dedupKey: string;
+  effectiveSessionId: string;
+  hasExplicitValidId: boolean;
+} {
+  const fecha = String(session?.fecha || session?.dateStr || 'nodate').trim();
+  const rawId = String(session?.id ?? session?.sessionId ?? '').trim();
+  const isBareDateId = /^\d{4}-\d{2}-\d{2}$/.test(rawId) || (fecha !== '' && rawId === fecha);
+
+  if (rawId && !isBareDateId) {
+    return {
+      dedupKey: `id::${rawId}`,
+      effectiveSessionId: rawId,
+      hasExplicitValidId: true,
+    };
+  }
+
+  const fp = computeSessionContentFingerprint(session);
+  const baseFpKey = `fp::${fecha || 'nodate'}::${fp}`;
+  const occIndex = seenCounterInCurrentStore ? (seenCounterInCurrentStore.get(baseFpKey) ?? 0) : 0;
+  if (seenCounterInCurrentStore) {
+    seenCounterInCurrentStore.set(baseFpKey, occIndex + 1);
+  }
+
+  return {
+    dedupKey: `${baseFpKey}::occ_${occIndex}`,
+    effectiveSessionId: `unidentified_${fecha || 'nodate'}_${fp}_${occIndex}`,
+    hasExplicitValidId: false,
+  };
+}
+
+/**
+ * FASE A (Condición 1) — In-memory isolation gatekeeper for `AttendanceSession` records.
+ * Prevents contaminated sessions stored in `team_sessions_*`, Supabase `attendance_sessions`,
+ * or Firestore `/club_sync/sessions_*` from re-entering the active calendar or `Asistencia` view
+ * of another team, WITHOUT modifying or deleting any historical records in storage.
+ */
+export function isSessionAllowedForActiveTeamView(
+  session: any,
+  targetTeamOrId?: string | null
+): boolean {
+  if (!session || typeof session !== 'object') return false;
+  if (session.tipo === 'CalendarioMensual') return false;
+  if (session.unverifiedOrigin === true) return false;
+  if (typeof session.descripcion === 'string' && session.descripcion.trim().startsWith('{')) {
+    return false;
+  }
+
+  const targetTeamId = resolveCanonicalTeamId(targetTeamOrId);
+  if (!targetTeamId) return false;
+
+  // 1. Explicit teamId check
+  const recTeamId = extractRecordCanonicalTeamId(session);
+  if (recTeamId && recTeamId !== targetTeamId) {
+    return false;
+  }
+
+  // 2. Explicit foreign team name in description (e.g., "Microciclo Infantil B" inside Senior Femenino)
+  const mentionedTeamId = detectExplicitClubTeamInText(session.descripcion);
+  if (mentionedTeamId && mentionedTeamId !== targetTeamId) {
+    return false;
+  }
+
+  // 3. Check player records and cross-team session IDs in read-only mode
+  if (typeof localStorage !== 'undefined') {
+    const targetRosterIds = new Set<string>();
+    if (targetTeamId === 'team_01_senior_femenino') {
+      JUGADORAS_ADJUNTAS.forEach((j) => targetRosterIds.add(String(j.id).trim()));
+    }
+    const targetDisplayName = getTeamDisplayName(targetTeamId);
+    try {
+      const rawTargetRoster = localStorage.getItem(`team_roster_${targetDisplayName}`);
+      if (rawTargetRoster) {
+        const parsed = JSON.parse(rawTargetRoster);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((p: any) => {
+            if (p?.id) targetRosterIds.add(String(p.id).trim());
+          });
+        }
+      }
+    } catch {}
+
+    const foreignRosterIds = new Set<string>();
+    const foreignSessionIds = new Set<string>();
+    for (const reg of CLUB_TEAM_REGISTRY) {
+      if (reg.teamId === targetTeamId) continue;
+      try {
+        const rawRoster = localStorage.getItem(`team_roster_${reg.displayName}`);
+        if (rawRoster) {
+          const parsedRoster = JSON.parse(rawRoster);
+          if (Array.isArray(parsedRoster)) {
+            parsedRoster.forEach((p: any) => {
+              const pid = String(p?.id || '').trim();
+              if (pid && !targetRosterIds.has(pid)) {
+                foreignRosterIds.add(pid);
+              }
+            });
+          }
+        }
+      } catch {}
+
+      try {
+        const rawSessions = localStorage.getItem(`team_sessions_${reg.displayName}`);
+        if (rawSessions) {
+          const parsedSessions = JSON.parse(rawSessions);
+          if (Array.isArray(parsedSessions)) {
+            parsedSessions.forEach((s: any) => {
+              const sid = String(s?.id || '').trim();
+              if (sid && !sid.startsWith('cal_')) {
+                foreignSessionIds.add(sid);
+              }
+            });
+          }
+        }
+      } catch {}
+    }
+
+    const recs: any[] = Array.isArray(session.records) ? session.records : [];
+    let targetTeamPlayersCount = 0;
+    let foreignTeamPlayersCount = 0;
+    for (const r of recs) {
+      const pid = String(r?.playerId || r?.id || '').trim();
+      if (!pid) continue;
+      if (targetRosterIds.has(pid)) targetTeamPlayersCount++;
+      else if (foreignRosterIds.has(pid)) foreignTeamPlayersCount++;
+    }
+
+    // Reject if all recognized players in the session belong to a foreign team's roster
+    if (foreignTeamPlayersCount > 0 && targetTeamPlayersCount === 0) {
+      return false;
+    }
+
+    // Reject if the exact sessionId belongs to a foreign team's session list and has 0 target team players
+    const sessionId = String(session.id || '').trim();
+    if (sessionId && foreignSessionIds.has(sessionId) && targetTeamPlayersCount === 0) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -204,7 +449,12 @@ export function hasUserModifiedSessionContent(session: any): boolean {
 
   if (Array.isArray(session.records)) {
     const hasAnyMarkedStatus = session.records.some(
-      (r: any) => r && r.status !== undefined && r.status !== null && r.status !== 'Pendiente'
+      (r: any) =>
+        r &&
+        r.status !== undefined &&
+        r.status !== null &&
+        String(r.status).trim() !== '' &&
+        r.status !== 'Pendiente'
     );
     if (hasAnyMarkedStatus) return true;
   }
@@ -620,19 +870,18 @@ export function runTrainingSessionsIsolationAuditAndMigration(
     };
   }
 
-  if (migrationExecutedInSession && !force) {
-    const alreadyDone = localStorage.getItem(TRAINING_ISOLATION_MIGRATION_VERSION_KEY) === 'done';
-    if (alreadyDone) {
-      return {
-        aborted: false,
-        backupVerified: true,
-        backupKeyCount: 0,
-        stampedSessionsCount: 0,
-        inferredHistoricalCount: 0,
-        archivedUnverifiedCount: 0,
-        cleanedCalendarsCount: 0,
-      };
-    }
+  // Automatic migration/cleanup on UI mount (force === false) is disabled
+  // so zero automatic modifications, deletions, or backup overwrites occur on page load.
+  if (!force || (migrationExecutedInSession && !force)) {
+    return {
+      aborted: false,
+      backupVerified: true,
+      backupKeyCount: 0,
+      stampedSessionsCount: 0,
+      inferredHistoricalCount: 0,
+      archivedUnverifiedCount: 0,
+      cleanedCalendarsCount: 0,
+    };
   }
 
   // MANDATORY CONDITION 1: Create full backup and verify integrity + dry-run restoration BEFORE any change
@@ -975,9 +1224,9 @@ export function runTrainingSessionsIsolationAuditAndMigration(
           });
 
           const reconstructedSampleClean: Record<string, any> = {};
-          // Keep only verified sessions and verified matches of this specific team
+          // Keep only verified sessions and verified matches of this specific team AND strictly within this month
           teamSessionsMap.forEach((sess, dateStr) => {
-            if (dateStr.startsWith('2026-08') || dateStr.startsWith('2026-09')) {
+            if (isDateStrictlyInMonth(dateStr, yearNum, monthNum)) {
               reconstructedSampleClean[dateStr] = {
                 dateStr,
                 teamId: canonicalTeamId,
@@ -999,6 +1248,17 @@ export function runTrainingSessionsIsolationAuditAndMigration(
 
         for (const [dateStr, ev] of Object.entries(eventsMap as Record<string, any>)) {
           if (!ev || typeof ev !== 'object') continue;
+
+          // Strictly reject out-of-month dragged events
+          if (!isDateStrictlyInMonth(dateStr, yearNum, monthNum)) {
+            auditEntries.push({
+              reason: `Evento arrastrado fuera de mes (${dateStr}) retirado del calendario ${calKey} (${yearNum}-${monthNum})`,
+              sourceLocation: calKey,
+              record: { dateStr, ...ev },
+            });
+            calModified = true;
+            continue;
+          }
 
           const evTeamId = extractRecordCanonicalTeamId(ev);
 

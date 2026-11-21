@@ -28,10 +28,107 @@ import {
 } from './firestoreMatches';
 import {
   extractRecordCanonicalTeamId,
+  getStrictFullSessionDeduplicationKey,
   hasUserModifiedSessionContent,
+  isSessionAllowedForActiveTeamView,
   resolveCanonicalTeamId,
   runTrainingSessionsIsolationAuditAndMigration,
 } from './trainingIsolation';
+
+/**
+ * Pure session merge & isolation filter for a target team:
+ * - Blocks contaminated sessions from other teams via `isSessionAllowedForActiveTeamView`.
+ * - Deduplicates strictly via `getStrictFullSessionDeduplicationKey(session, seenCounterInCurrentStore)`,
+ *   NEVER falling back to `s.fecha`, NEVER merging two different sessions on the same date (even without ID),
+ *   and NEVER duplicating the same session replicated across localStorage, Supabase, and Firestore.
+ * - Preserves historical session IDs and additively merges attendance records so no historical records are lost.
+ */
+export function mergeAndFilterTeamSessionsForTargetTeam(
+  cloudItems: any[],
+  localItems: any[],
+  teamName: string,
+  deletedList: { id?: string; fecha: string }[] = []
+): any[] {
+  const targetCanonicalTeamId = resolveCanonicalTeamId(teamName);
+  const isDel = (id?: string, f?: string) =>
+    deletedList.some((d) => (id && d.id && d.id === id) || (f && d.fecha && d.fecha === f));
+
+  const bySessionKey = new Map<string, any>();
+  const cloudSeen = new Map<string, number>();
+  const localSeen = new Map<string, number>();
+
+  (Array.isArray(cloudItems) ? cloudItems : []).forEach((s: any) => {
+    if (!s || !s.fecha || s.tipo === 'CalendarioMensual' || s.unverifiedOrigin) return;
+    if (typeof s.descripcion === 'string' && s.descripcion.trim().startsWith('{')) return;
+    const sTeamId = extractRecordCanonicalTeamId(s);
+    if (sTeamId && sTeamId !== targetCanonicalTeamId) return;
+    if (!isSessionAllowedForActiveTeamView(s, targetCanonicalTeamId)) return;
+    if (!hasUserModifiedSessionContent(s)) return;
+    if (!isDel(s.id, s.fecha)) {
+      const { dedupKey, effectiveSessionId, hasExplicitValidId } =
+        getStrictFullSessionDeduplicationKey(s, cloudSeen);
+      bySessionKey.set(dedupKey, {
+        ...s,
+        id: hasExplicitValidId ? String(s.id).trim() : (s.id || effectiveSessionId),
+        teamId: targetCanonicalTeamId,
+        team: teamName,
+      });
+    }
+  });
+
+  (Array.isArray(localItems) ? localItems : []).forEach((ls: any) => {
+    if (!ls || !ls.fecha || ls.tipo === 'CalendarioMensual' || ls.unverifiedOrigin) return;
+    if (typeof ls.descripcion === 'string' && ls.descripcion.trim().startsWith('{')) return;
+    const lsTeamId = extractRecordCanonicalTeamId(ls);
+    if (lsTeamId && lsTeamId !== targetCanonicalTeamId) return;
+    if (!isSessionAllowedForActiveTeamView(ls, targetCanonicalTeamId)) return;
+    if (!isDel(ls.id, ls.fecha)) {
+      const { dedupKey, effectiveSessionId, hasExplicitValidId } =
+        getStrictFullSessionDeduplicationKey(ls, localSeen);
+      const cloudExisting = bySessionKey.get(dedupKey);
+      const localRecords: any[] = Array.isArray(ls.records) ? [...ls.records] : [];
+      if (cloudExisting && Array.isArray(cloudExisting.records)) {
+        const localPlayerIds = new Set(
+          localRecords.map((r: any) => String(r?.playerId || r?.id || '').trim()).filter(Boolean)
+        );
+        cloudExisting.records.forEach((cr: any) => {
+          const cPid = String(cr?.playerId || cr?.id || '').trim();
+          if (cPid && !localPlayerIds.has(cPid)) {
+            localRecords.push(cr);
+            localPlayerIds.add(cPid);
+          }
+        });
+      }
+      bySessionKey.set(dedupKey, {
+        ...(cloudExisting || {}),
+        ...ls,
+        id: hasExplicitValidId ? String(ls.id).trim() : (ls.id || cloudExisting?.id || effectiveSessionId),
+        teamId: targetCanonicalTeamId,
+        team: teamName,
+        records: localRecords,
+        observaciones: ls.observaciones || cloudExisting?.observaciones || '',
+        tareas:
+          Array.isArray(ls.tareas) && ls.tareas.length > 0
+            ? ls.tareas
+            : cloudExisting?.tareas || [],
+        archivos:
+          Array.isArray(ls.archivos) && ls.archivos.length > 0
+            ? ls.archivos
+            : cloudExisting?.archivos || [],
+        videos:
+          Array.isArray(ls.videos) && ls.videos.length > 0
+            ? ls.videos
+            : cloudExisting?.videos || [],
+      });
+    }
+  });
+
+  return Array.from(bySessionKey.values()).sort((a, b) => {
+    const cmp = String(b.fecha).localeCompare(String(a.fecha));
+    if (cmp !== 0) return cmp;
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+}
 
 export const ADMIN_EMAIL = 'angel.saguar@telefonica.net';
 export const ALEJANDRO_EMAIL = 'asaguar04@gmail.com';
@@ -568,45 +665,23 @@ export async function syncAllClubDataWithFirestore(options?: {
             pulled++;
           }
         } else if (data.category === 'team_sessions' && data.team && Array.isArray(items)) {
-          const targetCanonicalTeamId = resolveCanonicalTeamId(data.team);
           const key = `team_sessions_${data.team}`;
           const localRaw = localStorage.getItem(key);
           const localArr: any[] = localRaw ? JSON.parse(localRaw) : [];
           const deletedRaw = localStorage.getItem(`team_deleted_sessions_${data.team}`);
-          const deletedList: { id?: string; fecha: string }[] = deletedRaw ? JSON.parse(deletedRaw) : [];
-          const isDel = (id?: string, f?: string) =>
-            deletedList.some((d) => (id && d.id && d.id === id) || (f && d.fecha && d.fecha === f));
-
-          const byFecha = new Map<string, any>();
-          items.forEach((s: any) => {
-            if (!s || !s.fecha || s.tipo === 'CalendarioMensual' || s.unverifiedOrigin) return;
-            const sTeamId = extractRecordCanonicalTeamId(s);
-            if (sTeamId && sTeamId !== targetCanonicalTeamId) return;
-            if (!hasUserModifiedSessionContent(s)) return;
-            if (!isDel(s.id, s.fecha)) {
-              byFecha.set(String(s.fecha), {
-                ...s,
-                teamId: targetCanonicalTeamId,
-                team: data.team,
-              });
-            }
-          });
-          localArr.forEach((ls: any) => {
-            if (!ls || !ls.fecha || ls.tipo === 'CalendarioMensual' || ls.unverifiedOrigin) return;
-            const lsTeamId = extractRecordCanonicalTeamId(ls);
-            if (lsTeamId && lsTeamId !== targetCanonicalTeamId) return;
-            if (!isDel(ls.id, ls.fecha)) {
-              byFecha.set(String(ls.fecha), {
-                ...ls,
-                teamId: targetCanonicalTeamId,
-                team: data.team,
-              });
-            }
-          });
-          const mergedSessions = Array.from(byFecha.values()).sort((a, b) =>
-            String(b.fecha).localeCompare(String(a.fecha))
+          const deletedList: { id?: string; fecha: string }[] = deletedRaw
+            ? JSON.parse(deletedRaw)
+            : [];
+          const mergedSessions = mergeAndFilterTeamSessionsForTargetTeam(
+            items,
+            localArr,
+            data.team,
+            deletedList
           );
-          if (mergedSessions.length > 0 || localRaw !== null) {
+          if (
+            (mergedSessions.length > 0 || localRaw !== null) &&
+            JSON.stringify(mergedSessions) !== JSON.stringify(localArr)
+          ) {
             localStorage.setItem(key, JSON.stringify(mergedSessions));
             pulled++;
           }
@@ -780,10 +855,19 @@ export async function syncAllClubDataWithFirestore(options?: {
               const parsed = JSON.parse(sessionsRaw);
               if (Array.isArray(parsed) && parsed.length > 0) {
                 const canonicalTeamId = resolveCanonicalTeamId(team);
+                const deletedRaw = localStorage.getItem(`team_deleted_sessions_${team}`);
+                const deletedList: { id?: string; fecha: string }[] = deletedRaw
+                  ? JSON.parse(deletedRaw)
+                  : [];
+                const isDel = (id?: string, f?: string) =>
+                  deletedList.some((d) => (id && d.id && d.id === id) || (f && d.fecha && d.fecha === f));
                 const verifiedForTeam = parsed.filter((sess: any) => {
                   if (!sess || sess.tipo === 'CalendarioMensual' || sess.unverifiedOrigin) return false;
+                  if (typeof sess.descripcion === 'string' && sess.descripcion.trim().startsWith('{')) return false;
                   const sTeamId = extractRecordCanonicalTeamId(sess);
                   if (sTeamId && sTeamId !== canonicalTeamId) return false;
+                  if (!isSessionAllowedForActiveTeamView(sess, canonicalTeamId)) return false;
+                  if (isDel(sess.id, sess.fecha)) return false;
                   return hasUserModifiedSessionContent(sess);
                 });
                 if (verifiedForTeam.length > 0) {

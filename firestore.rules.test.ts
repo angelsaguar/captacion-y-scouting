@@ -19,6 +19,7 @@ import {
   isRouteAllowedForUser,
   isStrictAdminEmail,
   isStrictAlejandroEmail,
+  mergeAndFilterTeamSessionsForTargetTeam,
 } from './src/lib/clubAccessAndSync';
 import {
   AUDITED_FIRESTORE_COLLECTIONS,
@@ -40,13 +41,19 @@ import {
 import {
   PRE_TRAINING_ISOLATION_BACKUP_KEY,
   UNASSIGNED_SESSIONS_AUDIT_KEY,
+  computeSessionContentFingerprint,
   createAndVerifyTrainingSafetyBackup,
   doesRecordBelongToTeam,
+  getStrictFullSessionDeduplicationKey,
   getTeamDisplayName,
+  isDateStrictlyInMonth,
+  isSessionAllowedForActiveTeamView,
+  parseStrictYearMonthFromDateStr,
   resolveCanonicalTeamId,
   restoreTrainingSafetyBackup,
   runTrainingSessionsIsolationAuditAndMigration,
 } from './src/lib/trainingIsolation';
+import { JUGADORAS_ADJUNTAS } from './src/data/jugadorasData';
 
 async function isRealFirestoreEmulatorAvailable(): Promise<boolean> {
   try {
@@ -844,5 +851,366 @@ describe('Auditoría de Seguridad Previa a Publicación – Captación y Scoutin
         auditArchive.some((a: any) => a.record?.id === 'sess-orphan-unknown')
       );
     });
+
+    it('mantiene activa la sincronización bidireccional PUSH/PULL entre dispositivos filtrando sesiones contaminadas de otros equipos sin bloquear sesiones legítimas', () => {
+      localStorage.setItem(
+        'team_roster_INFANTIL B',
+        JSON.stringify([
+          { id: 'p-infb-yubero-2', name: 'ALEJANDRO YUBERO SANCHEZ', number: 2, position: 'MC' },
+          { id: 'p-infb-2', name: 'MARCOS LOPEZ', number: 5, position: 'DFC' },
+        ])
+      );
+
+      const infantilBLegitSession = {
+        id: 'sess-infb-2026-11-12',
+        teamId: 'team_08_infantil_b',
+        team: 'INFANTIL B',
+        fecha: '2026-11-12',
+        hora: '18:30 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Microciclo Infantil B - Presión tras pérdida',
+        records: [
+          { playerId: 'p-infb-yubero-2', status: 'Presente' },
+          { playerId: 'p-infb-2', status: 'Presente' },
+        ],
+      };
+
+      const contaminatedCopyInSeniorFemenino = {
+        ...infantilBLegitSession,
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+      };
+
+      const seniorFemeninoLegitSessionFromCloud = {
+        id: 'sess-sf-cloud-2026-11-18',
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+        fecha: '2026-11-18',
+        hora: '20:00 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Táctica Senior Femenino - Salida de balón',
+        records: [{ playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' }],
+      };
+
+      const seniorFemeninoLegitSessionFromLocal = {
+        id: 'sess-sf-local-2026-11-20',
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+        fecha: '2026-11-20',
+        hora: '20:00 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Finalización Senior Femenino',
+        records: [{ playerId: JUGADORAS_ADJUNTAS[1].id, status: 'Presente' }],
+      };
+
+      localStorage.setItem('team_sessions_INFANTIL B', JSON.stringify([infantilBLegitSession]));
+
+      // PULL & RECONCILIATION en SENIOR FEMENINO:
+      // Recibe de Firestore una sesión legítima + una copia contaminada de INFANTIL B, y tiene en local otra sesión legítima
+      const pulledAndMergedSF = mergeAndFilterTeamSessionsForTargetTeam(
+        [seniorFemeninoLegitSessionFromCloud, contaminatedCopyInSeniorFemenino],
+        [seniorFemeninoLegitSessionFromLocal, contaminatedCopyInSeniorFemenino],
+        'SENIOR FEMENINO'
+      );
+
+      assert.equal(
+        pulledAndMergedSF.length,
+        2,
+        'La sincronización PULL debe incorporar las sesiones legítimas de ambos dispositivos y bloquear la sesión contaminada de INFANTIL B'
+      );
+      assert.equal(
+        pulledAndMergedSF.some((s) => s.id === 'sess-infb-2026-11-12'),
+        false,
+        'La sesión contaminada de INFANTIL B jamás debe reintroducirse en SENIOR FEMENINO'
+      );
+      assert.equal(
+        pulledAndMergedSF.some((s) => s.id === 'sess-sf-cloud-2026-11-18'),
+        true,
+        'La sesión legítima creada en otro dispositivo debe sincronizarse correctamente via PULL'
+      );
+      assert.equal(
+        pulledAndMergedSF.some((s) => s.id === 'sess-sf-local-2026-11-20'),
+        true,
+        'La sesión legítima local debe conservarse para PUSH hacia Firestore'
+      );
+
+      // PULL & RECONCILIATION en INFANTIL B: conserva intacta su sesión legítima
+      const pulledAndMergedInfB = mergeAndFilterTeamSessionsForTargetTeam(
+        [infantilBLegitSession],
+        [infantilBLegitSession],
+        'INFANTIL B'
+      );
+      assert.equal(pulledAndMergedInfB.length, 1);
+      assert.equal(pulledAndMergedInfB[0].id, 'sess-infb-2026-11-12');
+      assert.equal(pulledAndMergedInfB[0].records.length, 2);
+    });
+
+    it('verifica el aislamiento estricto por teamId, año y mes entre INFANTIL B, INFANTIL A, CADETE A y SENIOR FEMENINO sin arrastre de eventos entre meses', () => {
+      // 1. Verificación de filtro estricto por año y mes (isDateStrictlyInMonth)
+      assert.equal(isDateStrictlyInMonth('2026-08-25', 2026, 7), true); // Agosto = monthIndex 7
+      assert.equal(isDateStrictlyInMonth('2026-08-27', 2026, 7), true);
+      assert.equal(isDateStrictlyInMonth('2026-08-28', 2026, 7), true);
+      assert.equal(isDateStrictlyInMonth('2026-08-27', 2026, 8), false); // No pertenece a Septiembre (8)
+      assert.equal(isDateStrictlyInMonth('2026-09-15', 2026, 8), true); // Septiembre = monthIndex 8
+      assert.equal(isDateStrictlyInMonth('2026-09-15', 2026, 9), false); // No pertenece a Octubre (9)
+      assert.equal(isDateStrictlyInMonth('2026-09-15', 2026, 10), false); // No pertenece a Noviembre (10)
+      assert.deepEqual(parseStrictYearMonthFromDateStr('2026-09-22'), {
+        year: 2026,
+        monthIndex: 8,
+        day: 22,
+      });
+
+      // 2. Plantillas y sesiones de INFANTIL B, INFANTIL A, CADETE A y SENIOR FEMENINO
+      localStorage.setItem(
+        'team_roster_INFANTIL B',
+        JSON.stringify([
+          { id: 'p-infb-yubero-2', name: 'ALEJANDRO YUBERO SANCHEZ', number: 2, position: 'MC' },
+        ])
+      );
+      localStorage.setItem(
+        'team_roster_INFANTIL A',
+        JSON.stringify([{ id: 'p-infa-1', name: 'JUGADOR INFANTIL A', number: 8, position: 'MC' }])
+      );
+      localStorage.setItem(
+        'team_roster_CADETE A',
+        JSON.stringify([{ id: 'p-cada-1', name: 'JUGADOR CADETE A', number: 9, position: 'DC' }])
+      );
+
+      const infBSession = {
+        id: 'sess-contaminated-from-infb',
+        teamId: 'team_08_infantil_b',
+        team: 'INFANTIL B',
+        fecha: '2026-11-15',
+        hora: '18:30 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Entrenamiento táctico INFANTIL B',
+        records: [{ playerId: 'p-infb-yubero-2', status: 'Presente' }],
+      };
+      localStorage.setItem('team_sessions_INFANTIL B', JSON.stringify([infBSession]));
+
+      const leakedInSeniorFemenino = {
+        ...infBSession,
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+      };
+
+      assert.equal(isSessionAllowedForActiveTeamView(infBSession, 'INFANTIL B'), true);
+      assert.equal(isSessionAllowedForActiveTeamView(leakedInSeniorFemenino, 'SENIOR FEMENINO'), false);
+      assert.equal(isSessionAllowedForActiveTeamView(leakedInSeniorFemenino, 'INFANTIL A'), false);
+      assert.equal(isSessionAllowedForActiveTeamView(leakedInSeniorFemenino, 'CADETE A'), false);
+    });
+
+    it('garantiza la deduplicación determinista (con y sin ID) entre localStorage, Supabase y Firestore sin fusionar sesiones distintas del mismo día y manteniendo intactas las 21 asistencias de las tres sesiones de agosto', () => {
+      // 1. Construimos los 21 registros exactos de cada una de las 3 sesiones de agosto (6 antiguos + 15 de JUGADORAS_ADJUNTAS)
+      assert.equal(JUGADORAS_ADJUNTAS.length, 15, 'JUGADORAS_ADJUNTAS debe contener 15 jugadoras');
+      const legacy6Records = [
+        { playerId: '1', status: 'Presente' },
+        { playerId: '2', status: 'Presente' },
+        { playerId: '4', status: 'Presente' },
+        { playerId: '5', status: 'Presente' },
+        { playerId: '6', status: 'Presente' },
+        { playerId: '7', status: 'Presente' },
+      ];
+      const jugadoras15Records = JUGADORAS_ADJUNTAS.map((j) => ({
+        playerId: j.id,
+        playerName: j.nombre,
+        playerLastName: j.apellidos,
+        playerDorsal: j.dorsal,
+        playerPosition: j.posicion,
+        status: undefined,
+      }));
+      const full21Records = [...legacy6Records, ...jugadoras15Records];
+      assert.equal(full21Records.length, 21);
+
+      const august3SessionsWith21Records = [
+        {
+          id: '1773944162835',
+          teamId: 'team_01_senior_femenino',
+          team: 'SENIOR FEMENINO',
+          fecha: '2026-08-25',
+          hora: '19:30 h',
+          tipo: 'Entrenamiento',
+          descripcion: 'Sesión de entrenamiento',
+          records: full21Records.map((r) => ({ ...r })),
+        },
+        {
+          id: '1773944162836',
+          teamId: 'team_01_senior_femenino',
+          team: 'SENIOR FEMENINO',
+          fecha: '2026-08-27',
+          hora: '19:30 h',
+          tipo: 'Entrenamiento',
+          descripcion: 'Sesión de entrenamiento',
+          records: full21Records.map((r) => ({ ...r })),
+        },
+        {
+          id: '1773944162837',
+          teamId: 'team_01_senior_femenino',
+          team: 'SENIOR FEMENINO',
+          fecha: '2026-08-28',
+          hora: '19:30 h',
+          tipo: 'Entrenamiento',
+          descripcion: 'Sesión de entrenamiento',
+          records: full21Records.map((r) => ({ ...r })),
+        },
+      ];
+
+      // 2. UNA MISMA SESIÓN SIN ID replicada idénticamente en localStorage, Supabase y Firestore NO debe duplicarse
+      const replicatedIdLessSession = {
+        id: undefined,
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+        fecha: '2026-09-08',
+        hora: '19:30 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Sesión replicada sin ID en los 3 almacenes',
+        records: [{ playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' }],
+      };
+
+      const seenLocal = new Map<string, number>();
+      const seenSupabase = new Map<string, number>();
+      const seenFirestore = new Map<string, number>();
+      const keyLocal = getStrictFullSessionDeduplicationKey({ ...replicatedIdLessSession }, seenLocal);
+      const keySupabase = getStrictFullSessionDeduplicationKey({ ...replicatedIdLessSession }, seenSupabase);
+      const keyFirestore = getStrictFullSessionDeduplicationKey({ ...replicatedIdLessSession }, seenFirestore);
+
+      assert.equal(keyLocal.hasExplicitValidId, false);
+      assert.equal(
+        keyLocal.dedupKey,
+        keySupabase.dedupKey,
+        'La misma sesión sin ID en localStorage y Supabase debe producir la misma clave determinista'
+      );
+      assert.equal(
+        keyLocal.dedupKey,
+        keyFirestore.dedupKey,
+        'La misma sesión sin ID en localStorage y Firestore debe producir la misma clave determinista'
+      );
+      assert.equal(
+        computeSessionContentFingerprint(replicatedIdLessSession).length > 0,
+        true
+      );
+
+      // 3. Cinco sesiones DIFERENTES del mismo día (2026-09-10) (con ID, sin ID, con ID vacío, con ID=fecha y remota distinta sin ID): NUNCA deben fusionarse
+      const localSessions = [
+        ...august3SessionsWith21Records,
+        { ...replicatedIdLessSession },
+        {
+          id: 'sess-explicit-2026-09-10',
+          teamId: 'team_01_senior_femenino',
+          team: 'SENIOR FEMENINO',
+          fecha: '2026-09-10',
+          hora: '10:00 h',
+          tipo: 'Entrenamiento',
+          descripcion: 'Sesión con ID explícito',
+          records: [{ playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' }],
+        },
+        {
+          // Carece de ID (undefined)
+          teamId: 'team_01_senior_femenino',
+          team: 'SENIOR FEMENINO',
+          fecha: '2026-09-10',
+          hora: '12:00 h',
+          tipo: 'Entrenamiento',
+          descripcion: 'Sesión local 1 sin ID',
+          records: [{ playerId: JUGADORAS_ADJUNTAS[1].id, status: 'Presente' }],
+        },
+        {
+          // Carece de ID (cadena vacía)
+          id: '',
+          teamId: 'team_01_senior_femenino',
+          team: 'SENIOR FEMENINO',
+          fecha: '2026-09-10',
+          hora: '18:00 h',
+          tipo: 'Entrenamiento',
+          descripcion: 'Sesión local 2 con ID vacío',
+          records: [{ playerId: JUGADORAS_ADJUNTAS[2].id, status: 'Presente' }],
+        },
+        {
+          // ID literalmente igual a la fecha YYYY-MM-DD
+          id: '2026-09-10',
+          teamId: 'team_01_senior_femenino',
+          team: 'SENIOR FEMENINO',
+          fecha: '2026-09-10',
+          hora: '20:00 h',
+          tipo: 'Entrenamiento',
+          descripcion: 'Sesión local 3 con pseudo-ID igual a fecha',
+          records: [{ playerId: JUGADORAS_ADJUNTAS[3].id, status: 'Presente' }],
+        },
+      ];
+
+      const cloudSessions = [
+        ...august3SessionsWith21Records,
+        { ...replicatedIdLessSession },
+        {
+          // Otra sesión remota DIFERENTE en el mismo día (2026-09-10) sin ID: tampoco debe fusionarse con ninguna de las locales
+          id: undefined,
+          teamId: 'team_01_senior_femenino',
+          team: 'SENIOR FEMENINO',
+          fecha: '2026-09-10',
+          hora: '21:00 h',
+          tipo: 'Entrenamiento',
+          descripcion: 'Sesión remota distinta sin ID',
+          records: [{ playerId: JUGADORAS_ADJUNTAS[4].id, status: 'Presente' }],
+        },
+      ];
+
+      const mergedResult = mergeAndFilterTeamSessionsForTargetTeam(
+        cloudSessions,
+        localSessions,
+        'SENIOR FEMENINO'
+      );
+
+      // Comprobación A: La sesión sin ID del 2026-09-08 replicada en local y nube aparece UNA SOLA VEZ (no duplicada)
+      const mergedSept08 = mergedResult.filter((s) => s.fecha === '2026-09-08');
+      assert.equal(
+        mergedSept08.length,
+        1,
+        'Una misma sesión sin ID replicada en localStorage y Firestore/Supabase jamás debe duplicarse'
+      );
+
+      // Comprobación B: Las 5 sesiones distintas del 2026-09-10 se conservan todas sin fusionarse
+      const mergedSept10 = mergedResult.filter((s) => s.fecha === '2026-09-10');
+      assert.equal(
+        mergedSept10.length,
+        5,
+        'Ninguna de las 5 sesiones distintas del 2026-09-10 debe fusionarse aunque carezcan de ID'
+      );
+
+      // Comprobación C: Dos sesiones sin ID en el mismo almacén y mismo día con contenido idéntico tampoco se fusionan gracias al contador de ocurrencia por almacén
+      const sameStoreSeen = new Map<string, number>();
+      const identicalNoId1 = getStrictFullSessionDeduplicationKey(
+        { fecha: '2026-09-12', hora: '19:30 h', tipo: 'Entrenamiento', descripcion: 'Doble turno' },
+        sameStoreSeen
+      );
+      const identicalNoId2 = getStrictFullSessionDeduplicationKey(
+        { fecha: '2026-09-12', hora: '19:30 h', tipo: 'Entrenamiento', descripcion: 'Doble turno' },
+        sameStoreSeen
+      );
+      assert.notEqual(
+        identicalNoId1.dedupKey,
+        identicalNoId2.dedupKey,
+        'Dos sesiones sin ID almacenadas en la misma lista jamás deben fusionarse entre sí'
+      );
+
+      // Comprobación D: Las 3 sesiones históricas de agosto conservan sus IDs históricos y sus 21 registros intactos (6 antiguos + 15 JUGADORAS_ADJUNTAS)
+      for (const augId of ['1773944162835', '1773944162836', '1773944162837']) {
+        const mergedAug = mergedResult.find((s) => s.id === augId);
+        assert.ok(mergedAug, `La sesión histórica de agosto ${augId} debe conservar su ID intacto`);
+        assert.equal(
+          mergedAug.records.length,
+          21,
+          `La sesión ${augId} debe mantener exactamente sus 21 registros de asistencia`
+        );
+        const markedLegacy = mergedAug.records.filter((r: any) => r.status === 'Presente');
+        const unmarkedAdjuntas = mergedAug.records.filter((r: any) => r.status === undefined);
+        assert.equal(markedLegacy.length, 6, 'Debe mantener intactos los 6 registros antiguos marcados');
+        assert.deepEqual(
+          markedLegacy.map((r: any) => r.playerId),
+          ['1', '2', '4', '5', '6', '7']
+        );
+        assert.equal(unmarkedAdjuntas.length, 15, 'Debe mantener intactos los 15 registros de JUGADORAS_ADJUNTAS');
+      }
+    });
   });
 });
+

@@ -48,6 +48,8 @@ import {
 import {
   doesRecordBelongToTeam,
   extractRecordCanonicalTeamId,
+  getStrictFullSessionDeduplicationKey,
+  isSessionAllowedForActiveTeamView,
   resolveCanonicalTeamId,
   runTrainingSessionsIsolationAuditAndMigration,
 } from '@/lib/trainingIsolation';
@@ -273,10 +275,7 @@ export const loadCompleteTeamRoster = (teamName: string): TeamPlayer[] => {
     }
   });
 
-  if (cleanDeduplicated.length > 0) {
-    localStorage.setItem(key, JSON.stringify(cleanDeduplicated));
-  }
-
+  // Phase A Read-Only Guarantee: Do not write to localStorage automatically during read-only roster load
   return cleanDeduplicated;
 };
 
@@ -415,9 +414,8 @@ export default function Asistencia() {
 
     const canonicalTeamId = resolveCanonicalTeamId(selectedTeam);
 
-    try {
-      localStorage.setItem('afe_active_team', selectedTeam);
-    } catch {}
+    // Save active team preference for cross-page coherence (lightweight UI preference only; never modifies session records)
+    localStorage.setItem('afe_active_team', selectedTeam);
 
     const syncRoster = () => {
       const currentRoster = loadCompleteTeamRoster(selectedTeam);
@@ -431,24 +429,25 @@ export default function Asistencia() {
 
     const cleanSessionRecords = (records: AttendanceRecord[], roster: TeamPlayer[]) => {
       return (records || []).filter(rec => {
+        if (!rec || typeof rec !== 'object') return false;
+        // Preserve any record that has a playerId or a marked attendance status
+        // (guarantees the 6 legacy attendance records + 15 JUGADORAS_ADJUNTAS = 21 records remain 100% intact)
+        const pid = String(rec.playerId || (rec as any).id || '').trim();
+        const hasStatus = Boolean(rec.status && String(rec.status).trim() !== '');
+        if (pid || hasStatus) return true;
         const p = roster.find(pl => pl.id === rec.playerId);
         const n = (p?.nombre || rec.playerName || '').trim();
         const a = (p?.apellidos || rec.playerLastName || '').trim();
         if (!n) return false;
         if (n.toUpperCase() === 'JUGADORA' && (!a || a.toUpperCase() === 'JUGADORA')) return false;
-        if (
-          (selectedTeam || '').toUpperCase().includes('FEMENINO') &&
-          (n === 'Carlos' || n === 'Marcos' || n === 'Sofía')
-        ) return false;
         return true;
       });
     };
 
     const sessionsKey = `team_sessions_${selectedTeam}`;
     const activeKey = `active_session_id_${selectedTeam}`;
-    const initKey = `team_sessions_initialized_${selectedTeam}`;
 
-    // 1. Synchronously load local storage first so user never loses their changes
+    // 1. Synchronously load local storage in read-only mode, filtering strictly by isSessionAllowedForActiveTeamView
     const savedSessions = localStorage.getItem(sessionsKey);
     let initialList: AttendanceSession[] = [];
 
@@ -463,18 +462,24 @@ export default function Asistencia() {
             if (isSessionDeleted(selectedTeam, item.id, item.fecha)) return false;
             const itemTeamId = extractRecordCanonicalTeamId(item);
             if (itemTeamId && itemTeamId !== canonicalTeamId) return false;
+            if (!isSessionAllowedForActiveTeamView(item, canonicalTeamId)) return false;
             return true;
           });
 
+          const localLoadSeen = new Map<string, number>();
           initialList = cleanParsed.map((item: any) => {
             const cleaned = cleanSessionRecords(item.records || [], currentRoster);
-            // Ensure all current roster players are included in records so user never sees truncated 5-player rosters
+            // Ensure all current roster players are included in records in memory without dropping legacy records
             const existingIds = new Set(cleaned.map(r => r.playerId));
-            const existingNames = new Set(cleaned.map(r => normalizePlayerNameKey(r.playerName || '', r.playerLastName || '')));
+            const existingNames = new Set(
+              cleaned
+                .map(r => normalizePlayerNameKey(r.playerName || '', r.playerLastName || ''))
+                .filter(Boolean)
+            );
             const completeRecords = [...cleaned];
             currentRoster.forEach(p => {
               const norm = normalizePlayerNameKey(p.nombre, p.apellidos);
-              if (!existingIds.has(p.id) && !existingNames.has(norm)) {
+              if (!existingIds.has(p.id) && (!norm || !existingNames.has(norm))) {
                 completeRecords.push({
                   playerId: p.id,
                   playerName: p.nombre,
@@ -487,24 +492,21 @@ export default function Asistencia() {
               }
             });
 
+            const { effectiveSessionId } = getStrictFullSessionDeduplicationKey(
+              item,
+              localLoadSeen
+            );
+
             return {
               ...item,
-              id: item.id || crypto.randomUUID(),
+              id: effectiveSessionId,
               teamId: canonicalTeamId,
               team: selectedTeam,
               records: completeRecords
             };
           });
-          // Persist the complete records to local storage immediately
-          safeLocalStorageSetSessions(sessionsKey, initialList);
         }
       } catch {}
-    }
-
-    // Do NOT fabricate fake default training sessions when a team has no scheduled trainings.
-    // Mark initialized so each team starts clean until a real session is scheduled for its teamId.
-    if (savedSessions === null) {
-      localStorage.setItem(initKey, 'true');
     }
 
     setSessions(initialList);
@@ -512,7 +514,7 @@ export default function Asistencia() {
     const foundActive = (lastActiveId ? initialList.find(s => s.id === lastActiveId) : null) || initialList[0] || null;
     setSelectedSession(foundActive);
 
-    // 2. Fetch from Supabase in the background and safely merge ONLY verified sessions belonging to this teamId
+    // 2. Fetch from Supabase in the background and safely merge ONLY verified sessions belonging to this teamId in memory (0 writes)
     const syncFromSupabase = async () => {
       try {
         const { data, error } = await supabase
@@ -530,55 +532,64 @@ export default function Asistencia() {
             item.tipo !== 'CalendarioMensual' && 
             !item.unverifiedOrigin &&
             !(typeof item.descripcion === 'string' && item.descripcion.trim().startsWith('{')) &&
-            doesRecordBelongToTeam(item, canonicalTeamId)
+            doesRecordBelongToTeam(item, canonicalTeamId) &&
+            isSessionAllowedForActiveTeamView(item, canonicalTeamId)
           );
 
           if (cleanData.length > 0) {
-            // Also clean up any lingering deleted sessions in the background
-            const currentDeleted = getDeletedSessions(selectedTeam);
-            for (const item of cleanData) {
-              if (currentDeleted.some(d => (d.id && d.id === item.id) || (d.fecha && d.fecha === item.fecha))) {
-                supabase.from('attendance_sessions').delete().eq('id', item.id).catch(() => {});
-                if (item.fecha) {
-                  supabase.from('attendance_sessions').delete().eq('team', selectedTeam).eq('fecha', item.fecha).catch(() => {});
-                }
-              }
-            }
-
             if (isCancelled) return;
 
             const currentSavedStr = localStorage.getItem(sessionsKey);
             const currentSaved: AttendanceSession[] = currentSavedStr ? JSON.parse(currentSavedStr) : [];
+            // PHASE A RULE: Key strictly by getStrictFullSessionDeduplicationKey
+            // (never fall back to s.fecha; never merge two sessions on the same date even if one or both lack an ID)
             const mergedMap = new Map<string, AttendanceSession>();
+            const localMergeSeen = new Map<string, number>();
+            const supabaseMergeSeen = new Map<string, number>();
 
-            // Put current local sessions first (they have highest priority for user edits)
-            currentSaved.forEach(s => {
+            // Put current local sessions first (filtered by isSessionAllowedForActiveTeamView)
+            currentSaved.forEach((s) => {
               const sTeamId = extractRecordCanonicalTeamId(s);
-              if ((!sTeamId || sTeamId === canonicalTeamId) && !isSessionDeleted(selectedTeam, s.id, s.fecha)) {
-                mergedMap.set(s.fecha, {
+              if (
+                (!sTeamId || sTeamId === canonicalTeamId) &&
+                isSessionAllowedForActiveTeamView(s, canonicalTeamId) &&
+                !isSessionDeleted(selectedTeam, s.id, s.fecha)
+              ) {
+                const { dedupKey, effectiveSessionId } = getStrictFullSessionDeduplicationKey(
+                  s,
+                  localMergeSeen
+                );
+                mergedMap.set(dedupKey, {
                   ...s,
+                  id: effectiveSessionId,
                   teamId: canonicalTeamId,
                   team: selectedTeam,
                 });
               }
             });
 
-            // Merge in cloud data safely for this exact canonicalTeamId
-            cleanData.forEach(cloudItem => {
-              if (!doesRecordBelongToTeam(cloudItem, canonicalTeamId)) {
+            // Merge in cloud data safely for this exact canonicalTeamId keyed strictly by getStrictFullSessionDeduplicationKey
+            cleanData.forEach((cloudItem) => {
+              if (
+                !doesRecordBelongToTeam(cloudItem, canonicalTeamId) ||
+                !isSessionAllowedForActiveTeamView(cloudItem, canonicalTeamId)
+              ) {
                 return;
               }
-              // Never restore deleted sessions!
               if (isSessionDeleted(selectedTeam, cloudItem.id, cloudItem.fecha)) {
                 return;
               }
 
               const cloudRecords = cleanSessionRecords(cloudItem.records || [], currentRoster);
-              const existing = mergedMap.get(cloudItem.fecha);
+              const { dedupKey, effectiveSessionId } = getStrictFullSessionDeduplicationKey(
+                cloudItem,
+                supabaseMergeSeen
+              );
+              const existing = mergedMap.get(dedupKey);
               
               if (!existing) {
-                mergedMap.set(cloudItem.fecha, {
-                  id: cloudItem.id,
+                mergedMap.set(dedupKey, {
+                  id: effectiveSessionId,
                   teamId: canonicalTeamId,
                   team: selectedTeam,
                   fecha: cloudItem.fecha,
@@ -592,7 +603,6 @@ export default function Asistencia() {
                   videos: cloudItem.videos || []
                 });
               } else if (existing) {
-                // If cloud has more records than local, merge missing ones
                 const localIds = new Set(existing.records.map(r => r.playerId));
                 cloudRecords.forEach(cr => {
                   if (!localIds.has(cr.playerId)) {
@@ -618,8 +628,6 @@ export default function Asistencia() {
 
             const mergedList = Array.from(mergedMap.values()).sort((a, b) => b.fecha.localeCompare(a.fecha));
             setSessions(mergedList);
-            safeLocalStorageSetSessions(sessionsKey, mergedList);
-            localStorage.setItem(initKey, 'true');
             
             const currActiveId = localStorage.getItem(activeKey);
             const foundActiveAfterSync = (currActiveId ? mergedList.find(s => s.id === currActiveId) : null) || mergedList[0] || null;
@@ -775,14 +783,19 @@ export default function Asistencia() {
   const saveSessions = async (updated: AttendanceSession[]) => {
     const canonicalTeamId = resolveCanonicalTeamId(selectedTeam);
 
+    const saveSeen = new Map<string, number>();
+
     // Ensure all sessions have valid UUIDs, immutable teamId, and strip inline base64 photos from records
     const validSessions = updated
       .filter(sess => {
         const sessTeamId = extractRecordCanonicalTeamId(sess);
         return !sessTeamId || sessTeamId === canonicalTeamId;
       })
-      .map(sess => {
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sess.id);
+      .map((sess) => {
+        const { hasExplicitValidId, effectiveSessionId } = getStrictFullSessionDeduplicationKey(
+          sess,
+          saveSeen
+        );
         const cleanRecords = (sess.records || []).map(rec => {
           const { foto_url, ...rest } = rec;
           if (typeof foto_url === 'string' && foto_url && !foto_url.startsWith('data:')) {
@@ -792,7 +805,7 @@ export default function Asistencia() {
         });
         return {
           ...sess,
-          id: isUuid ? sess.id : crypto.randomUUID(),
+          id: hasExplicitValidId ? effectiveSessionId : crypto.randomUUID(),
           teamId: canonicalTeamId,
           team: selectedTeam,
           records: cleanRecords
@@ -804,9 +817,9 @@ export default function Asistencia() {
     safeLocalStorageSetSessions(sessionsKey, validSessions);
     localStorage.setItem(`team_sessions_initialized_${selectedTeam}`, 'true');
 
-    // Update selectedSession reference
+    // Update selectedSession reference strictly by sessionId (never fall back to s.fecha)
     if (selectedSession) {
-      const match = validSessions.find(s => s.id === selectedSession.id || s.fecha === selectedSession.fecha);
+      const match = validSessions.find(s => s.id === selectedSession.id);
       if (match) {
         setSelectedSession(match);
         localStorage.setItem(`active_session_id_${selectedTeam}`, match.id);

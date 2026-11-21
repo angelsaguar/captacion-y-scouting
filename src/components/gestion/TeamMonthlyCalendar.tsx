@@ -49,7 +49,9 @@ import {
   doesRecordBelongToTeam,
   extractRecordCanonicalTeamId,
   hasUserModifiedSessionContent,
+  isDateStrictlyInMonth,
   isLegacyDefaultSampleCalendarMap,
+  isSessionAllowedForActiveTeamView,
   resolveCanonicalTeamId,
   runTrainingSessionsIsolationAuditAndMigration,
 } from '@/lib/trainingIsolation';
@@ -226,10 +228,10 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
   const storageKey = `team_monthly_calendar_${selectedTeam}_${currentYear}_${currentMonth}`;
   const masterCalendarId = `cal_master_${selectedTeam}_${currentYear}_${currentMonth}`;
 
-  // Remember the active calendar month & year strictly per teamId whenever user navigates
+  // Remember current month/year focus per teamId so navigating between pages keeps the active month
   useEffect(() => {
     try {
-      const payload = JSON.stringify({ year: currentYear, month: currentMonth, teamId: canonicalTeamId });
+      const payload = JSON.stringify({ year: currentYear, month: currentMonth });
       localStorage.setItem(`afe_calendar_focus_${canonicalTeamId}`, payload);
       localStorage.setItem(`afe_calendar_focus_${selectedTeam}`, payload);
     } catch {}
@@ -310,25 +312,33 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
   useEffect(() => {
     runTrainingSessionsIsolationAuditAndMigration();
 
-    // Clear in-memory state immediately when team or month changes so previous team events never flash or leak
+    // Clear in-memory state immediately when team or month changes so previous team/month events never flash or leak
     const saved = localStorage.getItem(storageKey);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (parsed && typeof parsed === 'object' && !isLegacyDefaultSampleCalendarMap(parsed)) {
-          const filteredForTeam: Record<string, CalendarEvent> = {};
+          const filteredForTeamAndMonth: Record<string, CalendarEvent> = {};
           Object.entries(parsed as Record<string, CalendarEvent>).forEach(([dateStr, ev]) => {
             if (!ev || typeof ev !== 'object') return;
+            // PHASE A STRICT ISOLATION: Filter strictly by (currentYear, currentMonth) and canonicalTeamId
+            if (!isDateStrictlyInMonth(dateStr, currentYear, currentMonth)) return;
             const evTeamId = extractRecordCanonicalTeamId(ev);
             if (evTeamId && evTeamId !== canonicalTeamId) return;
-            filteredForTeam[dateStr] = {
+            if (
+              ev.type === 'Entrenamiento' &&
+              !isSessionAllowedForActiveTeamView(ev, canonicalTeamId)
+            ) {
+              return;
+            }
+            filteredForTeamAndMonth[dateStr] = {
               ...ev,
               dateStr,
               teamId: canonicalTeamId,
               team: selectedTeam,
             };
           });
-          setEvents(filteredForTeam);
+          setEvents(filteredForTeamAndMonth);
         } else {
           setEvents({});
         }
@@ -341,7 +351,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       setEvents({});
     }
 
-    // Trigger auto synchronization from Supabase / localStorage matches & attendance for this exact teamId
+    // Trigger auto synchronization from Supabase / localStorage matches & attendance for this exact teamId (read-only in memory on mount)
     syncAutoData(false);
 
     const handleSync = (evt?: Event) => {
@@ -386,17 +396,28 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
     };
   }, [canonicalTeamId, selectedTeam, currentYear, currentMonth]);
 
-  // Save changes to localStorage strictly bound to the target teamId and storageKey
+  // Save changes strictly bound to the target teamId, year, month, and storageKey
   const saveEvents = (
     newEvents: Record<string, CalendarEvent>,
     targetTeamId: string = canonicalTeamId,
-    targetStorageKey: string = storageKey
+    targetStorageKey: string = storageKey,
+    targetYear: number = currentYear,
+    targetMonth: number = currentMonth,
+    persistToStorage: boolean = true
   ) => {
     const stampedEvents: Record<string, CalendarEvent> = {};
     Object.entries(newEvents || {}).forEach(([k, v]) => {
       if (!v || typeof v !== 'object') return;
+      // PHASE A STRICT ISOLATION: Reject any event outside targetYear + targetMonth or from another team
+      if (!isDateStrictlyInMonth(k, targetYear, targetMonth)) return;
       const vTeamId = extractRecordCanonicalTeamId(v);
       if (vTeamId && vTeamId !== targetTeamId) return;
+      if (
+        v.type === 'Entrenamiento' &&
+        !isSessionAllowedForActiveTeamView(v, targetTeamId)
+      ) {
+        return;
+      }
       stampedEvents[k] = {
         ...v,
         dateStr: k,
@@ -406,6 +427,9 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
 
     if (activeTeamIdRef.current === targetTeamId) {
       setEvents(stampedEvents);
+    }
+    if (!persistToStorage) {
+      return;
     }
     try {
       localStorage.setItem(targetStorageKey, JSON.stringify(stampedEvents));
@@ -422,6 +446,26 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
     targetMonth: number = currentMonth,
     targetMasterId: string = masterCalendarId
   ) => {
+    const strictlyFilteredEvents: Record<string, CalendarEvent> = {};
+    Object.entries(targetEvents || {}).forEach(([k, v]) => {
+      if (!v || typeof v !== 'object') return;
+      if (!isDateStrictlyInMonth(k, targetYear, targetMonth)) return;
+      const vTeamId = extractRecordCanonicalTeamId(v);
+      if (vTeamId && vTeamId !== targetTeamId) return;
+      if (
+        v.type === 'Entrenamiento' &&
+        !isSessionAllowedForActiveTeamView(v, targetTeamId)
+      ) {
+        return;
+      }
+      strictlyFilteredEvents[k] = {
+        ...v,
+        dateStr: k,
+        teamId: targetTeamId,
+        team: targetTeamName,
+      };
+    });
+
     const firstOfMonth = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-01`;
     const masterPayload = {
       id: targetMasterId,
@@ -434,7 +478,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         year: targetYear,
         teamId: targetTeamId,
         team: targetTeamName,
-        events: targetEvents,
+        events: strictlyFilteredEvents,
         updatedAt: new Date().toISOString()
       }),
       records: [],
@@ -455,8 +499,16 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       let savedSessions = 0;
 
       const allEntries = (Object.values(targetEvents) as CalendarEvent[]).filter((ev) => {
+        if (!isDateStrictlyInMonth(ev.dateStr, currentYear, currentMonth)) return false;
         const evTeamId = extractRecordCanonicalTeamId(ev);
-        return !evTeamId || evTeamId === canonicalTeamId;
+        if (evTeamId && evTeamId !== canonicalTeamId) return false;
+        if (
+          ev.type === 'Entrenamiento' &&
+          !isSessionAllowedForActiveTeamView(ev, canonicalTeamId)
+        ) {
+          return false;
+        }
+        return true;
       });
 
       // 1. Upsert training sessions into attendance_sessions & localStorage team_sessions_${selectedTeam}
@@ -551,7 +603,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       await persistMasterCalendarRecord(targetEvents);
 
       // Keep localStorage in sync
-      saveEvents(targetEvents, canonicalTeamId, storageKey);
+      saveEvents(targetEvents, canonicalTeamId, storageKey, currentYear, currentMonth, true);
 
       toast.success(`¡Sincronizado con Supabase! Se han guardado los eventos, entrenamientos y partidos en la base de datos de Supabase.`, { id: toastId });
     } catch (err) {
@@ -562,7 +614,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
     }
   };
 
-  // Automatic Data Feeding Engine (Pulling from Partidos and Entrenamientos strictly for canonicalTeamId)
+  // Automatic Data Feeding Engine (Pulling from Partidos and Entrenamientos strictly for canonicalTeamId + year + month)
   const syncAutoData = async (showToast = true) => {
     const requestTeamName = selectedTeam;
     const requestTeamId = canonicalTeamId;
@@ -585,8 +637,16 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           if (parsed && typeof parsed === 'object' && !isLegacyDefaultSampleCalendarMap(parsed)) {
             Object.entries(parsed as Record<string, CalendarEvent>).forEach(([k, v]) => {
               if (!v || typeof v !== 'object') return;
+              // PHASE A STRICT ISOLATION: Filter strictly by requestYear + requestMonth and requestTeamId
+              if (!isDateStrictlyInMonth(k, requestYear, requestMonth)) return;
               const vTeamId = extractRecordCanonicalTeamId(v);
               if (vTeamId && vTeamId !== requestTeamId) return;
+              if (
+                v.type === 'Entrenamiento' &&
+                !isSessionAllowedForActiveTeamView(v, requestTeamId)
+              ) {
+                return;
+              }
               baseEvents[k] = {
                 ...v,
                 dateStr: k,
@@ -600,22 +660,12 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
 
       const autoEvents: Record<string, CalendarEvent> = { ...baseEvents };
 
-      // Build set of all dates visible in the current month's 7-column grid (including padding days)
-      const visibleGridDates = new Set<string>();
-      getDaysGrid(requestYear, requestMonth).forEach(row => {
-        row.forEach(cell => {
-          if (cell.dateStr) visibleGridDates.add(cell.dateStr);
-        });
-      });
-
-      const isDateInCurrentCalendarView = (dateStr?: string): boolean => {
-        if (!dateStr) return false;
-        if (visibleGridDates.has(dateStr)) return true;
-        const parts = parseCalendarDateParts(dateStr);
-        return Boolean(parts && parts.year === requestYear && parts.monthIndex === requestMonth);
+      // PHASE A STRICT MONTH CHECK: Never drag events from other months into this monthly calendar
+      const isDateInCurrentCalendarMonth = (dateStr?: string): boolean => {
+        return isDateStrictlyInMonth(dateStr, requestYear, requestMonth);
       };
 
-      // 0. Fetch master monthly calendar record from Supabase if present (strictly for requestTeamId)
+      // 0. Fetch master monthly calendar record from Supabase if present (strictly for requestTeamId + requestYear + requestMonth)
       const firstOfMonth = `${requestYear}-${String(requestMonth + 1).padStart(2, '0')}-01`;
       const { data: dbMaster } = await supabase
         .from('attendance_sessions')
@@ -625,7 +675,11 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         .eq('tipo', 'CalendarioMensual');
 
       if (dbMaster && dbMaster.length > 0) {
-        const validMasters = dbMaster.filter((m: any) => doesRecordBelongToTeam(m, requestTeamId));
+        const validMasters = dbMaster.filter(
+          (m: any) =>
+            doesRecordBelongToTeam(m, requestTeamId) &&
+            (!m.id || m.id === requestMasterCalendarId)
+        );
         const sortedMasters = [...validMasters].sort((a, b) => {
           const tsA = a.updated_at || a.created_at || '';
           const tsB = b.updated_at || b.created_at || '';
@@ -636,17 +690,32 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           try {
             const parsedMaster = JSON.parse(latestMaster.descripcion);
             const masterTeamId = resolveCanonicalTeamId(parsedMaster?.teamId || parsedMaster?.team || latestMaster.team);
+            const masterCandidateEvents =
+              parsedMaster && typeof parsedMaster === 'object'
+                ? parsedMaster.events && typeof parsedMaster.events === 'object'
+                  ? parsedMaster.events
+                  : parsedMaster
+                : null;
             if (
               parsedMaster &&
               masterTeamId === requestTeamId &&
-              parsedMaster.events &&
-              typeof parsedMaster.events === 'object' &&
-              !isLegacyDefaultSampleCalendarMap(parsedMaster.events)
+              masterCandidateEvents &&
+              typeof masterCandidateEvents === 'object' &&
+              !isLegacyDefaultSampleCalendarMap(masterCandidateEvents)
             ) {
-              Object.entries(parsedMaster.events as Record<string, CalendarEvent>).forEach(([k, v]) => {
-                if (!autoEvents[k] && v) {
+              Object.entries(masterCandidateEvents as Record<string, CalendarEvent>).forEach(([k, v]) => {
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) return;
+                // PHASE A STRICT ISOLATION: Ignore out-of-month dragged events stored in historical cal_master_* rows
+                if (!isDateStrictlyInMonth(k, requestYear, requestMonth)) return;
+                if (!autoEvents[k] && v && typeof v === 'object') {
                   const vTeamId = extractRecordCanonicalTeamId(v);
                   if (vTeamId && vTeamId !== requestTeamId) return;
+                  if (
+                    v.type === 'Entrenamiento' &&
+                    !isSessionAllowedForActiveTeamView(v, requestTeamId)
+                  ) {
+                    return;
+                  }
                   autoEvents[k] = {
                     ...v,
                     dateStr: k,
@@ -726,7 +795,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       });
 
       allMatchesMap.forEach((m, dateStr) => {
-        if (isDateInCurrentCalendarView(dateStr)) {
+        if (isDateInCurrentCalendarMonth(dateStr)) {
           const compDetermined = m.competicion || (dateStr.startsWith('2026-08') || dateStr.startsWith('2026-09-0') || dateStr.startsWith('2026-09-1') || dateStr.startsWith('2026-09-20') || dateStr.startsWith('2026-09-19') ? 'Amistoso' : 'Liga');
           autoEvents[dateStr] = {
             dateStr,
@@ -784,7 +853,8 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
           s.tipo !== 'CalendarioMensual' &&
           !s.unverifiedOrigin &&
           !isJsonMaster &&
-          doesRecordBelongToTeam(s, requestTeamId) &&
+          isDateInCurrentCalendarMonth(s.fecha) &&
+          isSessionAllowedForActiveTeamView(s, requestTeamId) &&
           hasUserModifiedSessionContent(s) &&
           !isDel(s.id, s.fecha)
         ) {
@@ -794,14 +864,14 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
 
       (Array.isArray(localSessions) ? localSessions : []).forEach((s: any) => {
         const isJsonMaster = typeof s?.descripcion === 'string' && s.descripcion.trim().startsWith('{');
-        const sTeamId = extractRecordCanonicalTeamId(s);
         if (
           s &&
           s.fecha &&
           s.tipo !== 'CalendarioMensual' &&
           !s.unverifiedOrigin &&
           !isJsonMaster &&
-          (!sTeamId || sTeamId === requestTeamId) &&
+          isDateInCurrentCalendarMonth(s.fecha) &&
+          isSessionAllowedForActiveTeamView(s, requestTeamId) &&
           hasUserModifiedSessionContent(s) &&
           !isDel(s.id, s.fecha)
         ) {
@@ -813,30 +883,27 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         }
       });
 
-      // Reconcile existing 'Entrenamiento' events in autoEvents:
-      // Any 'Entrenamiento' event in the current calendar view that does NOT belong to requestTeamId
-      // or does NOT match a verified session of requestTeamId (unless explicitly created as a manual calendar training for requestTeamId)
-      // is removed from the calendar view so no other team's trainings ever appear here.
+      // PHASE A STRICT IN-MEMORY ISOLATION (Condición 1):
+      // Filter out any training event in memory that is out-of-month or belongs to another team.
+      // Historical storage remains untouched (0 writes when showToast === false).
       Object.keys(autoEvents).forEach((dateStr) => {
-        const ev = autoEvents[dateStr];
-        if (!ev || ev.type !== 'Entrenamiento') return;
-        const evTeamId = extractRecordCanonicalTeamId(ev);
-        if (evTeamId && evTeamId !== requestTeamId) {
+        if (!isDateStrictlyInMonth(dateStr, requestYear, requestMonth)) {
           delete autoEvents[dateStr];
           return;
         }
-        if (isDateInCurrentCalendarView(dateStr)) {
-          const isVerifiedSession = allSessionsMap.has(dateStr);
-          const isManualForThisTeam =
-            evTeamId === requestTeamId && ev.isManualCalendarTraining === true;
-          if (!isVerifiedSession && !isManualForThisTeam) {
-            delete autoEvents[dateStr];
-          }
+        const ev = autoEvents[dateStr];
+        if (!ev || ev.type !== 'Entrenamiento') return;
+        const evTeamId = extractRecordCanonicalTeamId(ev);
+        if (
+          (evTeamId && evTeamId !== requestTeamId) ||
+          !isSessionAllowedForActiveTeamView(ev, requestTeamId)
+        ) {
+          delete autoEvents[dateStr];
         }
       });
 
       allSessionsMap.forEach((s, dateStr) => {
-        if (isDateInCurrentCalendarView(dateStr)) {
+        if (isDateInCurrentCalendarMonth(dateStr)) {
           // Keep match if already set on that day
           if (!autoEvents[dateStr] || autoEvents[dateStr].type !== 'Partido') {
             const evType: CalendarEventType = s.tipo === 'Partido' ? 'Partido' : 'Entrenamiento';
@@ -868,10 +935,20 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         return;
       }
 
-      saveEvents(autoEvents, requestTeamId, requestStorageKey);
+      // Differentiated persistence:
+      // - Automatic load (showToast === false): updates in-memory state only (0 writes to historical calendars).
+      // - Manual sync (showToast === true): persists the clean, strictly filtered monthly calendar for this team/year/month.
+      saveEvents(
+        autoEvents,
+        requestTeamId,
+        requestStorageKey,
+        requestYear,
+        requestMonth,
+        showToast === true
+      );
       if (showToast) {
         if (matchesCount > 0 || sessionsCount > 0 || dbMaster?.length) {
-          toast.success(`Datos sincronizados: ${matchesCount} partidos y ${sessionsCount} entrenamientos cargados en el calendario.`);
+          toast.success(`Datos sincronizados: ${matchesCount} partidos y ${sessionsCount} entrenamientos del mes.`);
         } else {
           toast.info('Sincronización completada.');
         }
@@ -1449,6 +1526,7 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-end">
+
           <Button
             onClick={() => handleUploadToSupabase()}
             disabled={isSyncing}
