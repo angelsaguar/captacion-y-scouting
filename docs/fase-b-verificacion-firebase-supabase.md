@@ -60,3 +60,34 @@ Cuando la configuración esté confirmada, preparar pruebas para:
 - No modificar datos de producción.
 - No añadir secretos a VITE_* ni al navegador.
 - No fusionar a `main` ni desplegar producción.
+
+
+## Resultado de verificación en producción (22-11-2026)
+
+El usuario confirmó mediante capturas del Dashboard que:
+
+- Proyecto Supabase: `CAPTACION Y SCOUTING`, rama `main` marcada como `PRODUCTION`.
+- En **Authentication → Sign In / Providers → Third-Party Auth** se añadió una conexión Firebase.
+- Estado mostrado por el Dashboard: **ENABLED**.
+- Firebase Project ID registrado: `gen-lang-client-0091658680`.
+- El ID coincide con el mostrado en Firebase Console → Project settings → General y con el `projectId` de `firebase-applet-config.json` revisado en esta rama.
+
+La conexión de proveedor queda registrada y habilitada en Supabase. Esto no implica que la aplicación ya esté enviando Firebase ID tokens ni que los tokens contengan el claim requerido.
+
+## Próximos pasos obligatorios antes de activar el token en el cliente
+
+1. Determinar si el proyecto Firebase usa Firebase Authentication con Identity Platform y si permite blocking functions. Si no, preparar una Cloud Function `onCreate` y un procedimiento administrativo controlado para asignar `role: authenticated` a usuarios existentes.
+2. Diseñar los claims de negocio (admin/scout) por separado del claim PostgreSQL `role: authenticated`. Nunca aceptar el rol local del frontend como autorización.
+3. Revisar y corregir en entorno aislado las políticas RLS permisivas detectadas en la auditoría. No enviar el token Firebase desde el navegador mientras la matriz de permisos no esté probada.
+4. Separar el seed y la limpieza automática de jugadores del flujo de inicio de sesión.
+5. Implementar `accessToken` solo en la rama de trabajo, con pruebas de autenticación, roles, acceso cruzado y regresión funcional.
+
+La asignación de claims requiere Firebase Admin SDK o funciones de autenticación privilegiadas. No debe realizarse desde el navegador ni mediante una clave de servicio expuesta en variables `VITE_*`.
+
+## Estado y límites tras la conexión
+
+- Cambio efectuado por el usuario en Supabase: registro de proveedor Firebase, estado ENABLED.
+- No se ha cambiado el cliente de la aplicación.
+- No se han asignado custom claims a usuarios.
+- No se han cambiado políticas RLS, privilegios, tablas, funciones ni datos.
+- No se ha modificado `main`, ni se ha fusionado o desplegado código.
