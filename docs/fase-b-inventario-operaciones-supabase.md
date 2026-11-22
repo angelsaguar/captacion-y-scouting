@@ -476,3 +476,49 @@ La rama contiene el diseño ampliado en `docs/fase-b-diseno-claims-firebase-back
 
 ### Bloqueo previo a implementación de backend
 No se ha confirmado todavía el UID Firebase de la cuenta administradora desde Firebase Console ni configurado el entorno de credenciales Admin SDK. Sin esos datos no se debe emitir claim de administrador ni implementar una ruta administrativa desplegable. No solicitar ni almacenar claves privadas o JSON de service account en el chat o GitHub.
+
+
+## 25. Revisión adicional de llamadas directas por pantalla y servicio (22-11-2026)
+
+Se ha vuelto a contrastar el inventario contra el árbol completo de la rama y las llamadas `.from()` de las páginas y servicios principales. Esta revisión corrige y precisa la sección 22; sigue siendo análisis estático.
+
+### Operaciones confirmadas y módulos implicados
+
+| Tabla | Operaciones observadas | Origen principal | Implicación para RLS |
+|---|---|---|---|
+| `players` | SELECT, INSERT, UPSERT, UPDATE, DELETE | Scouting, formulario/detalle de jugador, Plantilla, Asistencia, Partidos, Antropometría, Pruebas Físicas, Admin, seed | Tabla central; DELETE debe quedar admin/backend por las FK ON DELETE CASCADE |
+| `player_attributes` | SELECT, UPSERT, DELETE | Plantilla, Antropometría, Pruebas Físicas, sincronización | Los tres módulos comparten tabla; no separar permisos solo por pantalla ni confiar en prefijos editables por el cliente |
+| `attendance_sessions` | SELECT, UPSERT y DELETE dirigido | Asistencia, Plantilla, Admin, entrenamiento/sincronización | Las escrituras de asistencia son funcionales; DELETE debe limitarse a sesión/temporada/equipo con autorización reforzada |
+| `team_matches` | SELECT, INSERT, UPSERT | Partidos, Plantilla, Admin, sincronización | Requiere gestión-equipo; revisar payload y filtros por equipo |
+| `match_plans` | SELECT, INSERT, UPDATE, UPSERT | PlanPartido, Partidos, Admin, sincronización | Requiere gestión-equipo; contiene convocatoria JSONB y la fila completa queda expuesta a quien pueda leerla |
+| `coaches` | SELECT, INSERT, UPDATE, DELETE | `src/lib/coaches.ts` y gestión | Datos personales; escritura/borrado debe limitarse por rol y módulo |
+| `needs` | SELECT, INSERT, UPDATE, DELETE | `src/lib/needs.ts` y módulo needs | No hay propietario Firebase homogéneo; no asumir aislamiento por usuario sin resolver FK `created_by` |
+| `observers` | SELECT, INSERT, UPDATE, DELETE, incluida limpieza de duplicados | `src/lib/observers.ts` y administración | Sin columna de propietario; mantenimiento reservado a admin/backend |
+| `users` | SELECT * | `src/pages/Admin.tsx` | Lectura administrativa; evitar exponer perfil completo al scout |
+
+### Precisiones de almacenamiento físico y módulos
+
+- `Antropometria.tsx` y `PruebasFisicas.tsx` sí realizan lecturas y escrituras de `players` y `player_attributes`. Los registros de ambas áreas se distinguen en el contenido del atributo; no se localizaron llamadas a las tablas SQL separadas `anthropometrics` y `physical_tests` en esas pantallas.
+- En esta revisión no se encontraron llamadas directas a `tactics` ni `team_sessions`. Tampoco se encontró persistencia Supabase en `Estadisticas.tsx`, `Lesionados.tsx`, `PizarraTactica.tsx` o `Videoteca.tsx`; su almacenamiento puede estar en Firestore, localStorage u otro servicio.
+- `Admin.tsx` hace UPSERT administrativo de `players`, `team_matches`, `attendance_sessions`, `match_plans`, `coaches` y `needs`, además de leer `users`. No debe mantenerse una política RLS general para scout con el único fin de que la restauración masiva funcione.
+- `Plantilla.tsx` contiene borrados de jugadores y de atributos, además de sincronización masiva de jugadores, partidos y asistencias. La autorización debe estar en backend/RLS aunque se oculten controles de UI.
+- `Asistencia.tsx` elimina sesiones mediante una operación dirigida en `attendance_sessions`, y también puede crear/actualizar registros de `players` al dar de alta manualmente una jugadora.
+- `seedJugadoras.ts` contiene limpieza y UPSERT remoto; debe quedar fuera del efecto de inicio de sesión y convertirse en tarea explícita de administración o retirarse cuando se confirme que ya no se necesita.
+
+### Storage y APIs
+
+- En los archivos de aplicación inspeccionados, la única operación de Storage confirmada es la subida al bucket `avatars` desde `PlayerForm.tsx`; se genera URL pública. No se localizaron llamadas cliente `storage.remove()` ni `storage.update()`.
+- La función Vercel `api/tactical-advice.ts` se ha protegido en esta rama con verificación Firebase Admin, control de módulo `gestion-equipo`, comprobación Firestore del scout y CORS restringido. La protección no está aún validada por CI tras el último commit.
+- Los endpoints RFFM del directorio `api/rffm/` pertenecen a la capa de servidor. En `server.ts` las rutas equivalentes usan autenticación Firebase y rate limit; se debe comprobar el destino real de Vercel/servidor antes de dar por supuesto que todas las rutas del despliegue comparten ese middleware.
+
+### Decisiones que bloquean el SQL RLS
+
+1. Mantener DELETE de `players` fuera del scout: las FK ON DELETE CASCADE eliminan antropometría, pruebas físicas y atributos relacionados.
+2. Separar la restauración/importación masiva de Admin del cliente ordinario, idealmente mediante endpoint backend auditado.
+3. Definir si el scout puede crear/editar coaches y necesidades; el código tiene CRUD, pero la política funcional aún no está aprobada.
+4. Mantener observers como mantenimiento admin: el esquema no ofrece columna de propietario para políticas por fila.
+5. Resolver identidad y FK `created_by` antes de aplicar políticas de propiedad: Firebase UID no es intercambiable automáticamente con UUID de `auth.users`.
+6. No conceder permisos de cliente a `anthropometrics`, `physical_tests`, `tactics` ni `team_sessions` solo porque existan; conservarlos cerrados hasta confirmar un flujo activo.
+7. Probar las operaciones por módulo en Supabase aislado antes de preparar migración idempotente y rollback.
+
+No se ha ejecutado SQL ni se han cambiado RLS, GRANT, Storage, datos, claims o servicios productivos.
