@@ -436,3 +436,20 @@ Se ha creado `docs/fase-b-plan-implementacion-integracion-rls.md` en esta rama, 
 El documento ordena el trabajo en seis etapas: entorno aislado, backend de identidad Firebase Admin, integración del token en cliente Supabase, migración RLS/GRANT, refactor de operaciones privilegiadas y regresión/entrega.
 
 Define puertas de salida, matriz mínima de pruebas, cuestiones pendientes y límites de seguridad. No es SQL ejecutable y no implica que se hayan asignado claims, desplegado backend o cambiado código/producción.
+
+
+## 24. Contraste con documentación oficial y rutas backend referenciadas (22-11-2026)
+
+La documentación oficial vigente de Supabase para Firebase Auth confirma:
+- el cliente web debe enviar el Firebase ID token mediante la opción `accessToken`;
+- Firebase no incluye `role=authenticated` por defecto y, sin ese claim, Supabase asigna el rol SQL `anon`;
+- los custom claims deben asignarse con Firebase Admin SDK y el token debe renovarse para recibirlos;
+- el backend debe validar identidad a partir del ID token verificado, no de datos enviados por el navegador.
+
+Referencias:
+- https://supabase.com/docs/guides/auth/third-party/firebase-auth
+- https://firebase.google.com/docs/auth/admin/custom-claims
+
+Hallazgo adicional al contrastar llamadas API con el árbol completo de archivos de la rama: `src/lib/clubAccessAndSync.ts` invoca `/api/admin/sync-scout-access` y `/api/scout/seal-uid`, pero no se localizaron archivos de ruta correspondientes en el directorio `api/` de la rama inspeccionada (solo se localizaron endpoints RFFM y `api/tactical-advice.ts`). Debe comprobarse si esas rutas existen en otro despliegue o si las llamadas fallan en el estado actual. No crear endpoints que modifiquen Firestore o permisos sin definir autenticación server-side y fuente de verdad.
+
+La documentación oficial respalda el diseño, pero no se ha validado un token real en un proyecto aislado. No se ha cambiado código funcional, claims ni configuración de producción.
