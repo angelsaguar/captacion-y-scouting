@@ -104,3 +104,52 @@ No modificar la función en producción desde esta rama.
 - No modificar main.
 - No fusionar ramas ni crear despliegues de Vercel producción.
 - Los nombres del CSV exportado son los nombres SQL exactos de las 13 tablas y se utilizan aquí tal como aparecen. Los esquemas del repositorio son históricos y no deben considerarse prueba de que coinciden con producción.
+
+
+## 7. Revisión adicional del flujo de autenticación y acceso a datos (22-11-2026)
+
+Archivos revisados en esta rama:
+- src/lib/firebase.ts
+- src/App.tsx
+- src/store/useAuthStore.ts
+- src/lib/supabase.ts
+- src/lib/clubAccessAndSync.ts
+- src/lib/seedJugadoras.ts
+
+### Flujo de identidad observado
+- Firebase se inicializa en src/lib/firebase.ts y exporta auth.
+- src/App.tsx escucha onAuthStateChanged(auth, ...) y exige usuario, email y emailVerified.
+- El acceso de aplicación se limita por email a las dos cuentas previstas: administrador y scout. La app construye el objeto de usuario con el UID de Firebase y roles locales admin/scout.
+- src/store/useAuthStore.ts repite controles de email y rol en el estado cliente.
+- No se observa en estos archivos que el JWT de Firebase se entregue al cliente Supabase mediante accessToken ni que se valide en un backend para las llamadas Supabase revisadas.
+- El rol guardado en el estado cliente y las rutas protegidas del frontend no sustituyen a autorización en servidor/RLS.
+
+### Operaciones Supabase confirmadas en archivos revisados
+En src/lib/clubAccessAndSync.ts se observan lecturas directas de:
+- players (SELECT *)
+- player_attributes (SELECT *)
+- team_matches (SELECT *)
+- match_plans (SELECT *)
+
+En src/lib/seedJugadoras.ts se observan:
+- lectura de players por foto_url y por id;
+- UPDATE de foto_url para limpiar imágenes de prueba;
+- UPSERT de jugadoras iniciales si la tabla aparece vacía;
+- consulta de supabase.auth.getUser() para obtener created_by.
+
+El cliente Supabase activo se crea con createClient(supabaseUrl, supabaseAnonKey). Si falta configuración, el código cambia a un cliente local simulado que persiste en localStorage. Por tanto, antes de interpretar pruebas de aplicación hay que confirmar que el entorno de prueba usa realmente Supabase remoto y no el fallback local.
+
+### Riesgo funcional adicional detectado
+src/App.tsx ejecuta syncJugadorasToDatabaseAndLocalStorage() después de que el usuario Firebase haya sido aceptado. Esa función contiene escrituras remotas de limpieza y seed. Al endurecer RLS, estas operaciones podrían fallar o, si se autorizaran de forma amplia para conservarlas, permitir escrituras innecesarias desde el navegador. Deben separarse del flujo normal de inicio de sesión y tratarse como tarea administrativa controlada, con datos/IDs explícitos y autorización backend.
+
+### Decisión técnica
+No se ha añadido todavía accessToken: () => auth.currentUser?.getIdToken() al cliente Supabase. Enviar un Firebase ID token no basta por sí solo: Supabase debe estar configurado para confiar en ese emisor/tercero y los claims deben mapearse de forma segura. Añadir el token sin esa configuración no resolvería RLS y podría causar errores de acceso o confusión sobre el modelo de seguridad.
+
+### Próxima implementación en rama
+1. Completar inventario de todos los módulos que importan supabase y sus operaciones, incluyendo storage y RPC.
+2. Confirmar en Supabase Auth si Firebase está configurado como proveedor de terceros y obtener los valores de issuer/audience esperados sin compartir secretos.
+3. Elegir entre integración de terceros compatible o backend/Edge Functions que valide Firebase ID tokens.
+4. Rediseñar seed/limpieza para que no se ejecute como efecto automático de cada inicio de sesión.
+5. Solo entonces implementar código y pruebas en esta rama.
+
+No se han modificado archivos de ejecución ni se han efectuado llamadas de escritura a Supabase en esta revisión.
