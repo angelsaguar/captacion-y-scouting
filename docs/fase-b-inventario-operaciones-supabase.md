@@ -427,3 +427,12 @@ El código cliente deja todas las rutas al administrador y limita al scout por m
 - Después, preparar políticas RLS y GRANT por tabla, probadas en entorno aislado.
 
 Esta sección es una revisión estática del código de la rama indicada, no una traza de ejecución ni una prueba de producción. No se ha modificado código, datos ni permisos.
+
+
+## 23. Plan integral de implementación (22-11-2026)
+
+Se ha creado `docs/fase-b-plan-implementacion-integracion-rls.md` en esta rama, commit `d5eedfe924266837dc3547c02b9a6fe0ece97044`.
+
+El documento ordena el trabajo en seis etapas: entorno aislado, backend de identidad Firebase Admin, integración del token en cliente Supabase, migración RLS/GRANT, refactor de operaciones privilegiadas y regresión/entrega.
+
+Define puertas de salida, matriz mínima de pruebas, cuestiones pendientes y límites de seguridad. No es SQL ejecutable y no implica que se hayan asignado claims, desplegado backend o cambiado código/producción.
