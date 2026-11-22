@@ -224,3 +224,27 @@ RLS y GRANT son controles acumulativos: para acceder se necesita privilegio SQL 
 6. Evitar acceso público a filas completas de jugadores, planes, tácticas, sesiones y personal si no hay requisito público validado.
 
 Este hallazgo es evidencia de configuración permisiva, no evidencia de que haya ocurrido una filtración o acceso indebido. La exposición efectiva depende también de los GRANT, del proveedor JWT y de las vías de acceso configuradas.
+
+
+## 12. Privilegios de tabla reportados (consulta 5, 22-11-2026)
+
+El usuario aportó el resultado de `information_schema.role_table_grants` para los esquemas public/storage y los grantees anon, authenticated, service_role y postgres.
+
+### Resultado observado en las 13 tablas public
+
+- Para `anon`: aparecen filas de privilegios DELETE/INSERT/REFERENCES/SELECT/TRIGGER/TRUNCATE/UPDATE con `is_grantable=NO`.
+- Para `authenticated`: aparecen las mismas operaciones con `is_grantable=NO`.
+- Para `service_role`: aparecen las mismas operaciones con `is_grantable=NO`.
+- Para `postgres`: aparecen las operaciones con `is_grantable=YES`.
+
+**Interpretación importante:** `is_grantable=NO` significa que el rol no puede conceder ese privilegio a otros; no significa que no tenga el privilegio. La presencia de una fila para cada `privilege_type` indica que el rol tiene ese privilegio concedido, pero no grant option. Por tanto, la lectura inicial de este resultado como ausencia de GRANT sería incorrecta.
+
+En consecuencia, los GRANT directos observados para anon/authenticated/service_role sí parecen conceder las operaciones enumeradas, mientras que las políticas RLS permisivas descritas en la consulta 4 son relevantes para el acceso efectivo. Debe comprobarse además la herencia/privilegios efectivos mediante `has_table_privilege()` y `has_any_column_privilege()` si se requiere resolver discrepancias.
+
+### Storage
+
+El resultado también muestra filas para anon/authenticated en algunas tablas internas de Storage (por ejemplo buckets, objects y tablas multipart) con `is_grantable=NO`. Esto no determina por sí solo la autorización de archivos: el acceso a objetos requiere revisar políticas RLS de `storage.objects`, bucket público/privado y el API de Storage. No cambiar permisos internos de Storage directamente sin seguir el modelo soportado por Supabase.
+
+### Precaución de interpretación
+
+El campo `is_grantable` no es un indicador de si el privilegio está concedido; solo expresa si puede ser concedido a terceros. Para confirmar privilegios efectivos se puede usar `has_table_privilege(role, 'public.tabla', 'SELECT')` para cada rol/tabla. No inferir ausencia de GRANT a partir de `is_grantable=NO`.
