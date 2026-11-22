@@ -177,7 +177,6 @@ No existe actualmente un claim independiente `antropometria` ni `pruebas-fisicas
 | `anthropometrics` | No conceder hasta confirmar uso | No | No | Ninguno hasta localizar flujo | Tabla SQL existe, pero no se encontró llamada directa desde las páginas revisadas |
 | `physical_tests` | No conceder hasta confirmar uso | No | No | Ninguno hasta localizar flujo | La pantalla revisada usa `player_attributes`/almacenamiento local |
 | `team_sessions` | No conceder hasta confirmar uso | No | No | Ninguno hasta localizar flujo | No se localizó llamada directa en la rama |
-| `tactics` | Sí según campograma | Sí según campograma | No | `campograma` | Repetición intencional: es una tabla activa confirmada en Campograma |
 
 **Importante:** los permisos de `players` son la superficie más amplia. Una política por fila no limita columnas; conceder SELECT de la fila completa también puede exponer email, teléfono, año de nacimiento y observaciones. Antes de activar acceso scout a esta tabla hay que decidir si esos campos son necesarios para cada módulo. La solución robusta puede requerir vistas con columnas permitidas o endpoints que proyecten campos, no solo RLS.
 
