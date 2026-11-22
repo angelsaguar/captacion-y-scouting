@@ -54,12 +54,21 @@ async function authorizeRequest(req: any): Promise<{ uid: string; role: "admin" 
   }
 
   if (email !== SCOUT_EMAIL) return null;
-  const snapshot = await adminDb.doc(SCOUT_ACCESS_DOCUMENT).get();
+  let snapshot;
+  try {
+    snapshot = await adminDb.doc(SCOUT_ACCESS_DOCUMENT).get();
+  } catch (error) {
+    const dependencyError = new Error("Firestore authorization lookup failed");
+    (dependencyError as any).name = "AuthorizationDependencyError";
+    (dependencyError as any).cause = error;
+    throw dependencyError;
+  }
   if (!snapshot.exists) return null;
   const access = snapshot.data() || {};
   const allowedModules = Array.isArray(access.allowedModules) ? access.allowedModules : [];
   if (
-    access.email !== SCOUT_EMAIL ||
+    typeof access.email !== "string" ||
+    access.email.trim().toLowerCase() !== SCOUT_EMAIL ||
     access.active !== true ||
     access.uidLocked !== true ||
     typeof access.uid !== "string" ||
@@ -91,8 +100,8 @@ export default async function handler(req: any, res: any) {
   try {
     identity = await authorizeRequest(req);
   } catch (error: any) {
-    if (error?.code?.startsWith?.("firestore/") || error?.code?.startsWith?.("app/")) {
-      console.error("Tactical advice authorization dependency failed:", error.code);
+    if (error?.name === "AuthorizationDependencyError") {
+      console.error("Tactical advice authorization dependency failed.");
       return res.status(503).json({ error: "No se pudo verificar la autorización. Inténtalo de nuevo." });
     }
     return res.status(401).json({ error: "Sesión no válida o caducada. Vuelve a iniciar sesión." });
