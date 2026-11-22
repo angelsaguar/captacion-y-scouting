@@ -125,3 +125,24 @@ La identidad de servicio del servidor debe tener permisos mínimos de lectura so
 ### Verificación aún pendiente
 
 No se ha ejecutado compilación TypeScript, pruebas de integración ni prueba con credenciales reales desde este entorno. Antes de dar la implementación por validada hay que ejecutar el pipeline de build/lint y probar los casos negativos/positivos enumerados en la sección 4. No desplegar ni activar custom claims todavía.
+
+
+## 7. Pruebas automatizadas y preparación de claims (22-11-2026)
+
+Se han añadido los siguientes elementos a la rama:
+
+- `src/server/clubAuthorization.test.ts`: pruebas unitarias de token ausente, proyecto incorrecto, correo no verificado, UID de administrador, configuración ausente, UID scout, estado activo, módulo no autorizado, documento inexistente y construcción de claims.
+- Script `npm run test:security`.
+- Workflow `.github/workflows/fase-b-security.yml` para ejecutar pruebas, TypeScript y build en GitHub Actions.
+- Función pura `buildClubCustomClaims()`: preserva claims ajenos a la aplicación, establece `role: authenticated`, `app_role`, `app_active` y `allowed_modules`; filtra módulos desconocidos y elimina permisos de módulos cuando el scout está inactivo.
+- Endpoint administrativo `POST /api/admin/sync-firebase-claims`, expresamente deshabilitado por defecto. Solo se ejecuta si el entorno tiene `ENABLE_FIREBASE_CLAIMS_ISSUANCE=true`, además de exigir autenticación admin y UID protegido. Antes de escribir, valida ambas cuentas y deriva los permisos del scout del documento Firestore.
+
+### Límites y estado de validación
+
+- El endpoint de claims no se ha invocado; no se ha modificado ningún claim real.
+- No se ha configurado `CLUB_ADMIN_FIREBASE_UID` ni `ENABLE_FIREBASE_CLAIMS_ISSUANCE` en ningún entorno.
+- No se ha conectado aún el Firebase ID token al cliente Supabase. Esa modificación queda condicionada a validar los claims y la matriz RLS de Supabase.
+- Se ha añadido el workflow, pero no se dispone todavía de un resultado de GitHub Actions que confirme ejecución satisfactoria. El estado consultado del commit muestra únicamente el check de Vercel pendiente; por tanto, las pruebas, el lint y el build siguen **pendientes de ejecución**.
+- La sincronización de claims de dos usuarios no es una transacción atómica de Firebase. El endpoint valida las dos identidades y prepara ambos payloads antes de iniciar escrituras, pero un fallo entre ambas operaciones podría dejar una actualización parcial; debe contemplarse en el procedimiento de verificación y recuperación.
+
+No activar el flag de emisión ni llamar al endpoint hasta completar la revisión del workflow, confirmar la identidad de servicio y autorizar expresamente la primera asignación real de claims.
