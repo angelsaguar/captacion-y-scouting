@@ -1,12 +1,21 @@
 import { CLUB_TEAM_REGISTRY, ClubTeamRegistryItem } from '@/types';
+import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 
 export const PRE_TRAINING_ISOLATION_BACKUP_KEY = 'afe_pre_training_isolation_backup_v1';
 export const UNASSIGNED_SESSIONS_AUDIT_KEY = 'afe_unassigned_sessions_audit_v1';
 export const TRAINING_ISOLATION_MIGRATION_VERSION_KEY = 'afe_training_isolation_migration_v2';
-const CUSTOM_TEAM_REGISTRY_KEY = 'afe_custom_team_registry_v1';
+export const CUSTOM_TEAM_REGISTRY_KEY = 'afe_custom_team_registry_v1';
+
+export interface CustomTeamRegistryEntry {
+  teamId: string;
+  displayName: string;
+  aliases: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 // ---------------------------------------------------------------------------
-// 1. Canonical Immutable Team Identifier (teamId) Resolution
+// 1. Canonical Immutable Team Identifier (teamId) Resolution & Custom Teams
 // ---------------------------------------------------------------------------
 
 function normalizeTeamLookupToken(raw?: string | null): string {
@@ -18,13 +27,29 @@ function normalizeTeamLookupToken(raw?: string | null): string {
     .replace(/\s+/g, ' ');
 }
 
-function getCustomTeamRegistry(): Record<string, { teamId: string; displayName: string }> {
+export function getCustomTeamRegistry(): Record<string, CustomTeamRegistryEntry> {
   if (typeof localStorage === 'undefined') return {};
   try {
     const raw = localStorage.getItem(CUSTOM_TEAM_REGISTRY_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') return parsed;
+      if (parsed && typeof parsed === 'object') {
+        const normalizedMap: Record<string, CustomTeamRegistryEntry> = {};
+        for (const [k, val] of Object.entries(parsed as Record<string, any>)) {
+          if (val && typeof val === 'object' && typeof val.teamId === 'string') {
+            normalizedMap[k] = {
+              teamId: val.teamId,
+              displayName: String(val.displayName || k).trim(),
+              aliases: Array.isArray(val.aliases)
+                ? val.aliases.map((a: any) => String(a || '').trim()).filter(Boolean)
+                : [String(val.displayName || k).trim()],
+              createdAt: val.createdAt,
+              updatedAt: val.updatedAt,
+            };
+          }
+        }
+        return normalizedMap;
+      }
     }
   } catch {}
   return {};
@@ -45,10 +70,46 @@ export function findClubTeamRegistryItem(teamOrId?: string | null): ClubTeamRegi
   return null;
 }
 
+export function findCustomTeamRegistryEntry(
+  teamOrId?: string | null
+): CustomTeamRegistryEntry | null {
+  const raw = String(teamOrId || '').trim();
+  const token = normalizeTeamLookupToken(raw);
+  if (!token) return null;
+
+  const customMap = getCustomTeamRegistry();
+  if (customMap[raw.toLowerCase()]) return customMap[raw.toLowerCase()];
+  if (customMap[token]) return customMap[token];
+
+  for (const entry of Object.values(customMap)) {
+    if (!entry || !entry.teamId) continue;
+    if (normalizeTeamLookupToken(entry.teamId) === token) return entry;
+    if (normalizeTeamLookupToken(entry.displayName) === token) return entry;
+    if (
+      Array.isArray(entry.aliases) &&
+      entry.aliases.some((alias) => normalizeTeamLookupToken(alias) === token)
+    ) {
+      return entry;
+    }
+  }
+  return null;
+}
+
+function buildDeterministicCustomTeamId(rawName: string): string {
+  const token = normalizeTeamLookupToken(rawName);
+  const slug = token
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48);
+  return `team_custom_${slug || 'unknown'}`;
+}
+
 /**
  * Resolves any team identifier, code, or visible team name into its permanent,
  * immutable internal `teamId` (e.g. 'INFANTIL B' -> 'team_08_infantil_b').
- * Even if a team's visible display name is changed in the future, its `teamId` remains invariant.
+ * Pure read-only operation: NEVER performs automatic writes to localStorage during reads.
+ * Even if a custom team's visible display name is changed, its `teamId` remains invariant.
  */
 export function resolveCanonicalTeamId(teamOrId?: string | null): string {
   const raw = String(teamOrId || '').trim();
@@ -57,36 +118,21 @@ export function resolveCanonicalTeamId(teamOrId?: string | null): string {
   const found = findClubTeamRegistryItem(raw);
   if (found) return found.teamId;
 
-  if (raw.startsWith('team_')) {
+  const customEntry = findCustomTeamRegistryEntry(raw);
+  if (customEntry?.teamId) {
+    return customEntry.teamId;
+  }
+
+  if (raw.toLowerCase().startsWith('team_')) {
     return raw.toLowerCase();
   }
 
-  // Fallback for any custom user-created team: persist a deterministic immutable teamId
-  const token = normalizeTeamLookupToken(raw);
-  const customMap = getCustomTeamRegistry();
-  if (customMap[token]?.teamId) {
-    return customMap[token].teamId;
-  }
-
-  const slug = token
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 48);
-  const generatedId = `team_custom_${slug || 'unknown'}`;
-
-  if (typeof localStorage !== 'undefined') {
-    try {
-      customMap[token] = { teamId: generatedId, displayName: raw };
-      localStorage.setItem(CUSTOM_TEAM_REGISTRY_KEY, JSON.stringify(customMap));
-    } catch {}
-  }
-
-  return generatedId;
+  return buildDeterministicCustomTeamId(raw);
 }
 
 /**
- * Resolves a canonical `teamId` (or legacy team name) to its current visible display name.
+ * Resolves a canonical `teamId` (or legacy/previous team name) to its current visible display name.
+ * Pure read-only operation: NEVER performs automatic writes to localStorage.
  */
 export function getTeamDisplayName(teamIdOrName?: string | null): string {
   const raw = String(teamIdOrName || '').trim();
@@ -95,12 +141,277 @@ export function getTeamDisplayName(teamIdOrName?: string | null): string {
   const found = findClubTeamRegistryItem(raw);
   if (found) return found.displayName;
 
-  const customMap = getCustomTeamRegistry();
-  for (const entry of Object.values(customMap)) {
-    if (entry.teamId === raw) return entry.displayName;
+  const customEntry = findCustomTeamRegistryEntry(raw);
+  if (customEntry?.displayName) {
+    return customEntry.displayName;
+  }
+
+  if (raw.toLowerCase().startsWith('team_custom_')) {
+    return raw.slice('team_custom_'.length).replace(/_/g, ' ').trim().toUpperCase();
   }
 
   return raw;
+}
+
+/**
+ * Explicitly registers or persists a custom team in `afe_custom_team_registry_v1`,
+ * preserving its canonical `teamId` across renames and maintaining the association
+ * with its historical sessions, attendance records, rosters, and calendars.
+ * Should only be called when a team is explicitly created, registered, renamed, or saved.
+ */
+export function registerOrPersistCustomTeam(
+  teamName: string,
+  options?: {
+    explicitTeamId?: string;
+    previousName?: string;
+    migrateStorageOnRename?: boolean;
+  }
+): CustomTeamRegistryEntry | null {
+  const cleanName = String(teamName || '').trim();
+  if (!cleanName) return null;
+
+  // Official club teams are already in CLUB_TEAM_REGISTRY and do not need custom registry entries
+  if (
+    findClubTeamRegistryItem(cleanName) &&
+    !options?.previousName &&
+    !options?.explicitTeamId
+  ) {
+    return null;
+  }
+
+  if (typeof localStorage === 'undefined') return null;
+
+  const existingByPrev = options?.previousName
+    ? findCustomTeamRegistryEntry(options.previousName)
+    : null;
+  const existingByExplicitId = options?.explicitTeamId
+    ? findCustomTeamRegistryEntry(options.explicitTeamId)
+    : null;
+  const existingByCurrent = findCustomTeamRegistryEntry(cleanName);
+  const existingEntry = existingByPrev || existingByExplicitId || existingByCurrent;
+
+  let canonicalTeamId = '';
+  if (options?.explicitTeamId && options.explicitTeamId.trim().toLowerCase().startsWith('team_')) {
+    canonicalTeamId = options.explicitTeamId.trim().toLowerCase();
+  } else if (existingEntry?.teamId) {
+    canonicalTeamId = existingEntry.teamId;
+  } else if (options?.previousName) {
+    canonicalTeamId = resolveCanonicalTeamId(options.previousName);
+  } else if (cleanName.toLowerCase().startsWith('team_')) {
+    canonicalTeamId = cleanName.toLowerCase();
+  } else {
+    canonicalTeamId = buildDeterministicCustomTeamId(cleanName);
+  }
+
+  const previousDisplayName =
+    String(options?.previousName || existingEntry?.displayName || '').trim();
+  const displayName = cleanName.toLowerCase().startsWith('team_')
+    ? existingEntry?.displayName || cleanName
+    : cleanName;
+
+  const aliasesSet = new Set<string>();
+  if (existingEntry?.aliases) {
+    existingEntry.aliases.forEach((a) => {
+      if (a && a.trim()) aliasesSet.add(a.trim());
+    });
+  }
+  if (existingEntry?.displayName) aliasesSet.add(existingEntry.displayName.trim());
+  if (previousDisplayName) aliasesSet.add(previousDisplayName);
+  if (displayName) aliasesSet.add(displayName);
+
+  const customMap = getCustomTeamRegistry();
+  // Remove any obsolete top-level keys that pointed to the same canonicalTeamId
+  const nextMap: Record<string, CustomTeamRegistryEntry> = {};
+  for (const [k, v] of Object.entries(customMap)) {
+    if (v && v.teamId !== canonicalTeamId) {
+      nextMap[k] = v;
+    }
+  }
+
+  const nowIso = new Date().toISOString();
+  const updatedEntry: CustomTeamRegistryEntry = {
+    teamId: canonicalTeamId,
+    displayName,
+    aliases: Array.from(aliasesSet),
+    createdAt: existingEntry?.createdAt || nowIso,
+    updatedAt: nowIso,
+  };
+
+  nextMap[canonicalTeamId] = updatedEntry;
+
+  const prevSerialized = localStorage.getItem(CUSTOM_TEAM_REGISTRY_KEY);
+  const nextSerialized = JSON.stringify(nextMap);
+  if (prevSerialized !== nextSerialized) {
+    localStorage.setItem(CUSTOM_TEAM_REGISTRY_KEY, nextSerialized);
+  }
+
+  // If the team was renamed, keep all historical sessions, attendance records, rosters, and calendars associated
+  const shouldMigrateRename =
+    options?.migrateStorageOnRename !== false &&
+    previousDisplayName &&
+    previousDisplayName !== displayName &&
+    !previousDisplayName.toLowerCase().startsWith('team_');
+
+  if (shouldMigrateRename) {
+    migrateCustomTeamHistoricalStorageOnRename(
+      canonicalTeamId,
+      previousDisplayName,
+      displayName
+    );
+  }
+
+  return updatedEntry;
+}
+
+/**
+ * Renames a custom team while preserving its canonical `teamId` and migrating/maintaining
+ * all its historical training sessions, attendance records, rosters, and monthly calendars.
+ */
+export function renameCustomTeam(
+  currentTeamOrId: string,
+  newDisplayName: string
+): CustomTeamRegistryEntry | null {
+  const cleanCurrent = String(currentTeamOrId || '').trim();
+  const cleanNew = String(newDisplayName || '').trim();
+  if (!cleanCurrent || !cleanNew) return null;
+
+  const existingEntry = findCustomTeamRegistryEntry(cleanCurrent);
+  const canonicalTeamId = existingEntry?.teamId || resolveCanonicalTeamId(cleanCurrent);
+  const previousName = existingEntry?.displayName || cleanCurrent;
+
+  return registerOrPersistCustomTeam(cleanNew, {
+    explicitTeamId: canonicalTeamId,
+    previousName,
+    migrateStorageOnRename: true,
+  });
+}
+
+function migrateCustomTeamHistoricalStorageOnRename(
+  canonicalTeamId: string,
+  oldName: string,
+  newName: string
+): void {
+  if (typeof localStorage === 'undefined' || !oldName || !newName || oldName === newName) return;
+
+  try {
+    // 1. Migrate team_sessions_${oldName} -> team_sessions_${newName} preserving every session ID & attendance record
+    const oldSessionsKey = `team_sessions_${oldName}`;
+    const newSessionsKey = `team_sessions_${newName}`;
+    const oldSessionsRaw = localStorage.getItem(oldSessionsKey);
+    if (oldSessionsRaw) {
+      const oldSessions: any[] = JSON.parse(oldSessionsRaw);
+      const newSessionsRaw = localStorage.getItem(newSessionsKey);
+      const newSessions: any[] = newSessionsRaw ? JSON.parse(newSessionsRaw) : [];
+      if (Array.isArray(oldSessions)) {
+        const stampedOld = oldSessions.map((s: any) => ({
+          ...s,
+          teamId: canonicalTeamId,
+          team: newName,
+        }));
+        const stampedNew = (Array.isArray(newSessions) ? newSessions : []).map((s: any) => ({
+          ...s,
+          teamId: canonicalTeamId,
+          team: newName,
+        }));
+        const seenOld = new Map<string, number>();
+        const seenNew = new Map<string, number>();
+        const mergedByKey = new Map<string, any>();
+
+        stampedOld.forEach((s: any) => {
+          const { dedupKey, effectiveSessionId, hasExplicitValidId } =
+            getStrictFullSessionDeduplicationKey(s, seenOld);
+          mergedByKey.set(dedupKey, {
+            ...s,
+            id: hasExplicitValidId ? String(s.id).trim() : (s.id || effectiveSessionId),
+          });
+        });
+        stampedNew.forEach((s: any) => {
+          const { dedupKey, effectiveSessionId, hasExplicitValidId } =
+            getStrictFullSessionDeduplicationKey(s, seenNew);
+          const prev = mergedByKey.get(dedupKey);
+          mergedByKey.set(dedupKey, {
+            ...(prev || {}),
+            ...s,
+            id: hasExplicitValidId ? String(s.id).trim() : (s.id || prev?.id || effectiveSessionId),
+            records: prev
+              ? reconcileSessionAttendanceRecords(s.records || [], prev.records || [])
+              : s.records || [],
+          });
+        });
+
+        localStorage.setItem(newSessionsKey, JSON.stringify(Array.from(mergedByKey.values())));
+      }
+    }
+
+    // 2. Migrate team_roster_${oldName} -> team_roster_${newName}
+    const oldRosterKey = `team_roster_${oldName}`;
+    const newRosterKey = `team_roster_${newName}`;
+    const oldRosterRaw = localStorage.getItem(oldRosterKey);
+    if (oldRosterRaw && !localStorage.getItem(newRosterKey)) {
+      localStorage.setItem(newRosterKey, oldRosterRaw);
+    }
+
+    // 3. Update ud_lapoveda_table_attendance_sessions rows belonging to this canonicalTeamId
+    const tableRaw = localStorage.getItem('ud_lapoveda_table_attendance_sessions');
+    if (tableRaw) {
+      const rows = JSON.parse(tableRaw);
+      if (Array.isArray(rows)) {
+        let changed = false;
+        const updatedRows = rows.map((row: any) => {
+          if (!row || typeof row !== 'object') return row;
+          const rowTeamId = extractRecordCanonicalTeamId(row);
+          if (rowTeamId === canonicalTeamId) {
+            changed = true;
+            return {
+              ...row,
+              teamId: canonicalTeamId,
+              team: newName,
+            };
+          }
+          return row;
+        });
+        if (changed) {
+          localStorage.setItem(
+            'ud_lapoveda_table_attendance_sessions',
+            JSON.stringify(updatedRows)
+          );
+        }
+      }
+    }
+
+    // 4. Copy monthly calendars team_monthly_calendar_${oldName}_${year}_${month} -> team_monthly_calendar_${newName}_${year}_${month}
+    const calPrefix = `team_monthly_calendar_${oldName}_`;
+    const keysToCopy: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(calPrefix)) {
+        keysToCopy.push(k);
+      }
+    }
+    for (const oldCalKey of keysToCopy) {
+      const suffix = oldCalKey.slice(calPrefix.length);
+      const newCalKey = `team_monthly_calendar_${newName}_${suffix}`;
+      const rawCal = localStorage.getItem(oldCalKey);
+      if (rawCal && !localStorage.getItem(newCalKey)) {
+        try {
+          const parsedCal = JSON.parse(rawCal);
+          if (parsedCal && typeof parsedCal === 'object') {
+            const stampedCal: Record<string, any> = {};
+            for (const [dateStr, ev] of Object.entries(parsedCal as Record<string, any>)) {
+              if (ev && typeof ev === 'object') {
+                stampedCal[dateStr] = {
+                  ...ev,
+                  teamId: canonicalTeamId,
+                  team: newName,
+                };
+              }
+            }
+            localStorage.setItem(newCalKey, JSON.stringify(stampedCal));
+          }
+        } catch {}
+      }
+    }
+  } catch {}
 }
 
 /**
@@ -132,6 +443,1020 @@ export function doesRecordBelongToTeam(record: any, targetTeamOrId?: string | nu
 
   if (!targetTeamId || !recordTeamId) return false;
   return targetTeamId === recordTeamId;
+}
+
+/**
+ * FASE A — Parses a YYYY-MM-DD date string into { year, monthIndex (0-11), day } or null if invalid.
+ */
+export function parseStrictYearMonthFromDateStr(
+  dateStr?: string | null
+): { year: number; monthIndex: number; day: number } | null {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(monthIndex) ||
+    !Number.isFinite(day) ||
+    monthIndex < 0 ||
+    monthIndex > 11 ||
+    day < 1 ||
+    day > 31
+  ) {
+    return null;
+  }
+  return { year, monthIndex, day };
+}
+
+/**
+ * FASE A — Validates that a YYYY-MM-DD date string belongs strictly to the target (year, monthIndex 0-11).
+ * Prevents out-of-month training events from being dragged or persisted across monthly calendars.
+ */
+export function isDateStrictlyInMonth(
+  dateStr: string | undefined | null,
+  targetYear: number,
+  targetMonthIndex: number
+): boolean {
+  const parsed = parseStrictYearMonthFromDateStr(dateStr);
+  if (!parsed) return false;
+  return parsed.year === targetYear && parsed.monthIndex === targetMonthIndex;
+}
+
+/**
+ * FASE A — Detects if a text (description/title) explicitly names one of the club's registered teams.
+ */
+export function detectExplicitClubTeamInText(text?: string | null): string {
+  const normText = normalizeTeamLookupToken(text);
+  if (!normText) return '';
+  for (const reg of CLUB_TEAM_REGISTRY) {
+    const normDisplay = normalizeTeamLookupToken(reg.displayName);
+    if (normDisplay && normText.includes(normDisplay)) {
+      return reg.teamId;
+    }
+  }
+  return '';
+}
+
+/**
+ * Checks whether an attendance status represents an explicitly marked state
+ * (e.g. 'Presente', 'Ausente', 'Retraso', 'Justificado', 'Lesionado', 'No Justificó').
+ * Empty strings, null, undefined, or 'Pendiente' are not considered marked attendance states.
+ */
+export function hasMarkedAttendanceStatus(status: any): boolean {
+  if (status === undefined || status === null) return false;
+  const clean = String(status).trim();
+  if (!clean) return false;
+  return clean.toLowerCase() !== 'pendiente';
+}
+
+/**
+ * Reconciles two attendance records belonging to the same player (`playerId`) between local and cloud:
+ * - Preserves marked attendance statuses (`Presente`, `Ausente`, etc.) so an unmarked local record
+ *   NEVER overwrites a marked cloud record (and vice versa).
+ * - Never overwrites valid non-empty fields with empty/undefined values.
+ * - Retains all additional properties and historical fields.
+ */
+export function reconcileAttendanceRecordPair(localRec: any, cloudRec: any): any {
+  if (!localRec || typeof localRec !== 'object') return cloudRec ? { ...cloudRec } : localRec;
+  if (!cloudRec || typeof cloudRec !== 'object') return { ...localRec };
+
+  const localMarked = hasMarkedAttendanceStatus(localRec.status);
+  const cloudMarked = hasMarkedAttendanceStatus(cloudRec.status);
+
+  let resolvedStatus: any = localRec.status;
+  if (localMarked && !cloudMarked) {
+    resolvedStatus = localRec.status;
+  } else if (cloudMarked && !localMarked) {
+    resolvedStatus = cloudRec.status;
+  } else if (localMarked && cloudMarked) {
+    const localTs = Number(localRec._updatedAtMs ?? localRec.updatedAtMs ?? 0);
+    const cloudTs = Number(cloudRec._updatedAtMs ?? cloudRec.updatedAtMs ?? 0);
+    resolvedStatus = cloudTs > localTs ? cloudRec.status : localRec.status;
+  } else {
+    // Neither is marked: if one explicitly carries 'Pendiente' while the other is undefined/empty, keep 'Pendiente';
+    // if both are undefined (like the 15 JUGADORAS_ADJUNTAS in the August sessions), preserve undefined.
+    const localClean =
+      localRec.status !== undefined && localRec.status !== null
+        ? String(localRec.status).trim()
+        : '';
+    const cloudClean =
+      cloudRec.status !== undefined && cloudRec.status !== null
+        ? String(cloudRec.status).trim()
+        : '';
+    if (localClean) {
+      resolvedStatus = localRec.status;
+    } else if (cloudClean) {
+      resolvedStatus = cloudRec.status;
+    } else {
+      resolvedStatus = localRec.status !== undefined ? localRec.status : cloudRec.status;
+    }
+  }
+
+  const merged: Record<string, any> = {};
+  const allKeys = new Set<string>([...Object.keys(cloudRec), ...Object.keys(localRec)]);
+  for (const key of allKeys) {
+    if (key === 'status') continue;
+    const lVal = localRec[key];
+    const cVal = cloudRec[key];
+    const lHasValue =
+      lVal !== undefined && lVal !== null && (typeof lVal !== 'string' || lVal.trim() !== '');
+    const cHasValue =
+      cVal !== undefined && cVal !== null && (typeof cVal !== 'string' || cVal.trim() !== '');
+
+    if (lHasValue) {
+      merged[key] = lVal;
+    } else if (cHasValue) {
+      merged[key] = cVal;
+    } else {
+      merged[key] = lVal !== undefined ? lVal : cVal;
+    }
+  }
+
+  const canonicalPid = String(
+    localRec.playerId ?? localRec.id ?? cloudRec.playerId ?? cloudRec.id ?? ''
+  ).trim();
+  if (canonicalPid) {
+    merged.playerId = canonicalPid;
+  }
+  merged.status = resolvedStatus;
+
+  return merged;
+}
+
+/**
+ * Reconciles two attendance record lists (`localRecords` and `cloudRecords`) by player (`playerId`):
+ * - Identifies each record by `playerId` (with safe fallback for legacy records).
+ * - Preserves marked attendance statuses (`Presente`, `Ausente`, etc.) from either side without
+ *   overwriting valid statuses with unmarked/empty records.
+ * - Preserves all extra metadata fields and historical records (including the 21 records of the August sessions).
+ * - Produces zero duplicates.
+ */
+export function reconcileSessionAttendanceRecords(
+  localRecords?: any[],
+  cloudRecords?: any[]
+): any[] {
+  const localArr = Array.isArray(localRecords) ? localRecords : [];
+  const cloudArr = Array.isArray(cloudRecords) ? cloudRecords : [];
+
+  const getRecordKey = (rec: any, fallbackPrefix: string, idx: number): string => {
+    if (!rec || typeof rec !== 'object') return `${fallbackPrefix}_invalid_${idx}`;
+    const pid = String(rec.playerId ?? rec.id ?? '').trim();
+    if (pid) return `pid::${pid}`;
+    const nameKey = `${String(rec.playerName || rec.nombre || '').trim().toUpperCase()}__${String(
+      rec.playerLastName || rec.apellidos || ''
+    )
+      .trim()
+      .toUpperCase()}`;
+    if (nameKey !== '__') return `name::${nameKey}`;
+    return `${fallbackPrefix}_unkeyed_${idx}`;
+  };
+
+  const cloudByKey = new Map<string, any>();
+  cloudArr.forEach((cr, idx) => {
+    if (!cr || typeof cr !== 'object') return;
+    const key = getRecordKey(cr, 'cloud', idx);
+    const prev = cloudByKey.get(key);
+    cloudByKey.set(key, prev ? reconcileAttendanceRecordPair(prev, cr) : { ...cr });
+  });
+
+  const reconciledMap = new Map<string, any>();
+  localArr.forEach((lr, idx) => {
+    if (!lr || typeof lr !== 'object') return;
+    const key = getRecordKey(lr, 'local', idx);
+    const existingLocal = reconciledMap.get(key);
+    const baseLocal = existingLocal ? reconcileAttendanceRecordPair(existingLocal, lr) : { ...lr };
+    const matchingCloud = cloudByKey.get(key);
+    if (matchingCloud) {
+      reconciledMap.set(key, reconcileAttendanceRecordPair(baseLocal, matchingCloud));
+      cloudByKey.delete(key);
+    } else {
+      reconciledMap.set(key, baseLocal);
+    }
+  });
+
+  // Append any remaining cloud records not present in localRecords
+  cloudByKey.forEach((cr, key) => {
+    reconciledMap.set(key, cr);
+  });
+
+  return Array.from(reconciledMap.values());
+}
+
+/**
+ * Reconciles session sub-item arrays (`tareas`, `archivos`, `videos`) by `id` (or natural title/url key)
+ * without losing items or creating duplicates.
+ */
+export function reconcileSessionSubItemsById<T = any>(
+  localItems?: T[],
+  cloudItems?: T[]
+): T[] {
+  const localArr = Array.isArray(localItems) ? localItems : [];
+  const cloudArr = Array.isArray(cloudItems) ? cloudItems : [];
+  if (localArr.length === 0) return [...cloudArr];
+  if (cloudArr.length === 0) return [...localArr];
+
+  const getKey = (item: any, prefix: string, idx: number): string => {
+    if (!item || typeof item !== 'object') return `${prefix}_${idx}`;
+    const id = String(item.id || '').trim();
+    if (id) return `id::${id}`;
+    const natural = String(item.titulo || item.nombre || item.url || '').trim().toLowerCase();
+    if (natural) return `nat::${natural}`;
+    return `${prefix}_${idx}`;
+  };
+
+  const merged = new Map<string, T>();
+  localArr.forEach((item, idx) => {
+    merged.set(getKey(item, 'local', idx), item);
+  });
+  cloudArr.forEach((item, idx) => {
+    const k = getKey(item, 'cloud', idx);
+    if (!merged.has(k)) {
+      merged.set(k, item);
+    } else {
+      merged.set(k, { ...(item as any), ...(merged.get(k) as any) });
+    }
+  });
+  return Array.from(merged.values());
+}
+
+/**
+ * Generates a unique, persistent identifier for a newly created training session at creation time.
+ * That identifier is preserved across `localStorage`, `Supabase`, and `Firestore`.
+ */
+export function createPersistentSessionId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  const randHex = () =>
+    Math.floor((1 + Math.random()) * 0x10000)
+      .toString(16)
+      .substring(1);
+  return `${randHex()}${randHex()}-${randHex()}-4${randHex().slice(1)}-a${randHex().slice(1)}-${randHex()}${randHex()}${randHex()}`;
+}
+
+/**
+ * FASE A — Computes a deterministic 32-bit FNV-1a hex fingerprint of a legacy ID-less session's
+ * full content (`fecha`, `hora`, `tipo`, `descripcion`, `lugar`, `observaciones`, `createdAt`,
+ * `records`, `tareas`, `archivos`, `videos`).
+ * Ensures that two different legacy sessions without an explicit ID that share the same descriptive
+ * fields (`fecha`, `hora`, `tipo`, `descripcion`, `lugar`) produce distinct fingerprints whenever
+ * any of their records, observations, tasks, files, videos, or timestamps differ, while repeated reads
+ * of the same legacy session always produce the exact same deterministic fingerprint.
+ */
+export function computeSessionContentFingerprint(session: any): string {
+  const fecha = String(session?.fecha || session?.dateStr || '').trim();
+  const hora = String(session?.hora || '19:30 h').trim().toLowerCase();
+  const tipo = String(session?.tipo || session?.type || 'Entrenamiento').trim().toLowerCase();
+  const desc = String(session?.descripcion || session?.title || 'Sesión de entrenamiento')
+    .trim()
+    .toLowerCase();
+  const lugar = String(session?.lugar || '').trim().toLowerCase();
+  const obs = String(session?.observaciones || session?.notas || '').trim().toLowerCase();
+  const metaOrigin = String(
+    session?.createdAt ||
+      session?.created_at ||
+      session?._createdAtMs ||
+      session?.turno ||
+      session?.sessionIndex ||
+      ''
+  ).trim();
+
+  const recordsArr: any[] = Array.isArray(session?.records) ? session.records : [];
+  const recordsSig = recordsArr
+    .map((r: any) => {
+      const pid = String(r?.playerId ?? r?.id ?? '').trim();
+      const st = r?.status !== undefined && r?.status !== null ? String(r.status).trim() : '';
+      const extra = String(r?.comentario || r?.motivo || r?.horaLlegada || '')
+        .trim()
+        .toLowerCase();
+      return pid || st || extra ? `${pid}:${st}:${extra}` : '';
+    })
+    .filter(Boolean)
+    .sort()
+    .join('|');
+
+  const tareasArr: any[] = Array.isArray(session?.tareas) ? session.tareas : [];
+  const tareasSig = tareasArr
+    .map(
+      (t: any) =>
+        `${String(t?.id || '').trim()}:${String(t?.titulo || '')
+          .trim()
+          .toLowerCase()}:${String(t?.duracion || '')
+          .trim()
+          .toLowerCase()}:${String(t?.descripcion || '')
+          .trim()
+          .toLowerCase()}`
+    )
+    .join('|');
+
+  const archivosArr: any[] = Array.isArray(session?.archivos) ? session.archivos : [];
+  const archivosSig = archivosArr
+    .map((f: any) => `${String(f?.id || '').trim()}:${String(f?.nombre || '').trim().toLowerCase()}`)
+    .join('|');
+
+  const videosArr: any[] = Array.isArray(session?.videos) ? session.videos : [];
+  const videosSig = videosArr
+    .map(
+      (v: any) =>
+        `${String(v?.id || '').trim()}:${String(v?.nombre || v?.url || '')
+          .trim()
+          .toLowerCase()}`
+    )
+    .join('|');
+
+  const raw = `${fecha}__${hora}__${tipo}__${desc}__${lugar}__${obs}__${metaOrigin}__${recordsSig}__${tareasSig}__${archivosSig}__${videosSig}`;
+  let hash = 2166136261;
+  for (let i = 0; i < raw.length; i++) {
+    hash ^= raw.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * FASE A — Strict deduplication key generator for Full Sessions (`AttendanceSession`).
+ * Guarantees simultaneously:
+ * 1. Every new session receives a unique persistent ID at creation time (`createPersistentSessionId()`),
+ *    preserved across `localStorage`, `Supabase`, and `Firestore`.
+ * 2. Any session that already has a valid persistent ID (including historical IDs like `'1773944162835'`,
+ *    UUIDs, or an already-assigned deterministic ID `'unidentified_...'`) is recognized across all stores
+ *    by that exact identifier (`dedupKey: "id::" + rawId`), so modifying its attendance or notes never
+ *    changes its identity or creates duplicates.
+ * 3. Two different sessions NEVER merge, even if they lack an ID and share identical descriptive data
+ *    (`fecha`, `hora`, `tipo`, `descripcion`, `lugar`).
+ * 4. For legacy sessions without an ID, assigns a deterministic ID (`unidentified_<fecha>_<fp>_<occIndex>`)
+ *    without generating random UUIDs on read and without deleting any records.
+ */
+export function getStrictFullSessionDeduplicationKey(
+  session: any,
+  seenCounterInCurrentStore?: Map<string, number>
+): {
+  dedupKey: string;
+  effectiveSessionId: string;
+  hasExplicitValidId: boolean;
+} {
+  const fecha = String(session?.fecha || session?.dateStr || 'nodate').trim();
+  const rawId = String(session?.id ?? session?.sessionId ?? '').trim();
+  const isBareDateId = /^\d{4}-\d{2}-\d{2}$/.test(rawId) || (fecha !== '' && rawId === fecha);
+
+  if (rawId && !isBareDateId) {
+    const syntheticMatch = /^unidentified_(.+)_([0-9a-f]{8})_(\d+)$/.exec(rawId);
+    if (syntheticMatch && seenCounterInCurrentStore) {
+      const baseFpKey = `fp::${syntheticMatch[1]}::${syntheticMatch[2]}`;
+      const existingOcc = Number(syntheticMatch[3]);
+      const currCount = seenCounterInCurrentStore.get(baseFpKey) ?? 0;
+      if (Number.isFinite(existingOcc) && existingOcc + 1 > currCount) {
+        seenCounterInCurrentStore.set(baseFpKey, existingOcc + 1);
+      }
+    }
+    return {
+      dedupKey: `id::${rawId}`,
+      effectiveSessionId: rawId,
+      hasExplicitValidId: true,
+    };
+  }
+
+  const fp = computeSessionContentFingerprint(session);
+  const baseFpKey = `fp::${fecha || 'nodate'}::${fp}`;
+  const occIndex = seenCounterInCurrentStore ? (seenCounterInCurrentStore.get(baseFpKey) ?? 0) : 0;
+  if (seenCounterInCurrentStore) {
+    seenCounterInCurrentStore.set(baseFpKey, occIndex + 1);
+  }
+
+  const effectiveSessionId = `unidentified_${fecha || 'nodate'}_${fp}_${occIndex}`;
+  return {
+    dedupKey: `id::${effectiveSessionId}`,
+    effectiveSessionId,
+    hasExplicitValidId: false,
+  };
+}
+
+/**
+ * Tombstone record representing an explicitly deleted training session,
+ * bound strictly to the session's real identity (`id`, `dedupKey`, `fingerprint`) and `teamId`.
+ */
+export interface DeletedSessionTombstone {
+  id?: string;
+  dedupKey?: string;
+  fingerprint?: string;
+  teamId?: string;
+  team?: string;
+  fecha: string;
+  hora?: string;
+  tipo?: string;
+  descripcion?: string;
+  deletedAtMs?: number;
+}
+
+/**
+ * Builds a strict session deletion tombstone bound to the session's canonical team and real identity.
+ */
+export function createSessionDeletionTombstone(
+  session: any,
+  targetTeamOrId?: string | null,
+  seenCounterInCurrentStore?: Map<string, number>
+): DeletedSessionTombstone {
+  const canonicalTeamId = resolveCanonicalTeamId(
+    targetTeamOrId || extractRecordCanonicalTeamId(session)
+  );
+  const { dedupKey, effectiveSessionId, hasExplicitValidId } =
+    getStrictFullSessionDeduplicationKey(session, seenCounterInCurrentStore);
+  const rawId = String(session?.id ?? session?.sessionId ?? '').trim();
+  const fp = computeSessionContentFingerprint(session);
+  const fecha = String(session?.fecha || session?.dateStr || '').trim();
+
+  return {
+    id: hasExplicitValidId ? rawId : effectiveSessionId,
+    dedupKey,
+    fingerprint: fp,
+    teamId: canonicalTeamId,
+    team:
+      getTeamDisplayName(canonicalTeamId) ||
+      String(session?.team || targetTeamOrId || '').trim(),
+    fecha,
+    hora: String(session?.hora || '').trim(),
+    tipo: String(session?.tipo || session?.type || '').trim(),
+    descripcion: String(session?.descripcion || session?.title || '').trim(),
+    deletedAtMs: Date.now(),
+  };
+}
+
+/**
+ * Evaluates whether a candidate session matches a specific deletion tombstone:
+ * - Strictly enforces team isolation (`teamId`): a tombstone for one team NEVER matches another team.
+ * - When a tombstone carries a session ID (`id`) or `dedupKey`, matches ONLY that exact session identity
+ *   and NEVER matches other sessions simply because they share the same `fecha`.
+ * - For legacy ID-less sessions, matches by `effectiveSessionId` / `dedupKey` / `fingerprint` + `teamId`.
+ */
+export function doesSessionMatchTombstone(
+  session: any,
+  tombstone: DeletedSessionTombstone | any,
+  targetTeamOrId?: string | null,
+  sessionDedupInfo?: {
+    dedupKey: string;
+    effectiveSessionId: string;
+    hasExplicitValidId: boolean;
+  }
+): boolean {
+  if (!session || typeof session !== 'object' || !tombstone || typeof tombstone !== 'object') {
+    return false;
+  }
+
+  const activeTeamId = targetTeamOrId ? resolveCanonicalTeamId(targetTeamOrId) : '';
+  const sessTeamId = extractRecordCanonicalTeamId(session) || activeTeamId;
+  const tombTeamId =
+    resolveCanonicalTeamId(tombstone.teamId || tombstone.team) || activeTeamId;
+
+  if (sessTeamId && tombTeamId && sessTeamId !== tombTeamId) {
+    return false;
+  }
+  if (activeTeamId && sessTeamId && sessTeamId !== activeTeamId) {
+    return false;
+  }
+  if (activeTeamId && tombTeamId && tombTeamId !== activeTeamId) {
+    return false;
+  }
+
+  const sessFecha = String(session.fecha || session.dateStr || '').trim();
+  const rawSessId = String(session.id ?? session.sessionId ?? '').trim();
+  const sessIsBareDate =
+    /^\d{4}-\d{2}-\d{2}$/.test(rawSessId) || (sessFecha !== '' && rawSessId === sessFecha);
+  const sessHasExplicitNonSyntheticId = Boolean(
+    rawSessId && !sessIsBareDate && !rawSessId.startsWith('unidentified_')
+  );
+
+  const dedup = sessionDedupInfo || getStrictFullSessionDeduplicationKey(session);
+
+  const tombId = String(tombstone.id || '').trim();
+  const tombFecha = String(tombstone.fecha || '').trim();
+  const tombIsBareDate =
+    /^\d{4}-\d{2}-\d{2}$/.test(tombId) || (tombFecha !== '' && tombId === tombFecha);
+  const hasTombId = Boolean(tombId && !tombIsBareDate);
+  const tombDedupKey = String(
+    tombstone.dedupKey || (hasTombId ? `id::${tombId}` : '')
+  ).trim();
+  const tombFp = String(tombstone.fingerprint || '').trim();
+
+  // 1. Tombstone has an explicit ID or dedupKey: NEVER fall back to date-only matching
+  if (hasTombId || tombDedupKey) {
+    if (sessHasExplicitNonSyntheticId) {
+      return (
+        (hasTombId && rawSessId === tombId) ||
+        (Boolean(tombDedupKey) && dedup.dedupKey === tombDedupKey)
+      );
+    }
+    if (hasTombId && dedup.effectiveSessionId === tombId) {
+      return true;
+    }
+    if (tombDedupKey && dedup.dedupKey === tombDedupKey) {
+      return true;
+    }
+    return false;
+  }
+
+  // 2. Tombstone has a content fingerprint (legacy ID-less session tombstone without explicit ID):
+  // Require both canonical teamId and exact content fingerprint match (never date alone)
+  if (tombFp) {
+    if (sessHasExplicitNonSyntheticId) {
+      return false;
+    }
+    if (!sessTeamId || !tombTeamId || sessTeamId !== tombTeamId) {
+      return false;
+    }
+    if (tombFecha && sessFecha !== tombFecha) {
+      return false;
+    }
+    return computeSessionContentFingerprint(session) === tombFp;
+  }
+
+  // 3. Any tombstone lacking id, dedupKey, and fingerprint cannot unambiguously identify a session:
+  // NEVER match by date alone.
+  return false;
+}
+
+/**
+ * Checks if a session is marked as deleted by any tombstone in `deletedList` for the target team.
+ */
+export function isSessionDeletedByTombstones(
+  session: any,
+  deletedList?: (DeletedSessionTombstone | any)[],
+  targetTeamOrId?: string | null,
+  sessionDedupInfo?: {
+    dedupKey: string;
+    effectiveSessionId: string;
+    hasExplicitValidId: boolean;
+  }
+): boolean {
+  if (!Array.isArray(deletedList) || deletedList.length === 0) return false;
+  const dedup = sessionDedupInfo || getStrictFullSessionDeduplicationKey(session);
+  return deletedList.some((tomb) =>
+    doesSessionMatchTombstone(session, tomb, targetTeamOrId, dedup)
+  );
+}
+
+/**
+ * Reconciles a team's monthly calendar event map (`Record<dateStr, CalendarEvent>`) after a training session is deleted:
+ * - Never modifies events belonging to other teams (`teamId` isolation).
+ * - If another active training session of the same team exists on the same date in `remainingSessions`,
+ *   preserves the calendar event on that date and binds it to the remaining session (`sessionId`, `title`, `hora`, `lugar`).
+ * - Only removes the calendar event on that date when no active sessions remain on that date for that team
+ *   and the event belonged to the deleted session.
+ */
+export function reconcileMonthlyCalendarAfterSessionDeletion(params: {
+  calendarEvents: Record<string, any>;
+  deletedSession: any;
+  remainingSessions: any[];
+  teamName: string;
+}): {
+  updatedEvents: Record<string, any>;
+  changed: boolean;
+  preservedSessionOnSameDate: any | null;
+} {
+  const { calendarEvents, deletedSession, remainingSessions, teamName } = params;
+  const safeEvents: Record<string, any> =
+    calendarEvents && typeof calendarEvents === 'object' ? { ...calendarEvents } : {};
+  const canonicalTeamId = resolveCanonicalTeamId(teamName);
+  const fecha = String(deletedSession?.fecha || deletedSession?.dateStr || '').trim();
+
+  if (!fecha || !canonicalTeamId || !safeEvents[fecha]) {
+    return {
+      updatedEvents: safeEvents,
+      changed: false,
+      preservedSessionOnSameDate: null,
+    };
+  }
+
+  const calEv = safeEvents[fecha];
+  if (!calEv || typeof calEv !== 'object' || calEv.type !== 'Entrenamiento') {
+    return {
+      updatedEvents: safeEvents,
+      changed: false,
+      preservedSessionOnSameDate: null,
+    };
+  }
+
+  // Never modify a calendar event belonging to another team
+  const evTeamId = extractRecordCanonicalTeamId(calEv);
+  if (evTeamId && evTeamId !== canonicalTeamId) {
+    return {
+      updatedEvents: safeEvents,
+      changed: false,
+      preservedSessionOnSameDate: null,
+    };
+  }
+
+  // Locate any remaining active session of this team on the same date
+  const remSeen = new Map<string, number>();
+  let remainingOnSameDate: any | null = null;
+  let remainingEffectiveId = '';
+
+  for (const s of Array.isArray(remainingSessions) ? remainingSessions : []) {
+    if (!s || typeof s !== 'object') continue;
+    if (s.tipo === 'CalendarioMensual' || s.unverifiedOrigin) continue;
+    const sTeamId = extractRecordCanonicalTeamId(s);
+    if (sTeamId && sTeamId !== canonicalTeamId) continue;
+    if (!isSessionAllowedForActiveTeamView(s, canonicalTeamId)) continue;
+    const sDedup = getStrictFullSessionDeduplicationKey(s, remSeen);
+    if (String(s.fecha || '').trim() === fecha) {
+      remainingOnSameDate = s;
+      remainingEffectiveId = sDedup.effectiveSessionId;
+      break;
+    }
+  }
+
+  if (remainingOnSameDate) {
+    safeEvents[fecha] = {
+      ...calEv,
+      dateStr: fecha,
+      teamId: canonicalTeamId,
+      team: getTeamDisplayName(canonicalTeamId) || teamName,
+      sessionId: remainingEffectiveId,
+      title: remainingOnSameDate.descripcion || calEv.title || 'Entrenamiento',
+      type: 'Entrenamiento',
+      hora: remainingOnSameDate.hora || calEv.hora || '19:30 h',
+      lugar: remainingOnSameDate.lugar ?? calEv.lugar ?? '',
+    };
+    return {
+      updatedEvents: safeEvents,
+      changed: true,
+      preservedSessionOnSameDate: {
+        ...remainingOnSameDate,
+        id: remainingEffectiveId,
+      },
+    };
+  }
+
+  // No remaining sessions on this date for this team:
+  // Only delete the calendar entry if it was bound to the deleted session (or had no sessionId)
+  const deletedDedup = getStrictFullSessionDeduplicationKey(deletedSession);
+  const rawDeletedId = String(deletedSession?.id ?? deletedSession?.sessionId ?? '').trim();
+  const evSessionId = String(calEv.sessionId || '').trim();
+
+  if (
+    !evSessionId ||
+    evSessionId === rawDeletedId ||
+    evSessionId === deletedDedup.effectiveSessionId
+  ) {
+    delete safeEvents[fecha];
+    return {
+      updatedEvents: safeEvents,
+      changed: true,
+      preservedSessionOnSameDate: null,
+    };
+  }
+
+  return {
+    updatedEvents: safeEvents,
+    changed: false,
+    preservedSessionOnSameDate: null,
+  };
+}
+
+/**
+ * Executes a safe, isolated deletion of a single training session:
+ * 1. Verifies that the target session is unambiguously identified and belongs to `teamName`.
+ *    If a legacy session without ID cannot be unequivocally identified, refuses automatic deletion.
+ * 2. Records a session-identity tombstone (`id`, `dedupKey`, `fingerprint`, `teamId`) in `team_deleted_sessions_${teamName}`.
+ * 3. Removes ONLY the targeted session from `currentSessions` and `localStorage` (`team_sessions_${teamName}` and
+ *    `ud_lapoveda_table_attendance_sessions`), leaving other sessions on the same date and other teams untouched.
+ * 4. Executes targeted deletion in Supabase (`attendance_sessions`) strictly scoped by `id` + `team`,
+ *    NEVER executing general `.delete().eq('fecha', fecha)` or team+date delete queries.
+ */
+export async function executeSafeSessionDeletion(params: {
+  sessionToDelete: any;
+  teamName: string;
+  currentSessions?: any[];
+  supabaseClient?: any;
+}): Promise<{
+  deleted: boolean;
+  remainingSessions: any[];
+  tombstone: DeletedSessionTombstone | null;
+}> {
+  const { sessionToDelete, teamName, supabaseClient } = params;
+  const canonicalTeamId = resolveCanonicalTeamId(teamName);
+  const sessionsKey = `team_sessions_${teamName}`;
+
+  const baseSessions: any[] = Array.isArray(params.currentSessions)
+    ? params.currentSessions
+    : (() => {
+        if (typeof localStorage === 'undefined') return [];
+        try {
+          const raw = localStorage.getItem(sessionsKey);
+          return raw ? JSON.parse(raw) : [];
+        } catch {
+          return [];
+        }
+      })();
+
+  if (
+    !sessionToDelete ||
+    typeof sessionToDelete !== 'object' ||
+    !canonicalTeamId ||
+    sessionToDelete.unverifiedOrigin === true
+  ) {
+    return { deleted: false, remainingSessions: baseSessions, tombstone: null };
+  }
+
+  const sessTeamId = extractRecordCanonicalTeamId(sessionToDelete);
+  if (sessTeamId && sessTeamId !== canonicalTeamId) {
+    // Refuse to delete a session belonging to another team
+    return { deleted: false, remainingSessions: baseSessions, tombstone: null };
+  }
+
+  const fechaToDelete = String(sessionToDelete.fecha || sessionToDelete.dateStr || '').trim();
+  const rawId = String(sessionToDelete.id ?? sessionToDelete.sessionId ?? '').trim();
+  const isBareDateId =
+    /^\d{4}-\d{2}-\d{2}$/.test(rawId) || (fechaToDelete !== '' && rawId === fechaToDelete);
+  const hasExplicitId = Boolean(rawId && !isBareDateId);
+
+  // If a legacy session lacks an explicit ID, verify that it has unequivocal identifying content
+  // (team association + valid date + verifiable content in currentSessions)
+  const hasVerifiableLegacyIdentity = Boolean(
+    !hasExplicitId &&
+      fechaToDelete &&
+      (sessTeamId === canonicalTeamId || doesRecordBelongToTeam(sessionToDelete, canonicalTeamId)) &&
+      (sessionToDelete.hora ||
+        sessionToDelete.descripcion ||
+        (Array.isArray(sessionToDelete.records) && sessionToDelete.records.length > 0))
+  );
+
+  if (!hasExplicitId && !hasVerifiableLegacyIdentity) {
+    return { deleted: false, remainingSessions: baseSessions, tombstone: null };
+  }
+
+  // Locate the exact session inside baseSessions to compute its accurate occurrence-aware dedupKey
+  const listSeen = new Map<string, number>();
+  let matchedDedupInfo:
+    | { dedupKey: string; effectiveSessionId: string; hasExplicitValidId: boolean }
+    | undefined;
+
+  for (const s of baseSessions) {
+    if (!s || typeof s !== 'object') continue;
+    const sDedup = getStrictFullSessionDeduplicationKey(s, listSeen);
+    if (
+      s === sessionToDelete ||
+      (hasExplicitId && (String(s.id ?? '').trim() === rawId || sDedup.effectiveSessionId === rawId))
+    ) {
+      matchedDedupInfo = sDedup;
+      break;
+    }
+  }
+
+  const targetFp = computeSessionContentFingerprint(sessionToDelete);
+
+  if (!matchedDedupInfo && !hasExplicitId) {
+    const fallbackSeen = new Map<string, number>();
+    const matchingCandidates: Array<{
+      dedupKey: string;
+      effectiveSessionId: string;
+      hasExplicitValidId: boolean;
+    }> = [];
+    for (const s of baseSessions) {
+      if (!s || typeof s !== 'object') continue;
+      const sDedup = getStrictFullSessionDeduplicationKey(s, fallbackSeen);
+      if (
+        String(s.fecha || '').trim() === fechaToDelete &&
+        computeSessionContentFingerprint(s) === targetFp
+      ) {
+        matchingCandidates.push(sDedup);
+      }
+    }
+    if (matchingCandidates.length === 1) {
+      matchedDedupInfo = matchingCandidates[0];
+    } else {
+      // Cannot unequivocally identify which legacy ID-less session was targeted: refuse automatic deletion
+      return { deleted: false, remainingSessions: baseSessions, tombstone: null };
+    }
+  }
+
+  const targetDedup =
+    matchedDedupInfo || getStrictFullSessionDeduplicationKey(sessionToDelete);
+
+  const tombstone: DeletedSessionTombstone = {
+    id: hasExplicitId ? rawId : targetDedup.effectiveSessionId,
+    dedupKey: targetDedup.dedupKey,
+    fingerprint: targetFp,
+    teamId: canonicalTeamId,
+    team: getTeamDisplayName(canonicalTeamId) || teamName,
+    fecha: fechaToDelete,
+    hora: String(sessionToDelete.hora || '').trim(),
+    tipo: String(sessionToDelete.tipo || sessionToDelete.type || '').trim(),
+    descripcion: String(sessionToDelete.descripcion || sessionToDelete.title || '').trim(),
+    deletedAtMs: Date.now(),
+  };
+
+  // 1. Persist identity-bound tombstone in localStorage
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const deletedKey = `team_deleted_sessions_${teamName}`;
+      const existingRaw = localStorage.getItem(deletedKey);
+      const existingList: DeletedSessionTombstone[] = existingRaw ? JSON.parse(existingRaw) : [];
+      const alreadyExists = existingList.some(
+        (d) =>
+          (d.dedupKey && d.dedupKey === tombstone.dedupKey) ||
+          (d.id && tombstone.id && d.id === tombstone.id)
+      );
+      const updatedDeleted = alreadyExists ? existingList : [...existingList, tombstone];
+      localStorage.setItem(deletedKey, JSON.stringify(updatedDeleted));
+    } catch {}
+  }
+
+  // 2. Remove ONLY the matching session from baseSessions
+  const filterSeen = new Map<string, number>();
+  let removedFromList = false;
+  const remainingSessions = baseSessions.filter((s) => {
+    if (!s || typeof s !== 'object') return false;
+    const sTeamId = extractRecordCanonicalTeamId(s);
+    if (sTeamId && sTeamId !== canonicalTeamId) {
+      return true;
+    }
+    const sDedup = getStrictFullSessionDeduplicationKey(s, filterSeen);
+    if (!removedFromList && doesSessionMatchTombstone(s, tombstone, canonicalTeamId, sDedup)) {
+      removedFromList = true;
+      return false;
+    }
+    return true;
+  });
+
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(`team_sessions_initialized_${teamName}`, 'true');
+      localStorage.setItem(sessionsKey, JSON.stringify(remainingSessions));
+    } catch {}
+
+    // 3. Remove ONLY the matching session of this team from ud_lapoveda_table_attendance_sessions (never by date)
+    try {
+      const rawTable = localStorage.getItem('ud_lapoveda_table_attendance_sessions');
+      if (rawTable) {
+        const tableData: any[] = JSON.parse(rawTable);
+        if (Array.isArray(tableData)) {
+          const tableSeen = new Map<string, number>();
+          let removedFromTable = false;
+          const filteredTable = tableData.filter((item: any) => {
+            if (!item || typeof item !== 'object') return true;
+            if (item.tipo === 'CalendarioMensual') return true;
+            if (!doesRecordBelongToTeam(item, canonicalTeamId)) return true;
+            const itemDedup = getStrictFullSessionDeduplicationKey(item, tableSeen);
+            if (
+              !removedFromTable &&
+              doesSessionMatchTombstone(item, tombstone, canonicalTeamId, itemDedup)
+            ) {
+              removedFromTable = true;
+              return false;
+            }
+            return true;
+          });
+          localStorage.setItem(
+            'ud_lapoveda_table_attendance_sessions',
+            JSON.stringify(filteredTable)
+          );
+        }
+      }
+    } catch {}
+  }
+
+  // 4. Delete from Supabase strictly using persistent session ID + team filter (NEVER delete by fecha)
+  if (supabaseClient && typeof supabaseClient.from === 'function') {
+    try {
+      if (hasExplicitId) {
+        await supabaseClient
+          .from('attendance_sessions')
+          .delete()
+          .eq('id', rawId)
+          .eq('team', teamName);
+      }
+    } catch (err) {
+      console.warn('Supabase targeted session delete skipped/failed:', err);
+    }
+  }
+
+  return {
+    deleted: true,
+    remainingSessions,
+    tombstone,
+  };
+}
+
+/**
+ * FASE A (Condición 1) — In-memory isolation gatekeeper for `AttendanceSession` records.
+ * Prevents contaminated sessions stored in `team_sessions_*`, Supabase `attendance_sessions`,
+ * or Firestore `/club_sync/sessions_*` from re-entering the active calendar or `Asistencia` view
+ * of another team, WITHOUT modifying or deleting any historical records in storage.
+ */
+export function isSessionAllowedForActiveTeamView(
+  session: any,
+  targetTeamOrId?: string | null
+): boolean {
+  if (!session || typeof session !== 'object') return false;
+  if (session.tipo === 'CalendarioMensual') return false;
+  if (session.unverifiedOrigin === true) return false;
+  if (typeof session.descripcion === 'string' && session.descripcion.trim().startsWith('{')) {
+    return false;
+  }
+
+  const targetTeamId = resolveCanonicalTeamId(targetTeamOrId);
+  if (!targetTeamId) return false;
+
+  // 1. Explicit teamId check
+  const recTeamId = extractRecordCanonicalTeamId(session);
+  if (recTeamId && recTeamId !== targetTeamId) {
+    return false;
+  }
+
+  // 2. Explicit foreign team name in description (e.g., "Microciclo Infantil B" inside Senior Femenino)
+  const mentionedTeamId = detectExplicitClubTeamInText(session.descripcion);
+  if (mentionedTeamId && mentionedTeamId !== targetTeamId) {
+    return false;
+  }
+
+  // 3. Check player records and cross-team session IDs in read-only mode
+  if (typeof localStorage !== 'undefined') {
+    const targetRosterIds = new Set<string>();
+    if (targetTeamId === 'team_01_senior_femenino') {
+      JUGADORAS_ADJUNTAS.forEach((j) => targetRosterIds.add(String(j.id).trim()));
+    }
+    const targetDisplayName = getTeamDisplayName(targetTeamId);
+    const customTargetEntry = findCustomTeamRegistryEntry(targetTeamId);
+    const candidateTargetNames = new Set<string>([targetDisplayName]);
+    if (customTargetEntry?.aliases) {
+      customTargetEntry.aliases.forEach((a) => candidateTargetNames.add(a));
+    }
+    for (const candidateName of candidateTargetNames) {
+      if (!candidateName) continue;
+      try {
+        const rawTargetRoster = localStorage.getItem(`team_roster_${candidateName}`);
+        if (rawTargetRoster) {
+          const parsed = JSON.parse(rawTargetRoster);
+          if (Array.isArray(parsed)) {
+            parsed.forEach((p: any) => {
+              if (p?.id) targetRosterIds.add(String(p.id).trim());
+            });
+          }
+        }
+      } catch {}
+    }
+
+    const foreignRosterIds = new Set<string>();
+    const foreignSessionIds = new Set<string>();
+    for (const reg of CLUB_TEAM_REGISTRY) {
+      if (reg.teamId === targetTeamId) continue;
+      try {
+        const rawRoster = localStorage.getItem(`team_roster_${reg.displayName}`);
+        if (rawRoster) {
+          const parsedRoster = JSON.parse(rawRoster);
+          if (Array.isArray(parsedRoster)) {
+            parsedRoster.forEach((p: any) => {
+              const pid = String(p?.id || '').trim();
+              if (pid && !targetRosterIds.has(pid)) {
+                foreignRosterIds.add(pid);
+              }
+            });
+          }
+        }
+      } catch {}
+
+      try {
+        const rawSessions = localStorage.getItem(`team_sessions_${reg.displayName}`);
+        if (rawSessions) {
+          const parsedSessions = JSON.parse(rawSessions);
+          if (Array.isArray(parsedSessions)) {
+            parsedSessions.forEach((s: any) => {
+              const sid = String(s?.id || '').trim();
+              if (sid && !sid.startsWith('cal_')) {
+                foreignSessionIds.add(sid);
+              }
+            });
+          }
+        }
+      } catch {}
+    }
+
+    const recs: any[] = Array.isArray(session.records) ? session.records : [];
+    let targetTeamPlayersCount = 0;
+    let foreignTeamPlayersCount = 0;
+    for (const r of recs) {
+      const pid = String(r?.playerId || r?.id || '').trim();
+      if (!pid) continue;
+      if (targetRosterIds.has(pid)) targetTeamPlayersCount++;
+      else if (foreignRosterIds.has(pid)) foreignTeamPlayersCount++;
+    }
+
+    // Reject if all recognized players in the session belong to a foreign team's roster
+    if (foreignTeamPlayersCount > 0 && targetTeamPlayersCount === 0) {
+      return false;
+    }
+
+    // Reject if the exact sessionId belongs to a foreign team's session list and has 0 target team players
+    const sessionId = String(session.id || '').trim();
+    if (sessionId && foreignSessionIds.has(sessionId) && targetTeamPlayersCount === 0) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -204,7 +1529,12 @@ export function hasUserModifiedSessionContent(session: any): boolean {
 
   if (Array.isArray(session.records)) {
     const hasAnyMarkedStatus = session.records.some(
-      (r: any) => r && r.status !== undefined && r.status !== null && r.status !== 'Pendiente'
+      (r: any) =>
+        r &&
+        r.status !== undefined &&
+        r.status !== null &&
+        String(r.status).trim() !== '' &&
+        r.status !== 'Pendiente'
     );
     if (hasAnyMarkedStatus) return true;
   }
@@ -620,19 +1950,18 @@ export function runTrainingSessionsIsolationAuditAndMigration(
     };
   }
 
-  if (migrationExecutedInSession && !force) {
-    const alreadyDone = localStorage.getItem(TRAINING_ISOLATION_MIGRATION_VERSION_KEY) === 'done';
-    if (alreadyDone) {
-      return {
-        aborted: false,
-        backupVerified: true,
-        backupKeyCount: 0,
-        stampedSessionsCount: 0,
-        inferredHistoricalCount: 0,
-        archivedUnverifiedCount: 0,
-        cleanedCalendarsCount: 0,
-      };
-    }
+  // Automatic migration/cleanup on UI mount (force === false) is disabled
+  // so zero automatic modifications, deletions, or backup overwrites occur on page load.
+  if (!force || (migrationExecutedInSession && !force)) {
+    return {
+      aborted: false,
+      backupVerified: true,
+      backupKeyCount: 0,
+      stampedSessionsCount: 0,
+      inferredHistoricalCount: 0,
+      archivedUnverifiedCount: 0,
+      cleanedCalendarsCount: 0,
+    };
   }
 
   // MANDATORY CONDITION 1: Create full backup and verify integrity + dry-run restoration BEFORE any change
@@ -702,9 +2031,8 @@ export function runTrainingSessionsIsolationAuditAndMigration(
         if (!Array.isArray(parsed)) continue;
 
         const deletedRaw = localStorage.getItem(`team_deleted_sessions_${reg.displayName}`);
-        const deletedList: { id?: string; fecha: string }[] = deletedRaw ? JSON.parse(deletedRaw) : [];
-        const isDel = (id?: string, f?: string) =>
-          deletedList.some((d) => (id && d.id && d.id === id) || (f && d.fecha && d.fecha === f));
+        const deletedList: DeletedSessionTombstone[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+        const auditStoreSeen = new Map<string, number>();
 
         let changed = false;
         const keptSessions: any[] = [];
@@ -752,10 +2080,12 @@ export function runTrainingSessionsIsolationAuditAndMigration(
             sessionIdToTeamIds.get(sid)!.add(reg.teamId);
           }
 
+          const sessDedup = getStrictFullSessionDeduplicationKey(stamped, auditStoreSeen);
+
           // Only register as an active calendar-visible training session if not deleted and not an untouched boilerplate stub
           if (
             stamped.fecha &&
-            !isDel(stamped.id, stamped.fecha) &&
+            !isSessionDeletedByTombstones(stamped, deletedList, reg.teamId, sessDedup) &&
             hasUserModifiedSessionContent(stamped)
           ) {
             verifiedTeamSessionsByDate.get(reg.teamId)!.set(String(stamped.fecha), stamped);
@@ -775,6 +2105,7 @@ export function runTrainingSessionsIsolationAuditAndMigration(
         const tableRows = JSON.parse(rawAttendanceTable);
         if (Array.isArray(tableRows)) {
           let tableChanged = false;
+          const tableAuditSeenByTeam = new Map<string, Map<string, number>>();
 
           const updatedRows = tableRows.map((row: any) => {
             if (!row || typeof row !== 'object') return row;
@@ -806,11 +2137,21 @@ export function runTrainingSessionsIsolationAuditAndMigration(
             if (directTeamId) {
               const displayName = getTeamDisplayName(directTeamId);
               const deletedRaw = localStorage.getItem(`team_deleted_sessions_${displayName}`);
-              const deletedList: { id?: string; fecha: string }[] = deletedRaw
+              const deletedList: DeletedSessionTombstone[] = deletedRaw
                 ? JSON.parse(deletedRaw)
                 : [];
-              const isDel = deletedList.some(
-                (d) => (row.id && d.id === row.id) || (row.fecha && d.fecha === row.fecha)
+              if (!tableAuditSeenByTeam.has(directTeamId)) {
+                tableAuditSeenByTeam.set(directTeamId, new Map());
+              }
+              const rowDedup = getStrictFullSessionDeduplicationKey(
+                row,
+                tableAuditSeenByTeam.get(directTeamId)!
+              );
+              const isDel = isSessionDeletedByTombstones(
+                row,
+                deletedList,
+                directTeamId,
+                rowDedup
               );
 
               if (
@@ -975,9 +2316,9 @@ export function runTrainingSessionsIsolationAuditAndMigration(
           });
 
           const reconstructedSampleClean: Record<string, any> = {};
-          // Keep only verified sessions and verified matches of this specific team
+          // Keep only verified sessions and verified matches of this specific team AND strictly within this month
           teamSessionsMap.forEach((sess, dateStr) => {
-            if (dateStr.startsWith('2026-08') || dateStr.startsWith('2026-09')) {
+            if (isDateStrictlyInMonth(dateStr, yearNum, monthNum)) {
               reconstructedSampleClean[dateStr] = {
                 dateStr,
                 teamId: canonicalTeamId,
@@ -999,6 +2340,17 @@ export function runTrainingSessionsIsolationAuditAndMigration(
 
         for (const [dateStr, ev] of Object.entries(eventsMap as Record<string, any>)) {
           if (!ev || typeof ev !== 'object') continue;
+
+          // Strictly reject out-of-month dragged events
+          if (!isDateStrictlyInMonth(dateStr, yearNum, monthNum)) {
+            auditEntries.push({
+              reason: `Evento arrastrado fuera de mes (${dateStr}) retirado del calendario ${calKey} (${yearNum}-${monthNum})`,
+              sourceLocation: calKey,
+              record: { dateStr, ...ev },
+            });
+            calModified = true;
+            continue;
+          }
 
           const evTeamId = extractRecordCanonicalTeamId(ev);
 
