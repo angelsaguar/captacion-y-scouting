@@ -143,3 +143,83 @@ No se incluye un script ejecutable deliberadamente. Faltan verificaciones impres
 - No se asignaron custom claims a usuarios.
 - No se modificó el código de ejecución.
 - No se modificó `main`, no se fusionó ni se desplegó a producción.
+
+
+## 11. Refinamiento por módulos reales de la aplicación (22-11-2026)
+
+Este apartado concreta la matriz anterior con los módulos declarados en `CLUB_MODULES` y las operaciones localizadas en la rama. Donde el código no permite determinar una necesidad funcional, se mantiene denegación por defecto y se deja explícito como decisión pendiente. No constituye autorización funcional definitiva.
+
+### 11.1 Módulos reales y dependencias
+
+Los únicos módulos de scout definidos en el código son:
+- `scouting`: `/scouting`, `/players`, `/comparison`, `/analytics`.
+- `campograma`: `/campograma`.
+- `needs`: `/needs`.
+- `gestion-equipo`: `/gestion-equipo`, `/coaches`.
+- `estadisticas-rivales`: `/estadisticas-rivales`.
+
+No existe actualmente un claim independiente `antropometria` ni `pruebas-fisicas`. Las páginas de antropometría y pruebas físicas consultadas usan `players` y `player_attributes`; no debe inventarse un módulo de autorización distinto sin modificar primero el modelo de módulos.
+
+### 11.2 Matriz técnica refinada propuesta
+
+| Tabla | Lectura scout | Escritura scout | Borrado scout | Claim de módulo requerido | Nota |
+|---|---|---|---|---|---|
+| `players` | Sí, cuando la pantalla autorizada lo necesita | Sí, solo flujos de scouting/gestión que se aprueben | No | `scouting` o `campograma` o `gestion-equipo` según operación | La fila contiene datos personales; la autorización por módulo no filtra columnas. Limitar campos sensibles en API/vistas o rediseñar el modelo |
+| `player_attributes` | Sí | Sí para operaciones de valoración aprobadas | No | `scouting` | Antropometría y pruebas físicas también utilizan esta tabla; el esquema actual no separa ámbitos |
+| `tactics` | Sí | Sí | No | `campograma` | UPSERT por clave única `season, team`; validar alcance por equipo |
+| `needs` | Sí | Pendiente de aprobación funcional | No | `needs` | El código contiene CRUD; la matriz inicial no debe conceder escritura automáticamente |
+| `coaches` | Sí | Pendiente de aprobación funcional | No | `gestion-equipo` | Contiene email/teléfono/observaciones; limitar exposición y exportación |
+| `team_matches` | Sí | Sí | No | `gestion-equipo` | Validar que las filas correspondan a equipos permitidos |
+| `match_plans` | Sí | Sí | No | `gestion-equipo` | Convocatoria JSONB queda visible como parte de la fila |
+| `attendance_sessions` | Sí | Sí | No | `gestion-equipo` | Restringir por equipo/fecha y validar el contenido JSONB |
+| `observers` | Solo admin por defecto | No | No | Admin | La UI restringe esta página a admin y la tabla no tiene columna de propietario |
+| `users` | Solo perfil propio, si se habilita endpoint/consulta acotada | No desde cliente | No | Identidad autenticada | `Admin.tsx` consulta `select('*')`; mover a endpoint admin y no exponer filas completas a scout |
+| `anthropometrics` | No conceder hasta confirmar uso | No | No | Ninguno hasta localizar flujo | Tabla SQL existe, pero no se encontró llamada directa desde las páginas revisadas |
+| `physical_tests` | No conceder hasta confirmar uso | No | No | Ninguno hasta localizar flujo | La pantalla revisada usa `player_attributes`/almacenamiento local |
+| `team_sessions` | No conceder hasta confirmar uso | No | No | Ninguno hasta localizar flujo | No se localizó llamada directa en la rama |
+| `tactics` | Sí según campograma | Sí según campograma | No | `campograma` | Repetición intencional: es una tabla activa confirmada en Campograma |
+
+**Importante:** los permisos de `players` son la superficie más amplia. Una política por fila no limita columnas; conceder SELECT de la fila completa también puede exponer email, teléfono, año de nacimiento y observaciones. Antes de activar acceso scout a esta tabla hay que decidir si esos campos son necesarios para cada módulo. La solución robusta puede requerir vistas con columnas permitidas o endpoints que proyecten campos, no solo RLS.
+
+### 11.3 Operaciones administrativas que deben salir del navegador
+
+Propuesta de backend admin-only:
+- importación/restauración masiva desde `Admin.tsx`;
+- lectura administrativa de `users`;
+- eliminación de jugadores (por las cascadas de FK);
+- mantenimiento de `observers`;
+- cambios de roles, estado y módulos;
+- seed/limpieza de `seedJugadoras.ts`, o su retirada si ya no se necesita.
+
+El backend debe verificar token Firebase, UID/rol firmado o autorización persistente de servidor, validar el payload y registrar actor/acción/resultado. No aceptar una propiedad `role: admin` enviada por el navegador.
+
+### 11.4 Decisiones de negocio aún no resueltas
+
+No se puede cerrar una matriz ejecutable sin estas decisiones:
+1. ¿El scout puede crear y editar jugadoras desde el módulo `scouting`, o solo consultar y generar informes?
+2. ¿Puede crear y editar jugadores/plantillas desde `gestion-equipo`, o esa escritura es exclusiva del administrador?
+3. ¿Puede crear y editar necesidades desde el módulo `needs`?
+4. ¿Puede crear y editar entrenadores desde `gestion-equipo`?
+5. ¿Qué campos personales de jugadoras puede consultar el scout? El RLS de tabla no oculta columnas.
+6. ¿La subida de fotografías seguirá siendo pública en el bucket `avatars` o debe pasar por backend?
+7. ¿Se mantendrán las tablas `anthropometrics`, `physical_tests` y `team_sessions` aunque no se localice uso en la rama?
+
+Hasta resolver estas decisiones, la política recomendada es conservadora: no conceder escritura scout en `needs` ni `coaches`, no conceder acceso a tablas sin uso confirmado, reservar borrados y operaciones masivas a admin y no exponer `users` al cliente scout.
+
+### 11.5 Pruebas de autorización obligatorias
+
+Para cada tabla y operación, probar con:
+- JWT ausente / sin claim PostgreSQL `role=authenticated`;
+- Firebase de proyecto distinto;
+- usuario activo sin `app_role`;
+- usuario inactivo;
+- admin;
+- scout con cada módulo individual;
+- scout sin el módulo;
+- scout con combinación de módulos;
+- intento directo REST que omita la UI;
+- payload que intente alterar UID, equipo, `created_by`, rol o campos no permitidos.
+
+Las pruebas deben demostrar tanto el resultado permitido como el denegado y comprobar que ninguna política PERMISSIVE antigua amplía acceso por OR.
+
+No se ha generado ni ejecutado SQL. No se han modificado permisos, tablas, datos, claims, Storage ni configuración de producción.
