@@ -1,4 +1,12 @@
 -- FASE B · INVENTARIO DE PRODUCCIÓN SUPABASE (SOLO LECTURA)
+-- IMPORTANTE SOBRE SUPABASE SQL EDITOR:
+-- Al ejecutar varias sentencias SELECT juntas, la interfaz puede mostrar solo
+-- el resultado de la última sentencia (por ejemplo, la consulta 12).
+-- Para recoger el inventario completo, selecciona y ejecuta CADA bloque SELECT
+-- por separado, desde su comentario numerado hasta el punto y coma final.
+-- No ejecutes BEGIN/ROLLBACK en ese modo: cada bloque es un SELECT de solo lectura.
+-- Exporta cada resultado como CSV. No hace falta compartir datos de filas de negocio.
+--
 -- Ejecutar en Supabase SQL Editor del proyecto CAPTACION Y SCOUTING.
 -- Este script NO consulta filas de negocio ni datos personales.
 -- No crea ni modifica objetos. Termina con ROLLBACK.
