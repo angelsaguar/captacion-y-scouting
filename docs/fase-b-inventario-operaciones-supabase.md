@@ -377,3 +377,53 @@ Archivos revisados en la rama `feat/fase-b-hardening-supabase`:
 6. Probar con cuentas admin/scout en un proyecto aislado antes de cambiar producción.
 
 No se ha modificado el bucket, sus políticas, las fotografías ni el código de la aplicación.
+
+
+## 22. Inventario de operaciones por módulo (revisión estática de código, 22-11-2026)
+
+Revisión realizada en la rama `feat/fase-b-hardening-supabase` de `src/App.tsx`, `src/lib/clubAccessAndSync.ts`, servicios de coaches/needs/observers, páginas de jugadores, administración y gestión de equipo.
+
+### Módulos y control de acceso de interfaz
+La aplicación define estos módulos para el perfil scout:
+- `scouting`: `/scouting`, `/players`, `/comparison`, `/analytics`.
+- `campograma`: `/campograma`.
+- `needs`: `/needs`.
+- `gestion-equipo`: `/gestion-equipo`, `/coaches`.
+- `estadisticas-rivales`: `/estadisticas-rivales`.
+
+El código cliente deja todas las rutas al administrador y limita al scout por módulos habilitados en configuración Firestore. `/admin` y `/observers` se restringen en la interfaz al administrador. Esto es control de navegación de frontend; no sustituye autorización RLS en Supabase ni autorización de API.
+
+### Tablas y operaciones Supabase localizadas
+
+| Tabla | Operaciones localizadas | Contexto / módulo |
+|---|---|---|
+| `players` | SELECT, INSERT, UPSERT, UPDATE, DELETE | Scouting, plantilla, asistencia, partidos, panel admin, analítica y sincronización |
+| `player_attributes` | SELECT, UPSERT, DELETE | Valoraciones de scouting, plantilla y sincronización |
+| `attendance_sessions` | SELECT, UPSERT | Gestión de equipo, asistencia, sincronización y restauración/admin |
+| `team_matches` | SELECT, INSERT, UPSERT | Gestión de equipo, partidos, sincronización y admin |
+| `match_plans` | SELECT, INSERT, UPDATE, UPSERT | Planificación de partidos y sincronización |
+| `coaches` | SELECT, INSERT, UPDATE, DELETE | Gestión de entrenadores |
+| `needs` | SELECT, INSERT, UPDATE, DELETE | Necesidades de plantilla |
+| `observers` | SELECT, INSERT, UPDATE, DELETE | Administración de observadores |
+| `users` | SELECT | Panel de administración |
+| `anthropometrics` | No se localizó acceso directo en las páginas revisadas | La página de antropometría revisada trabaja con estado/localStorage; verificar todas las rutas de persistencia antes de decidir permisos |
+| `physical_tests` | No se localizó acceso directo en las páginas revisadas | La página de pruebas físicas revisada trabaja con estado/localStorage; verificar persistencia y sincronización |
+| `tactics` | No se localizó acceso directo en los archivos revisados | No conceder permisos de negocio hasta localizar un flujo activo |
+| `team_sessions` | No se localizó acceso directo en los archivos revisados | La asistencia usa `attendance_sessions`; confirmar si esta tabla está obsoleta |
+
+### Observaciones de seguridad y diseño
+1. La sincronización `syncAllClubDataWithFirestore` lee `players`, `player_attributes`, `team_matches` y `match_plans`; también sincroniza necesidades y datos de gestión por categorías Firestore. Las operaciones de sincronización deben respetar los módulos permitidos y no asumir que el rol del frontend basta para RLS.
+2. `Players.tsx` contiene lógica de interfaz que reserva el borrado de jugadores al administrador, pero existen también operaciones de borrado en `Plantilla.tsx` y otros flujos. El control debe aplicarse en RLS/backend, no solo en botones.
+3. `Admin.tsx` realiza UPSERT de jugadores, partidos, sesiones, planes, coaches y needs, y lee `users`. Estas acciones de administración deben quedar en backend de confianza o con autorización fuerte no manipulable por el cliente.
+4. `player_attributes` contiene valoraciones de scouting y es leída/escrita desde varias pantallas de plantilla; su política amplia actual permite que una política permisiva neutralice restricciones más específicas.
+5. Las páginas `Antropometria.tsx` y `PruebasFisicas.tsx` consultan `players` y `player_attributes`, pero no se localizaron operaciones directas a las tablas `anthropometrics` y `physical_tests` en los archivos inspeccionados. No asumir que los datos físicos se guardan en esas tablas sin revisar el flujo de persistencia completo.
+6. El frontend usa un único cliente Supabase con clave anon y no se observó en `src/lib/supabase.ts` el envío de un Firebase ID token mediante `accessToken`. Por tanto, las comprobaciones locales `admin/scout` no se transmiten automáticamente a RLS como identidad autenticada Firebase.
+7. No se debe implantar aún la matriz de permisos propuesta hasta resolver la identidad Firebase→Supabase y separar operaciones administrativas privilegiadas.
+
+### Próximos pasos
+- Confirmar el almacenamiento real de antropometría y pruebas físicas (localStorage/Firestore/Supabase) y revisar si `tactics` y `team_sessions` están en uso.
+- Clasificar por operación y módulo el acceso requerido a las tablas activas.
+- Diseñar el backend confiable para tareas administrativas y la emisión/verificación de claims Firebase.
+- Después, preparar políticas RLS y GRANT por tabla, probadas en entorno aislado.
+
+Esta sección es una revisión estática del código de la rama indicada, no una traza de ejecución ni una prueba de producción. No se ha modificado código, datos ni permisos.
