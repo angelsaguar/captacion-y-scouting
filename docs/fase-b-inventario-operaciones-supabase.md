@@ -345,3 +345,35 @@ Interpretación:
 - Sin políticas aplicables de INSERT/UPDATE/DELETE, las operaciones normales de gestión de objetos mediante Storage API no quedan autorizadas por RLS para los clientes.
 - Antes de añadir políticas, inventariar cómo la aplicación carga, sustituye y elimina imágenes, y confirmar que las llamadas se hacen mediante Storage API y no mediante backend/credenciales privilegiadas.
 - No se ha modificado el bucket ni sus políticas.
+
+
+## 21. Revisión del flujo de fotografías en la aplicación (22-11-2026)
+
+Archivos revisados en la rama `feat/fase-b-hardening-supabase`:
+- `src/pages/PlayerForm.tsx`
+- `src/pages/PlayerDetail.tsx`
+- `src/lib/seedJugadoras.ts`
+- `src/lib/supabase.ts`
+
+### Flujo confirmado en PlayerForm
+- Al seleccionar una fotografía, el navegador la procesa en un canvas con tamaño máximo 350×350 y calidad JPEG 0.82; el resultado Base64 se coloca en `foto_url`.
+- Al guardar, si existe un archivo seleccionado, la aplicación intenta subir el archivo original a `storage.from('avatars')`, en la ruta `player-photos/<nombre-aleatorio>.<extensión>`, con `cacheControl: '3600'` y `upsert: false`.
+- Si la subida falla, usa el Base64 optimizado de `values.foto_url` como valor de `players.foto_url`.
+- Si la subida tiene éxito, genera y guarda la URL pública del bucket.
+- Si no se selecciona archivo, guarda la URL escrita/actual en el campo `foto_url`.
+- En los archivos revisados no se encontró una operación de Storage para eliminar fotografías antiguas al sustituir una imagen o borrar un jugador.
+
+### Implicaciones de las políticas Storage observadas
+- Bucket `avatars` público: las URL públicas permiten mostrar imágenes sin una política SELECT de `storage.objects`.
+- Consulta de políticas devolvió cero filas para `storage.objects`; por tanto no se observan políticas RLS de Storage para autorizar la subida por el cliente. En el flujo actual, un fallo de upload activa el fallback Base64 en la columna `players.foto_url`, siempre que la escritura en la tabla players esté autorizada.
+- La ausencia de políticas no impide que un proceso backend con credenciales privilegiadas gestione objetos, pero no se ha identificado ese flujo en los archivos revisados.
+
+### Recomendaciones para la siguiente fase de diseño (sin ejecutar)
+1. Decidir si las fotografías nuevas deben seguir subiendo al bucket público `avatars`; la aplicación ya utiliza URLs públicas para mostrarlas.
+2. Si se mantiene subida desde cliente, diseñar una política INSERT restringida al bucket `avatars` y al prefijo `player-photos/`, ligada a identidad/rol verificados. No habilitar UPDATE/DELETE por defecto.
+3. Establecer límite de tamaño y MIME permitidos en el bucket, considerando que el código sube el archivo original, no el JPEG reducido generado para Base64.
+4. Revisar si se debe conservar el fallback Base64; no eliminarlo sin medir el impacto y la capacidad de la columna/filas.
+5. Diseñar limpieza de objetos huérfanos como tarea administrativa, una vez se defina la política de sustitución y borrado.
+6. Probar con cuentas admin/scout en un proyecto aislado antes de cambiar producción.
+
+No se ha modificado el bucket, sus políticas, las fotografías ni el código de la aplicación.
