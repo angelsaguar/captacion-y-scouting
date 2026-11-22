@@ -40,20 +40,26 @@ import {
 } from './src/lib/firestoreMatches';
 import {
   CUSTOM_TEAM_REGISTRY_KEY,
+  DeletedSessionTombstone,
   PRE_TRAINING_ISOLATION_BACKUP_KEY,
   UNASSIGNED_SESSIONS_AUDIT_KEY,
   computeSessionContentFingerprint,
   createAndVerifyTrainingSafetyBackup,
   createPersistentSessionId,
+  createSessionDeletionTombstone,
   doesRecordBelongToTeam,
+  doesSessionMatchTombstone,
+  executeSafeSessionDeletion,
   findCustomTeamRegistryEntry,
   getStrictFullSessionDeduplicationKey,
   getTeamDisplayName,
   hasMarkedAttendanceStatus,
   isDateStrictlyInMonth,
   isSessionAllowedForActiveTeamView,
+  isSessionDeletedByTombstones,
   parseStrictYearMonthFromDateStr,
   reconcileAttendanceRecordPair,
+  reconcileMonthlyCalendarAfterSessionDeletion,
   reconcileSessionAttendanceRecords,
   registerOrPersistCustomTeam,
   renameCustomTeam,
@@ -1675,6 +1681,480 @@ describe('Auditoría de Seguridad Previa a Publicación – Captación y Scoutin
       assert.equal(mergedForRenamedTeam[0].id, 'sess-custom-hist-1');
       assert.equal(mergedForRenamedTeam[0].teamId, 'team_custom_cadete_c_personalizado');
       assert.equal(mergedForRenamedTeam[0].records[0].status, 'Presente');
+    });
+
+    it('elimina una sesión de una fecha sin eliminar otra sesión de la misma fecha ni afectar a otros equipos, y permite eliminar sesiones distintas del mismo día de forma independiente', async () => {
+      const sameDate = '2026-10-14';
+
+      const seniorMorningSession = {
+        id: 'sess-sf-morning-2026-10-14',
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+        fecha: sameDate,
+        hora: '10:00 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Sesión matinal física Senior Femenino',
+        records: [{ playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' }],
+      };
+
+      const seniorEveningSession = {
+        id: 'sess-sf-evening-2026-10-14',
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+        fecha: sameDate,
+        hora: '20:00 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Sesión vespertina táctica Senior Femenino',
+        records: [{ playerId: JUGADORAS_ADJUNTAS[1].id, status: 'Presente' }],
+      };
+
+      const infantilBSameDateSession = {
+        id: 'sess-infb-2026-10-14',
+        teamId: 'team_08_infantil_b',
+        team: 'INFANTIL B',
+        fecha: sameDate,
+        hora: '18:00 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Sesión Infantil B misma fecha',
+        records: [{ playerId: 'p-infb-yubero-2', status: 'Presente' }],
+      };
+
+      localStorage.setItem(
+        'team_sessions_SENIOR FEMENINO',
+        JSON.stringify([seniorMorningSession, seniorEveningSession])
+      );
+      localStorage.setItem(
+        'team_sessions_INFANTIL B',
+        JSON.stringify([infantilBSameDateSession])
+      );
+      localStorage.setItem(
+        'ud_lapoveda_table_attendance_sessions',
+        JSON.stringify([
+          seniorMorningSession,
+          seniorEveningSession,
+          infantilBSameDateSession,
+        ])
+      );
+
+      // 1. Eliminar únicamente la sesión matinal de SENIOR FEMENINO
+      const delMorningResult = await executeSafeSessionDeletion({
+        sessionToDelete: seniorMorningSession,
+        teamName: 'SENIOR FEMENINO',
+        currentSessions: [seniorMorningSession, seniorEveningSession],
+      });
+
+      assert.equal(
+        delMorningResult.remainingSessions.length,
+        1,
+        'Debe quedar intacta la segunda sesión del mismo día en SENIOR FEMENINO'
+      );
+      assert.equal(
+        delMorningResult.remainingSessions[0].id,
+        'sess-sf-evening-2026-10-14',
+        'La sesión vespertina de la misma fecha no debe eliminarse'
+      );
+
+      // Verificar que INFANTIL B conserva intacta su sesión de la misma fecha en su clave local y en la tabla fallback
+      const infBSessionsAfter = JSON.parse(localStorage.getItem('team_sessions_INFANTIL B') || '[]');
+      assert.equal(infBSessionsAfter.length, 1);
+      assert.equal(infBSessionsAfter[0].id, 'sess-infb-2026-10-14');
+
+      const fallbackTableAfterFirstDelete = JSON.parse(
+        localStorage.getItem('ud_lapoveda_table_attendance_sessions') || '[]'
+      );
+      assert.equal(
+        fallbackTableAfterFirstDelete.length,
+        2,
+        'En la tabla fallback deben permanecer la sesión vespertina de SENIOR FEMENINO y la sesión de INFANTIL B'
+      );
+      assert.equal(
+        fallbackTableAfterFirstDelete.some((s: any) => s.id === 'sess-sf-morning-2026-10-14'),
+        false
+      );
+      assert.equal(
+        fallbackTableAfterFirstDelete.some((s: any) => s.id === 'sess-sf-evening-2026-10-14'),
+        true
+      );
+      assert.equal(
+        fallbackTableAfterFirstDelete.some((s: any) => s.id === 'sess-infb-2026-10-14'),
+        true
+      );
+
+      // 2. Eliminar posteriormente la segunda sesión del mismo día de forma independiente
+      const delEveningResult = await executeSafeSessionDeletion({
+        sessionToDelete: seniorEveningSession,
+        teamName: 'SENIOR FEMENINO',
+        currentSessions: delMorningResult.remainingSessions,
+      });
+
+      assert.equal(
+        delEveningResult.remainingSessions.length,
+        0,
+        'La segunda sesión del mismo día debe poder eliminarse de forma independiente'
+      );
+
+      // INFANTIL B sigue 100% intacto
+      const fallbackTableAfterSecondDelete = JSON.parse(
+        localStorage.getItem('ud_lapoveda_table_attendance_sessions') || '[]'
+      );
+      assert.equal(fallbackTableAfterSecondDelete.length, 1);
+      assert.equal(fallbackTableAfterSecondDelete[0].id, 'sess-infb-2026-10-14');
+    });
+
+    it('prohíbe borrados generales en Supabase solo por fecha y exige siempre identificación inequívoca de sesión y equipo', async () => {
+      const recordedDeleteFilterChains: Array<Array<{ column: string; value: any }>> = [];
+
+      const createMockSupabaseDeleteClient = () => ({
+        from: (tableName: string) => {
+          assert.equal(tableName, 'attendance_sessions');
+          return {
+            delete: () => {
+              const chain: Array<{ column: string; value: any }> = [];
+              recordedDeleteFilterChains.push(chain);
+              const builder: any = {
+                eq: (column: string, value: any) => {
+                  chain.push({ column, value });
+                  return builder;
+                },
+                then: (resolve: any) => Promise.resolve({ data: null, error: null }).then(resolve),
+              };
+              return builder;
+            },
+          };
+        },
+      });
+
+      const sessionWithId = {
+        id: 'sess-sf-unique-2026-10-21',
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+        fecha: '2026-10-21',
+        hora: '20:00 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Entrenamiento con ID persistente',
+        records: [{ playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' }],
+      };
+
+      await executeSafeSessionDeletion({
+        sessionToDelete: sessionWithId,
+        teamName: 'SENIOR FEMENINO',
+        currentSessions: [sessionWithId],
+        supabaseClient: createMockSupabaseDeleteClient(),
+      });
+
+      assert.ok(
+        recordedDeleteFilterChains.length > 0,
+        'Debe haberse invocado delete() en Supabase para la sesión con ID'
+      );
+
+      for (const chain of recordedDeleteFilterChains) {
+        const hasIdFilter = chain.some(
+          (f) => f.column === 'id' && f.value === 'sess-sf-unique-2026-10-21'
+        );
+        const hasTeamFilter = chain.some(
+          (f) =>
+            (f.column === 'team' && f.value === 'SENIOR FEMENINO') ||
+            (f.column === 'teamId' && f.value === 'team_01_senior_femenino') ||
+            (f.column === 'team_id' && f.value === 'SENIOR FEMENINO')
+        );
+        const isGeneralFechaOnlyDelete =
+          chain.some((f) => f.column === 'fecha') && !hasIdFilter;
+
+        assert.equal(
+          isGeneralFechaOnlyDelete,
+          false,
+          'NUNCA debe ejecutarse un borrado general en Supabase filtrando solo por fecha'
+        );
+        assert.equal(
+          hasIdFilter && hasTeamFilter,
+          true,
+          'Cada operación delete en Supabase debe incluir tanto el ID inequívoco de la sesión como el filtro de equipo'
+        );
+      }
+
+      // Verificar también para una sesión legacy sin ID que NO se lanza ninguna consulta general .delete().eq('fecha', ...)
+      recordedDeleteFilterChains.length = 0;
+      const legacyNoIdSessionA = {
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+        fecha: '2026-10-22',
+        hora: '20:00 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Sesión legacy A sin ID',
+        records: [{ playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' }],
+      };
+      const legacyNoIdSessionB = {
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+        fecha: '2026-10-22',
+        hora: '20:00 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Sesión legacy A sin ID',
+        records: [{ playerId: JUGADORAS_ADJUNTAS[1].id, status: 'Ausente' }],
+      };
+
+      const legacyDelResult = await executeSafeSessionDeletion({
+        sessionToDelete: legacyNoIdSessionA,
+        teamName: 'SENIOR FEMENINO',
+        currentSessions: [legacyNoIdSessionA, legacyNoIdSessionB],
+        supabaseClient: createMockSupabaseDeleteClient(),
+      });
+
+      assert.equal(
+        recordedDeleteFilterChains.length,
+        0,
+        'Para sesiones legacy sin ID en Supabase nunca debe lanzarse un delete general por fecha'
+      );
+      assert.equal(
+        legacyDelResult.remainingSessions.length,
+        1,
+        'Solo debe eliminarse la sesión legacy seleccionada, conservando la otra sesión sin ID del mismo día'
+      );
+      assert.equal(
+        legacyDelResult.remainingSessions[0].records[0].playerId,
+        JUGADORAS_ADJUNTAS[1].id
+      );
+
+      // Verificación estática sobre Asistencia.tsx para garantizar que no existen llamadas .delete().eq('fecha', ...)
+      const asistenciaSource = fs.readFileSync(
+        path.resolve(process.cwd(), 'src/pages/gestion/Asistencia.tsx'),
+        'utf-8'
+      );
+      assert.equal(
+        asistenciaSource.includes(".delete()\n          .eq('fecha'"),
+        false,
+        'Asistencia.tsx no debe contener borrados generales .delete().eq("fecha", ...)'
+      );
+      assert.equal(
+        asistenciaSource.includes(".delete().eq('fecha'"),
+        false,
+        'Asistencia.tsx no debe contener borrados generales .delete().eq("fecha", ...)'
+      );
+    });
+
+    it('garantiza que una sesión eliminada no reaparece tras sincronización PUSH/PULL mientras que otra sesión de la misma fecha se mantiene y sincroniza con normalidad', async () => {
+      const targetDate = '2026-10-28';
+
+      const sessionToDelete = {
+        id: 'sess-sf-delete-2026-10-28-a',
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+        fecha: targetDate,
+        hora: '19:00 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Sesión A eliminada en dispositivo 1',
+        records: [{ playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' }],
+      };
+
+      const sessionToKeepOnSameDate = {
+        id: 'sess-sf-keep-2026-10-28-b',
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+        fecha: targetDate,
+        hora: '20:30 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Sesión B activa en la misma fecha',
+        records: [
+          { playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' },
+          { playerId: JUGADORAS_ADJUNTAS[1].id, status: undefined },
+        ],
+      };
+
+      localStorage.setItem(
+        'team_sessions_SENIOR FEMENINO',
+        JSON.stringify([sessionToDelete, sessionToKeepOnSameDate])
+      );
+
+      // Dispositivo 1 elimina sessionToDelete
+      const delResult = await executeSafeSessionDeletion({
+        sessionToDelete,
+        teamName: 'SENIOR FEMENINO',
+        currentSessions: [sessionToDelete, sessionToKeepOnSameDate],
+      });
+
+      assert.equal(delResult.remainingSessions.length, 1);
+      assert.equal(delResult.remainingSessions[0].id, 'sess-sf-keep-2026-10-28-b');
+
+      // Ahora ocurre una sincronización PULL/PUSH con Firestore donde la nube todavía tenía sessionToDelete
+      // y además traía un estado de asistencia actualizado para sessionToKeepOnSameDate
+      const cloudSessionsBeforePush = [
+        sessionToDelete,
+        {
+          ...sessionToKeepOnSameDate,
+          records: [
+            { playerId: JUGADORAS_ADJUNTAS[0].id, status: undefined },
+            { playerId: JUGADORAS_ADJUNTAS[1].id, status: 'Justificado' },
+          ],
+        },
+      ];
+
+      const reconciledAfterSync = mergeAndFilterTeamSessionsForTargetTeam(
+        cloudSessionsBeforePush,
+        delResult.remainingSessions,
+        'SENIOR FEMENINO'
+      );
+
+      assert.equal(
+        reconciledAfterSync.length,
+        1,
+        'La sesión eliminada jamás debe reaparecer tras la sincronización PUSH/PULL y la otra sesión de la misma fecha debe conservarse'
+      );
+      assert.equal(reconciledAfterSync[0].id, 'sess-sf-keep-2026-10-28-b');
+      assert.equal(
+        reconciledAfterSync[0].records.find((r: any) => r.playerId === JUGADORAS_ADJUNTAS[0].id)
+          ?.status,
+        'Presente',
+        'La sesión activa de la misma fecha conserva el estado Presente local'
+      );
+      assert.equal(
+        reconciledAfterSync[0].records.find((r: any) => r.playerId === JUGADORAS_ADJUNTAS[1].id)
+          ?.status,
+        'Justificado',
+        'La sesión activa de la misma fecha reconcilia el estado Justificado desde la nube'
+      );
+    });
+
+    it('conserva en el calendario mensual la sesión restante cuando hay varias sesiones en la misma fecha, no modifica eventos de otros equipos y rechaza tombstones o borrados sin identificación inequívoca', async () => {
+      const targetDate = '2026-10-30';
+
+      const session1 = {
+        id: 'sess-sf-cal-1',
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+        fecha: targetDate,
+        hora: '10:00 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Entrenamiento Matinal',
+        records: [{ playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' }],
+      };
+
+      const session2 = {
+        id: 'sess-sf-cal-2',
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+        fecha: targetDate,
+        hora: '19:30 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Entrenamiento Vespertino Táctico',
+        records: [{ playerId: JUGADORAS_ADJUNTAS[1].id, status: 'Presente' }],
+      };
+
+      // 1. Tombstone basado únicamente en fecha NUNCA debe ocultar ninguna sesión (con o sin ID)
+      const legacyDateOnlyTombstone = { fecha: targetDate };
+      assert.equal(
+        doesSessionMatchTombstone(session1, legacyDateOnlyTombstone, 'SENIOR FEMENINO'),
+        false,
+        'Un tombstone solo con fecha nunca debe coincidir ni ocultar una sesión con ID'
+      );
+      assert.equal(
+        doesSessionMatchTombstone(
+          { ...session1, id: undefined },
+          legacyDateOnlyTombstone,
+          'SENIOR FEMENINO'
+        ),
+        false,
+        'Un tombstone sin id, dedupKey ni fingerprint nunca debe ocultar una sesión antigua sin ID'
+      );
+
+      // 2. Si no se puede identificar inequívocamente una sesión antigua sin ID, no se borra automáticamente
+      const ambiguousNoIdSession = {
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+        fecha: targetDate,
+      };
+      const ambiguousDeleteAttempt = await executeSafeSessionDeletion({
+        sessionToDelete: ambiguousNoIdSession,
+        teamName: 'SENIOR FEMENINO',
+        currentSessions: [session1, session2],
+      });
+      assert.equal(
+        ambiguousDeleteAttempt.deleted,
+        false,
+        'Una sesión sin ID que no pueda identificarse inequívocamente no debe borrarse automáticamente'
+      );
+      assert.equal(ambiguousDeleteAttempt.remainingSessions.length, 2);
+
+      // 3. Si hay dos sesiones en el mismo día y se elimina la primera, el calendario mensual conserva el evento apuntando a la sesión restante
+      const initialCalendarEvents: Record<string, any> = {
+        [targetDate]: {
+          dateStr: targetDate,
+          teamId: 'team_01_senior_femenino',
+          team: 'SENIOR FEMENINO',
+          sessionId: 'sess-sf-cal-1',
+          title: 'Entrenamiento Matinal',
+          type: 'Entrenamiento',
+          hora: '10:00 h',
+        },
+      };
+
+      const delSession1Result = await executeSafeSessionDeletion({
+        sessionToDelete: session1,
+        teamName: 'SENIOR FEMENINO',
+        currentSessions: [session1, session2],
+      });
+      assert.equal(delSession1Result.deleted, true);
+      assert.equal(delSession1Result.remainingSessions.length, 1);
+
+      const calAfterFirstDelete = reconcileMonthlyCalendarAfterSessionDeletion({
+        calendarEvents: initialCalendarEvents,
+        deletedSession: session1,
+        remainingSessions: delSession1Result.remainingSessions,
+        teamName: 'SENIOR FEMENINO',
+      });
+
+      assert.equal(calAfterFirstDelete.changed, true);
+      assert.ok(
+        calAfterFirstDelete.updatedEvents[targetDate],
+        'El evento del calendario mensual debe mantenerse cuando queda otra sesión activa en la misma fecha'
+      );
+      assert.equal(
+        calAfterFirstDelete.updatedEvents[targetDate].sessionId,
+        'sess-sf-cal-2',
+        'El evento del calendario debe actualizar su sessionId a la sesión restante'
+      );
+      assert.equal(
+        calAfterFirstDelete.updatedEvents[targetDate].title,
+        'Entrenamiento Vespertino Táctico'
+      );
+      assert.equal(calAfterFirstDelete.updatedEvents[targetDate].hora, '19:30 h');
+
+      // 4. Si el evento en el calendario perteneciera a otro equipo (por ejemplo INFANTIL B), nunca debe modificarse
+      const otherTeamCalendarEvents: Record<string, any> = {
+        [targetDate]: {
+          dateStr: targetDate,
+          teamId: 'team_08_infantil_b',
+          team: 'INFANTIL B',
+          sessionId: 'sess-infb-cal-1',
+          title: 'Entrenamiento Infantil B',
+          type: 'Entrenamiento',
+          hora: '18:00 h',
+        },
+      };
+      const calOtherTeamAttempt = reconcileMonthlyCalendarAfterSessionDeletion({
+        calendarEvents: otherTeamCalendarEvents,
+        deletedSession: session2,
+        remainingSessions: [],
+        teamName: 'SENIOR FEMENINO',
+      });
+      assert.equal(
+        calOtherTeamAttempt.changed,
+        false,
+        'Nunca debe modificarse ni eliminarse un evento de calendario perteneciente a otro equipo'
+      );
+      assert.equal(
+        calOtherTeamAttempt.updatedEvents[targetDate].sessionId,
+        'sess-infb-cal-1'
+      );
+
+      // 5. Cuando se elimina la última sesión activa de esa fecha para el equipo, el evento de calendario se elimina limpiamente
+      const calAfterSecondDelete = reconcileMonthlyCalendarAfterSessionDeletion({
+        calendarEvents: calAfterFirstDelete.updatedEvents,
+        deletedSession: session2,
+        remainingSessions: [],
+        teamName: 'SENIOR FEMENINO',
+      });
+      assert.equal(calAfterSecondDelete.changed, true);
+      assert.equal(calAfterSecondDelete.updatedEvents[targetDate], undefined);
     });
   });
 });

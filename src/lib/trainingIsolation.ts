@@ -835,6 +835,512 @@ export function getStrictFullSessionDeduplicationKey(
 }
 
 /**
+ * Tombstone record representing an explicitly deleted training session,
+ * bound strictly to the session's real identity (`id`, `dedupKey`, `fingerprint`) and `teamId`.
+ */
+export interface DeletedSessionTombstone {
+  id?: string;
+  dedupKey?: string;
+  fingerprint?: string;
+  teamId?: string;
+  team?: string;
+  fecha: string;
+  hora?: string;
+  tipo?: string;
+  descripcion?: string;
+  deletedAtMs?: number;
+}
+
+/**
+ * Builds a strict session deletion tombstone bound to the session's canonical team and real identity.
+ */
+export function createSessionDeletionTombstone(
+  session: any,
+  targetTeamOrId?: string | null,
+  seenCounterInCurrentStore?: Map<string, number>
+): DeletedSessionTombstone {
+  const canonicalTeamId = resolveCanonicalTeamId(
+    targetTeamOrId || extractRecordCanonicalTeamId(session)
+  );
+  const { dedupKey, effectiveSessionId, hasExplicitValidId } =
+    getStrictFullSessionDeduplicationKey(session, seenCounterInCurrentStore);
+  const rawId = String(session?.id ?? session?.sessionId ?? '').trim();
+  const fp = computeSessionContentFingerprint(session);
+  const fecha = String(session?.fecha || session?.dateStr || '').trim();
+
+  return {
+    id: hasExplicitValidId ? rawId : effectiveSessionId,
+    dedupKey,
+    fingerprint: fp,
+    teamId: canonicalTeamId,
+    team:
+      getTeamDisplayName(canonicalTeamId) ||
+      String(session?.team || targetTeamOrId || '').trim(),
+    fecha,
+    hora: String(session?.hora || '').trim(),
+    tipo: String(session?.tipo || session?.type || '').trim(),
+    descripcion: String(session?.descripcion || session?.title || '').trim(),
+    deletedAtMs: Date.now(),
+  };
+}
+
+/**
+ * Evaluates whether a candidate session matches a specific deletion tombstone:
+ * - Strictly enforces team isolation (`teamId`): a tombstone for one team NEVER matches another team.
+ * - When a tombstone carries a session ID (`id`) or `dedupKey`, matches ONLY that exact session identity
+ *   and NEVER matches other sessions simply because they share the same `fecha`.
+ * - For legacy ID-less sessions, matches by `effectiveSessionId` / `dedupKey` / `fingerprint` + `teamId`.
+ */
+export function doesSessionMatchTombstone(
+  session: any,
+  tombstone: DeletedSessionTombstone | any,
+  targetTeamOrId?: string | null,
+  sessionDedupInfo?: {
+    dedupKey: string;
+    effectiveSessionId: string;
+    hasExplicitValidId: boolean;
+  }
+): boolean {
+  if (!session || typeof session !== 'object' || !tombstone || typeof tombstone !== 'object') {
+    return false;
+  }
+
+  const activeTeamId = targetTeamOrId ? resolveCanonicalTeamId(targetTeamOrId) : '';
+  const sessTeamId = extractRecordCanonicalTeamId(session) || activeTeamId;
+  const tombTeamId =
+    resolveCanonicalTeamId(tombstone.teamId || tombstone.team) || activeTeamId;
+
+  if (sessTeamId && tombTeamId && sessTeamId !== tombTeamId) {
+    return false;
+  }
+  if (activeTeamId && sessTeamId && sessTeamId !== activeTeamId) {
+    return false;
+  }
+  if (activeTeamId && tombTeamId && tombTeamId !== activeTeamId) {
+    return false;
+  }
+
+  const sessFecha = String(session.fecha || session.dateStr || '').trim();
+  const rawSessId = String(session.id ?? session.sessionId ?? '').trim();
+  const sessIsBareDate =
+    /^\d{4}-\d{2}-\d{2}$/.test(rawSessId) || (sessFecha !== '' && rawSessId === sessFecha);
+  const sessHasExplicitNonSyntheticId = Boolean(
+    rawSessId && !sessIsBareDate && !rawSessId.startsWith('unidentified_')
+  );
+
+  const dedup = sessionDedupInfo || getStrictFullSessionDeduplicationKey(session);
+
+  const tombId = String(tombstone.id || '').trim();
+  const tombFecha = String(tombstone.fecha || '').trim();
+  const tombIsBareDate =
+    /^\d{4}-\d{2}-\d{2}$/.test(tombId) || (tombFecha !== '' && tombId === tombFecha);
+  const hasTombId = Boolean(tombId && !tombIsBareDate);
+  const tombDedupKey = String(
+    tombstone.dedupKey || (hasTombId ? `id::${tombId}` : '')
+  ).trim();
+  const tombFp = String(tombstone.fingerprint || '').trim();
+
+  // 1. Tombstone has an explicit ID or dedupKey: NEVER fall back to date-only matching
+  if (hasTombId || tombDedupKey) {
+    if (sessHasExplicitNonSyntheticId) {
+      return (
+        (hasTombId && rawSessId === tombId) ||
+        (Boolean(tombDedupKey) && dedup.dedupKey === tombDedupKey)
+      );
+    }
+    if (hasTombId && dedup.effectiveSessionId === tombId) {
+      return true;
+    }
+    if (tombDedupKey && dedup.dedupKey === tombDedupKey) {
+      return true;
+    }
+    return false;
+  }
+
+  // 2. Tombstone has a content fingerprint (legacy ID-less session tombstone without explicit ID):
+  // Require both canonical teamId and exact content fingerprint match (never date alone)
+  if (tombFp) {
+    if (sessHasExplicitNonSyntheticId) {
+      return false;
+    }
+    if (!sessTeamId || !tombTeamId || sessTeamId !== tombTeamId) {
+      return false;
+    }
+    if (tombFecha && sessFecha !== tombFecha) {
+      return false;
+    }
+    return computeSessionContentFingerprint(session) === tombFp;
+  }
+
+  // 3. Any tombstone lacking id, dedupKey, and fingerprint cannot unambiguously identify a session:
+  // NEVER match by date alone.
+  return false;
+}
+
+/**
+ * Checks if a session is marked as deleted by any tombstone in `deletedList` for the target team.
+ */
+export function isSessionDeletedByTombstones(
+  session: any,
+  deletedList?: (DeletedSessionTombstone | any)[],
+  targetTeamOrId?: string | null,
+  sessionDedupInfo?: {
+    dedupKey: string;
+    effectiveSessionId: string;
+    hasExplicitValidId: boolean;
+  }
+): boolean {
+  if (!Array.isArray(deletedList) || deletedList.length === 0) return false;
+  const dedup = sessionDedupInfo || getStrictFullSessionDeduplicationKey(session);
+  return deletedList.some((tomb) =>
+    doesSessionMatchTombstone(session, tomb, targetTeamOrId, dedup)
+  );
+}
+
+/**
+ * Reconciles a team's monthly calendar event map (`Record<dateStr, CalendarEvent>`) after a training session is deleted:
+ * - Never modifies events belonging to other teams (`teamId` isolation).
+ * - If another active training session of the same team exists on the same date in `remainingSessions`,
+ *   preserves the calendar event on that date and binds it to the remaining session (`sessionId`, `title`, `hora`, `lugar`).
+ * - Only removes the calendar event on that date when no active sessions remain on that date for that team
+ *   and the event belonged to the deleted session.
+ */
+export function reconcileMonthlyCalendarAfterSessionDeletion(params: {
+  calendarEvents: Record<string, any>;
+  deletedSession: any;
+  remainingSessions: any[];
+  teamName: string;
+}): {
+  updatedEvents: Record<string, any>;
+  changed: boolean;
+  preservedSessionOnSameDate: any | null;
+} {
+  const { calendarEvents, deletedSession, remainingSessions, teamName } = params;
+  const safeEvents: Record<string, any> =
+    calendarEvents && typeof calendarEvents === 'object' ? { ...calendarEvents } : {};
+  const canonicalTeamId = resolveCanonicalTeamId(teamName);
+  const fecha = String(deletedSession?.fecha || deletedSession?.dateStr || '').trim();
+
+  if (!fecha || !canonicalTeamId || !safeEvents[fecha]) {
+    return {
+      updatedEvents: safeEvents,
+      changed: false,
+      preservedSessionOnSameDate: null,
+    };
+  }
+
+  const calEv = safeEvents[fecha];
+  if (!calEv || typeof calEv !== 'object' || calEv.type !== 'Entrenamiento') {
+    return {
+      updatedEvents: safeEvents,
+      changed: false,
+      preservedSessionOnSameDate: null,
+    };
+  }
+
+  // Never modify a calendar event belonging to another team
+  const evTeamId = extractRecordCanonicalTeamId(calEv);
+  if (evTeamId && evTeamId !== canonicalTeamId) {
+    return {
+      updatedEvents: safeEvents,
+      changed: false,
+      preservedSessionOnSameDate: null,
+    };
+  }
+
+  // Locate any remaining active session of this team on the same date
+  const remSeen = new Map<string, number>();
+  let remainingOnSameDate: any | null = null;
+  let remainingEffectiveId = '';
+
+  for (const s of Array.isArray(remainingSessions) ? remainingSessions : []) {
+    if (!s || typeof s !== 'object') continue;
+    if (s.tipo === 'CalendarioMensual' || s.unverifiedOrigin) continue;
+    const sTeamId = extractRecordCanonicalTeamId(s);
+    if (sTeamId && sTeamId !== canonicalTeamId) continue;
+    if (!isSessionAllowedForActiveTeamView(s, canonicalTeamId)) continue;
+    const sDedup = getStrictFullSessionDeduplicationKey(s, remSeen);
+    if (String(s.fecha || '').trim() === fecha) {
+      remainingOnSameDate = s;
+      remainingEffectiveId = sDedup.effectiveSessionId;
+      break;
+    }
+  }
+
+  if (remainingOnSameDate) {
+    safeEvents[fecha] = {
+      ...calEv,
+      dateStr: fecha,
+      teamId: canonicalTeamId,
+      team: getTeamDisplayName(canonicalTeamId) || teamName,
+      sessionId: remainingEffectiveId,
+      title: remainingOnSameDate.descripcion || calEv.title || 'Entrenamiento',
+      type: 'Entrenamiento',
+      hora: remainingOnSameDate.hora || calEv.hora || '19:30 h',
+      lugar: remainingOnSameDate.lugar ?? calEv.lugar ?? '',
+    };
+    return {
+      updatedEvents: safeEvents,
+      changed: true,
+      preservedSessionOnSameDate: {
+        ...remainingOnSameDate,
+        id: remainingEffectiveId,
+      },
+    };
+  }
+
+  // No remaining sessions on this date for this team:
+  // Only delete the calendar entry if it was bound to the deleted session (or had no sessionId)
+  const deletedDedup = getStrictFullSessionDeduplicationKey(deletedSession);
+  const rawDeletedId = String(deletedSession?.id ?? deletedSession?.sessionId ?? '').trim();
+  const evSessionId = String(calEv.sessionId || '').trim();
+
+  if (
+    !evSessionId ||
+    evSessionId === rawDeletedId ||
+    evSessionId === deletedDedup.effectiveSessionId
+  ) {
+    delete safeEvents[fecha];
+    return {
+      updatedEvents: safeEvents,
+      changed: true,
+      preservedSessionOnSameDate: null,
+    };
+  }
+
+  return {
+    updatedEvents: safeEvents,
+    changed: false,
+    preservedSessionOnSameDate: null,
+  };
+}
+
+/**
+ * Executes a safe, isolated deletion of a single training session:
+ * 1. Verifies that the target session is unambiguously identified and belongs to `teamName`.
+ *    If a legacy session without ID cannot be unequivocally identified, refuses automatic deletion.
+ * 2. Records a session-identity tombstone (`id`, `dedupKey`, `fingerprint`, `teamId`) in `team_deleted_sessions_${teamName}`.
+ * 3. Removes ONLY the targeted session from `currentSessions` and `localStorage` (`team_sessions_${teamName}` and
+ *    `ud_lapoveda_table_attendance_sessions`), leaving other sessions on the same date and other teams untouched.
+ * 4. Executes targeted deletion in Supabase (`attendance_sessions`) strictly scoped by `id` + `team`,
+ *    NEVER executing general `.delete().eq('fecha', fecha)` or team+date delete queries.
+ */
+export async function executeSafeSessionDeletion(params: {
+  sessionToDelete: any;
+  teamName: string;
+  currentSessions?: any[];
+  supabaseClient?: any;
+}): Promise<{
+  deleted: boolean;
+  remainingSessions: any[];
+  tombstone: DeletedSessionTombstone | null;
+}> {
+  const { sessionToDelete, teamName, supabaseClient } = params;
+  const canonicalTeamId = resolveCanonicalTeamId(teamName);
+  const sessionsKey = `team_sessions_${teamName}`;
+
+  const baseSessions: any[] = Array.isArray(params.currentSessions)
+    ? params.currentSessions
+    : (() => {
+        if (typeof localStorage === 'undefined') return [];
+        try {
+          const raw = localStorage.getItem(sessionsKey);
+          return raw ? JSON.parse(raw) : [];
+        } catch {
+          return [];
+        }
+      })();
+
+  if (
+    !sessionToDelete ||
+    typeof sessionToDelete !== 'object' ||
+    !canonicalTeamId ||
+    sessionToDelete.unverifiedOrigin === true
+  ) {
+    return { deleted: false, remainingSessions: baseSessions, tombstone: null };
+  }
+
+  const sessTeamId = extractRecordCanonicalTeamId(sessionToDelete);
+  if (sessTeamId && sessTeamId !== canonicalTeamId) {
+    // Refuse to delete a session belonging to another team
+    return { deleted: false, remainingSessions: baseSessions, tombstone: null };
+  }
+
+  const fechaToDelete = String(sessionToDelete.fecha || sessionToDelete.dateStr || '').trim();
+  const rawId = String(sessionToDelete.id ?? sessionToDelete.sessionId ?? '').trim();
+  const isBareDateId =
+    /^\d{4}-\d{2}-\d{2}$/.test(rawId) || (fechaToDelete !== '' && rawId === fechaToDelete);
+  const hasExplicitId = Boolean(rawId && !isBareDateId);
+
+  // If a legacy session lacks an explicit ID, verify that it has unequivocal identifying content
+  // (team association + valid date + verifiable content in currentSessions)
+  const hasVerifiableLegacyIdentity = Boolean(
+    !hasExplicitId &&
+      fechaToDelete &&
+      (sessTeamId === canonicalTeamId || doesRecordBelongToTeam(sessionToDelete, canonicalTeamId)) &&
+      (sessionToDelete.hora ||
+        sessionToDelete.descripcion ||
+        (Array.isArray(sessionToDelete.records) && sessionToDelete.records.length > 0))
+  );
+
+  if (!hasExplicitId && !hasVerifiableLegacyIdentity) {
+    return { deleted: false, remainingSessions: baseSessions, tombstone: null };
+  }
+
+  // Locate the exact session inside baseSessions to compute its accurate occurrence-aware dedupKey
+  const listSeen = new Map<string, number>();
+  let matchedDedupInfo:
+    | { dedupKey: string; effectiveSessionId: string; hasExplicitValidId: boolean }
+    | undefined;
+
+  for (const s of baseSessions) {
+    if (!s || typeof s !== 'object') continue;
+    const sDedup = getStrictFullSessionDeduplicationKey(s, listSeen);
+    if (
+      s === sessionToDelete ||
+      (hasExplicitId && (String(s.id ?? '').trim() === rawId || sDedup.effectiveSessionId === rawId))
+    ) {
+      matchedDedupInfo = sDedup;
+      break;
+    }
+  }
+
+  const targetFp = computeSessionContentFingerprint(sessionToDelete);
+
+  if (!matchedDedupInfo && !hasExplicitId) {
+    const fallbackSeen = new Map<string, number>();
+    const matchingCandidates: Array<{
+      dedupKey: string;
+      effectiveSessionId: string;
+      hasExplicitValidId: boolean;
+    }> = [];
+    for (const s of baseSessions) {
+      if (!s || typeof s !== 'object') continue;
+      const sDedup = getStrictFullSessionDeduplicationKey(s, fallbackSeen);
+      if (
+        String(s.fecha || '').trim() === fechaToDelete &&
+        computeSessionContentFingerprint(s) === targetFp
+      ) {
+        matchingCandidates.push(sDedup);
+      }
+    }
+    if (matchingCandidates.length === 1) {
+      matchedDedupInfo = matchingCandidates[0];
+    } else {
+      // Cannot unequivocally identify which legacy ID-less session was targeted: refuse automatic deletion
+      return { deleted: false, remainingSessions: baseSessions, tombstone: null };
+    }
+  }
+
+  const targetDedup =
+    matchedDedupInfo || getStrictFullSessionDeduplicationKey(sessionToDelete);
+
+  const tombstone: DeletedSessionTombstone = {
+    id: hasExplicitId ? rawId : targetDedup.effectiveSessionId,
+    dedupKey: targetDedup.dedupKey,
+    fingerprint: targetFp,
+    teamId: canonicalTeamId,
+    team: getTeamDisplayName(canonicalTeamId) || teamName,
+    fecha: fechaToDelete,
+    hora: String(sessionToDelete.hora || '').trim(),
+    tipo: String(sessionToDelete.tipo || sessionToDelete.type || '').trim(),
+    descripcion: String(sessionToDelete.descripcion || sessionToDelete.title || '').trim(),
+    deletedAtMs: Date.now(),
+  };
+
+  // 1. Persist identity-bound tombstone in localStorage
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const deletedKey = `team_deleted_sessions_${teamName}`;
+      const existingRaw = localStorage.getItem(deletedKey);
+      const existingList: DeletedSessionTombstone[] = existingRaw ? JSON.parse(existingRaw) : [];
+      const alreadyExists = existingList.some(
+        (d) =>
+          (d.dedupKey && d.dedupKey === tombstone.dedupKey) ||
+          (d.id && tombstone.id && d.id === tombstone.id)
+      );
+      const updatedDeleted = alreadyExists ? existingList : [...existingList, tombstone];
+      localStorage.setItem(deletedKey, JSON.stringify(updatedDeleted));
+    } catch {}
+  }
+
+  // 2. Remove ONLY the matching session from baseSessions
+  const filterSeen = new Map<string, number>();
+  let removedFromList = false;
+  const remainingSessions = baseSessions.filter((s) => {
+    if (!s || typeof s !== 'object') return false;
+    const sTeamId = extractRecordCanonicalTeamId(s);
+    if (sTeamId && sTeamId !== canonicalTeamId) {
+      return true;
+    }
+    const sDedup = getStrictFullSessionDeduplicationKey(s, filterSeen);
+    if (!removedFromList && doesSessionMatchTombstone(s, tombstone, canonicalTeamId, sDedup)) {
+      removedFromList = true;
+      return false;
+    }
+    return true;
+  });
+
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(`team_sessions_initialized_${teamName}`, 'true');
+      localStorage.setItem(sessionsKey, JSON.stringify(remainingSessions));
+    } catch {}
+
+    // 3. Remove ONLY the matching session of this team from ud_lapoveda_table_attendance_sessions (never by date)
+    try {
+      const rawTable = localStorage.getItem('ud_lapoveda_table_attendance_sessions');
+      if (rawTable) {
+        const tableData: any[] = JSON.parse(rawTable);
+        if (Array.isArray(tableData)) {
+          const tableSeen = new Map<string, number>();
+          let removedFromTable = false;
+          const filteredTable = tableData.filter((item: any) => {
+            if (!item || typeof item !== 'object') return true;
+            if (item.tipo === 'CalendarioMensual') return true;
+            if (!doesRecordBelongToTeam(item, canonicalTeamId)) return true;
+            const itemDedup = getStrictFullSessionDeduplicationKey(item, tableSeen);
+            if (
+              !removedFromTable &&
+              doesSessionMatchTombstone(item, tombstone, canonicalTeamId, itemDedup)
+            ) {
+              removedFromTable = true;
+              return false;
+            }
+            return true;
+          });
+          localStorage.setItem(
+            'ud_lapoveda_table_attendance_sessions',
+            JSON.stringify(filteredTable)
+          );
+        }
+      }
+    } catch {}
+  }
+
+  // 4. Delete from Supabase strictly using persistent session ID + team filter (NEVER delete by fecha)
+  if (supabaseClient && typeof supabaseClient.from === 'function') {
+    try {
+      if (hasExplicitId) {
+        await supabaseClient
+          .from('attendance_sessions')
+          .delete()
+          .eq('id', rawId)
+          .eq('team', teamName);
+      }
+    } catch (err) {
+      console.warn('Supabase targeted session delete skipped/failed:', err);
+    }
+  }
+
+  return {
+    deleted: true,
+    remainingSessions,
+    tombstone,
+  };
+}
+
+/**
  * FASE A (Condición 1) — In-memory isolation gatekeeper for `AttendanceSession` records.
  * Prevents contaminated sessions stored in `team_sessions_*`, Supabase `attendance_sessions`,
  * or Firestore `/club_sync/sessions_*` from re-entering the active calendar or `Asistencia` view
@@ -1525,9 +2031,8 @@ export function runTrainingSessionsIsolationAuditAndMigration(
         if (!Array.isArray(parsed)) continue;
 
         const deletedRaw = localStorage.getItem(`team_deleted_sessions_${reg.displayName}`);
-        const deletedList: { id?: string; fecha: string }[] = deletedRaw ? JSON.parse(deletedRaw) : [];
-        const isDel = (id?: string, f?: string) =>
-          deletedList.some((d) => (id && d.id && d.id === id) || (f && d.fecha && d.fecha === f));
+        const deletedList: DeletedSessionTombstone[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+        const auditStoreSeen = new Map<string, number>();
 
         let changed = false;
         const keptSessions: any[] = [];
@@ -1575,10 +2080,12 @@ export function runTrainingSessionsIsolationAuditAndMigration(
             sessionIdToTeamIds.get(sid)!.add(reg.teamId);
           }
 
+          const sessDedup = getStrictFullSessionDeduplicationKey(stamped, auditStoreSeen);
+
           // Only register as an active calendar-visible training session if not deleted and not an untouched boilerplate stub
           if (
             stamped.fecha &&
-            !isDel(stamped.id, stamped.fecha) &&
+            !isSessionDeletedByTombstones(stamped, deletedList, reg.teamId, sessDedup) &&
             hasUserModifiedSessionContent(stamped)
           ) {
             verifiedTeamSessionsByDate.get(reg.teamId)!.set(String(stamped.fecha), stamped);
@@ -1598,6 +2105,7 @@ export function runTrainingSessionsIsolationAuditAndMigration(
         const tableRows = JSON.parse(rawAttendanceTable);
         if (Array.isArray(tableRows)) {
           let tableChanged = false;
+          const tableAuditSeenByTeam = new Map<string, Map<string, number>>();
 
           const updatedRows = tableRows.map((row: any) => {
             if (!row || typeof row !== 'object') return row;
@@ -1629,11 +2137,21 @@ export function runTrainingSessionsIsolationAuditAndMigration(
             if (directTeamId) {
               const displayName = getTeamDisplayName(directTeamId);
               const deletedRaw = localStorage.getItem(`team_deleted_sessions_${displayName}`);
-              const deletedList: { id?: string; fecha: string }[] = deletedRaw
+              const deletedList: DeletedSessionTombstone[] = deletedRaw
                 ? JSON.parse(deletedRaw)
                 : [];
-              const isDel = deletedList.some(
-                (d) => (row.id && d.id === row.id) || (row.fecha && d.fecha === row.fecha)
+              if (!tableAuditSeenByTeam.has(directTeamId)) {
+                tableAuditSeenByTeam.set(directTeamId, new Map());
+              }
+              const rowDedup = getStrictFullSessionDeduplicationKey(
+                row,
+                tableAuditSeenByTeam.get(directTeamId)!
+              );
+              const isDel = isSessionDeletedByTombstones(
+                row,
+                deletedList,
+                directTeamId,
+                rowDedup
               );
 
               if (

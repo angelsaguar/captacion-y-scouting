@@ -46,12 +46,16 @@ import {
   safeLocalStorageSetSessions 
 } from '@/lib/fileStorage';
 import {
+  DeletedSessionTombstone,
   createPersistentSessionId,
   doesRecordBelongToTeam,
+  executeSafeSessionDeletion,
   extractRecordCanonicalTeamId,
   findClubTeamRegistryItem,
   getStrictFullSessionDeduplicationKey,
   isSessionAllowedForActiveTeamView,
+  isSessionDeletedByTombstones,
+  reconcileMonthlyCalendarAfterSessionDeletion,
   reconcileSessionAttendanceRecords,
   reconcileSessionSubItemsById,
   registerOrPersistCustomTeam,
@@ -284,7 +288,7 @@ export const loadCompleteTeamRoster = (teamName: string): TeamPlayer[] => {
   return cleanDeduplicated;
 };
 
-export const getDeletedSessions = (teamName: string): { id?: string; fecha: string }[] => {
+export const getDeletedSessions = (teamName: string): DeletedSessionTombstone[] => {
   try {
     const raw = localStorage.getItem(`team_deleted_sessions_${teamName}`);
     return raw ? JSON.parse(raw) : [];
@@ -293,9 +297,23 @@ export const getDeletedSessions = (teamName: string): { id?: string; fecha: stri
   }
 };
 
-export const isSessionDeleted = (teamName: string, id?: string, fecha?: string): boolean => {
+export const isSessionDeleted = (
+  teamName: string,
+  sessionOrId?: any,
+  fecha?: string,
+  dedupInfo?: {
+    dedupKey: string;
+    effectiveSessionId: string;
+    hasExplicitValidId: boolean;
+  }
+): boolean => {
   const deleted = getDeletedSessions(teamName);
-  return deleted.some(d => (id && d.id && d.id === id) || (fecha && d.fecha && d.fecha === fecha));
+  if (deleted.length === 0) return false;
+  const sessionObj =
+    sessionOrId && typeof sessionOrId === 'object'
+      ? sessionOrId
+      : { id: sessionOrId, fecha: fecha || '' };
+  return isSessionDeletedByTombstones(sessionObj, deleted, teamName, dedupInfo);
 };
 
 export default function Asistencia() {
@@ -460,19 +478,23 @@ export default function Asistencia() {
       try {
         const parsed = JSON.parse(savedSessions);
         if (Array.isArray(parsed)) {
-          const cleanParsed = parsed.filter((item: any) => {
-            if (!item || typeof item !== 'object') return false;
-            if (item.tipo === 'CalendarioMensual') return false;
-            if (typeof item.descripcion === 'string' && item.descripcion.trim().startsWith('{')) return false;
-            if (isSessionDeleted(selectedTeam, item.id, item.fecha)) return false;
-            const itemTeamId = extractRecordCanonicalTeamId(item);
-            if (itemTeamId && itemTeamId !== canonicalTeamId) return false;
-            if (!isSessionAllowedForActiveTeamView(item, canonicalTeamId)) return false;
-            return true;
-          });
-
           const localLoadSeen = new Map<string, number>();
-          initialList = cleanParsed.map((item: any) => {
+          const loadedSessions: AttendanceSession[] = [];
+
+          parsed.forEach((item: any) => {
+            if (!item || typeof item !== 'object') return;
+            if (item.tipo === 'CalendarioMensual') return;
+            if (typeof item.descripcion === 'string' && item.descripcion.trim().startsWith('{')) return;
+            const itemTeamId = extractRecordCanonicalTeamId(item);
+            if (itemTeamId && itemTeamId !== canonicalTeamId) return;
+            if (!isSessionAllowedForActiveTeamView(item, canonicalTeamId)) return;
+
+            const dedupInfo = getStrictFullSessionDeduplicationKey(
+              item,
+              localLoadSeen
+            );
+            if (isSessionDeleted(selectedTeam, item, item.fecha, dedupInfo)) return;
+
             const cleaned = cleanSessionRecords(item.records || [], currentRoster);
             // Ensure all current roster players are included in records in memory without dropping legacy records
             const existingIds = new Set(cleaned.map(r => r.playerId));
@@ -497,19 +519,16 @@ export default function Asistencia() {
               }
             });
 
-            const { effectiveSessionId } = getStrictFullSessionDeduplicationKey(
-              item,
-              localLoadSeen
-            );
-
-            return {
+            loadedSessions.push({
               ...item,
-              id: effectiveSessionId,
+              id: dedupInfo.effectiveSessionId,
               teamId: canonicalTeamId,
               team: selectedTeam,
               records: completeRecords
-            };
+            });
           });
+
+          initialList = loadedSessions;
         }
       } catch {}
     }
@@ -557,13 +576,16 @@ export default function Asistencia() {
               const sTeamId = extractRecordCanonicalTeamId(s);
               if (
                 (!sTeamId || sTeamId === canonicalTeamId) &&
-                isSessionAllowedForActiveTeamView(s, canonicalTeamId) &&
-                !isSessionDeleted(selectedTeam, s.id, s.fecha)
+                isSessionAllowedForActiveTeamView(s, canonicalTeamId)
               ) {
-                const { dedupKey, effectiveSessionId } = getStrictFullSessionDeduplicationKey(
+                const dedupInfo = getStrictFullSessionDeduplicationKey(
                   s,
                   localMergeSeen
                 );
+                if (isSessionDeleted(selectedTeam, s, s.fecha, dedupInfo)) {
+                  return;
+                }
+                const { dedupKey, effectiveSessionId } = dedupInfo;
                 mergedMap.set(dedupKey, {
                   ...s,
                   id: effectiveSessionId,
@@ -581,15 +603,16 @@ export default function Asistencia() {
               ) {
                 return;
               }
-              if (isSessionDeleted(selectedTeam, cloudItem.id, cloudItem.fecha)) {
+              const dedupInfo = getStrictFullSessionDeduplicationKey(
+                cloudItem,
+                supabaseMergeSeen
+              );
+              if (isSessionDeleted(selectedTeam, cloudItem, cloudItem.fecha, dedupInfo)) {
                 return;
               }
 
               const cloudRecords = cleanSessionRecords(cloudItem.records || [], currentRoster);
-              const { dedupKey, effectiveSessionId, hasExplicitValidId } = getStrictFullSessionDeduplicationKey(
-                cloudItem,
-                supabaseMergeSeen
-              );
+              const { dedupKey, effectiveSessionId, hasExplicitValidId } = dedupInfo;
               const existing = mergedMap.get(dedupKey);
               
               if (!existing) {
@@ -704,7 +727,7 @@ export default function Asistencia() {
     try {
       const canonicalTeamId = resolveCanonicalTeamId(teamName);
 
-      // If date changed during edit, remove old date entry from its monthly calendar
+      // If date changed during edit, reconcile old date entry in its monthly calendar
       if (oldDateStr && oldDateStr !== sess.fecha) {
         const oldParts = parseDateStrYearMonth(oldDateStr);
         if (oldParts) {
@@ -712,9 +735,15 @@ export default function Asistencia() {
           const oldCalRaw = localStorage.getItem(oldCalKey);
           if (oldCalRaw) {
             const oldEvents = JSON.parse(oldCalRaw);
-            if (oldEvents && oldEvents[oldDateStr]) {
-              delete oldEvents[oldDateStr];
-              localStorage.setItem(oldCalKey, JSON.stringify(oldEvents));
+            const remainingForOldDate = sessions.filter(s => s.id !== sess.id);
+            const reconciledOld = reconcileMonthlyCalendarAfterSessionDeletion({
+              calendarEvents: oldEvents,
+              deletedSession: { ...sess, fecha: oldDateStr },
+              remainingSessions: remainingForOldDate,
+              teamName,
+            });
+            if (reconciledOld.changed) {
+              localStorage.setItem(oldCalKey, JSON.stringify(reconciledOld.updatedEvents));
               const oldFirst = `${oldParts.year}-${String(oldParts.month + 1).padStart(2, '0')}-01`;
               await supabase.from('attendance_sessions').upsert({
                 id: `cal_master_${teamName}_${oldParts.year}_${oldParts.month}`,
@@ -727,7 +756,7 @@ export default function Asistencia() {
                   year: oldParts.year,
                   teamId: canonicalTeamId,
                   team: teamName,
-                  events: oldEvents,
+                  events: reconciledOld.updatedEvents,
                   updatedAt: new Date().toISOString()
                 }),
                 records: [],
@@ -968,11 +997,11 @@ export default function Asistencia() {
       archivos: []
     };
 
-    // Clear any previous deletion tombstone for this date
+    // Clear any previous deletion tombstone specifically matching this new session ID
     try {
       const deletedKey = `team_deleted_sessions_${selectedTeam}`;
       const currentDeleted = getDeletedSessions(selectedTeam);
-      const filtered = currentDeleted.filter(d => d.fecha !== newSessionData.fecha);
+      const filtered = currentDeleted.filter(d => !d.id || d.id !== newSession.id);
       localStorage.setItem(deletedKey, JSON.stringify(filtered));
     } catch {}
 
@@ -1347,22 +1376,27 @@ export default function Asistencia() {
   };
 
   const handleDeleteSession = async (id: string) => {
-    const sessionToDelete = sessions.find(s => s.id === id) || (selectedSession?.id === id ? selectedSession : null);
-    const fechaToDelete = sessionToDelete?.fecha;
+    const sessionToDelete =
+      sessions.find(s => s.id === id) ||
+      (selectedSession?.id === id ? selectedSession : null);
 
-    // 1. Mark as deleted in tombstone storage so it is never resurrected
-    const deletedKey = `team_deleted_sessions_${selectedTeam}`;
-    try {
-      const currentDeleted = getDeletedSessions(selectedTeam);
-      const updatedDeleted = [...currentDeleted, { id, fecha: fechaToDelete || '' }];
-      localStorage.setItem(deletedKey, JSON.stringify(updatedDeleted));
-    } catch (e) {
-      console.warn('Error saving deleted sessions tombstone:', e);
+    if (!sessionToDelete) {
+      setConfirmDeleteSession(null);
+      return;
     }
 
-    // 2. Filter from local React state and local storage immediately
-    const updated = sessions.filter(s => s.id !== id && (!fechaToDelete || s.fecha !== fechaToDelete));
-    
+    const fechaToDelete = sessionToDelete.fecha;
+
+    // 1. Execute safe, team-isolated and session-specific deletion (tombstone, local array, fallback table & Supabase)
+    const deletionResult = await executeSafeSessionDeletion({
+      sessionToDelete,
+      teamName: selectedTeam,
+      currentSessions: sessions,
+      supabaseClient: supabase,
+    });
+
+    const updated = deletionResult.remainingSessions as AttendanceSession[];
+
     // Explicitly record initialization flag so empty list doesn't trigger default generator
     localStorage.setItem(`team_sessions_initialized_${selectedTeam}`, 'true');
     const sessionsKey = `team_sessions_${selectedTeam}`;
@@ -1381,84 +1415,52 @@ export default function Asistencia() {
     window.dispatchEvent(new CustomEvent('session-updated', { detail: { team: selectedTeam } }));
     window.dispatchEvent(new Event('storage'));
 
-    // 3. Purge from Supabase / Backend Storage
-    try {
-      // Direct delete by ID
-      await supabase
-        .from('attendance_sessions')
-        .delete()
-        .eq('id', id);
-
-      // Direct delete by team & fecha
-      if (fechaToDelete) {
-        await supabase
-          .from('attendance_sessions')
-          .delete()
-          .eq('team', selectedTeam)
-          .eq('fecha', fechaToDelete);
-          
-        await supabase
-          .from('attendance_sessions')
-          .delete()
-          .eq('fecha', fechaToDelete);
-      }
-    } catch (err) {
-      console.warn('Failed to delete attendance session from Supabase:', err);
-    }
-
-    // 4. Also purge directly from the local fallback table if in local mode
-    try {
-      const rawTable = localStorage.getItem('ud_lapoveda_table_attendance_sessions');
-      if (rawTable) {
-        const tableData: any[] = JSON.parse(rawTable);
-        const filteredTable = tableData.filter((item: any) => {
-          if (item.id === id) return false;
-          if (fechaToDelete && item.fecha === fechaToDelete && (item.team === selectedTeam || item.team_id === selectedTeam || !item.team_id)) return false;
-          return true;
-        });
-        localStorage.setItem('ud_lapoveda_table_attendance_sessions', JSON.stringify(filteredTable));
-      }
-    } catch (e) {
-      console.warn('Error cleaning fallback table:', e);
-    }
-
-    // 5. Also if calendar has this date as 'Entrenamiento', remove from calendar events
+    // 2. Reconcile monthly calendar event for fechaToDelete via reconcileMonthlyCalendarAfterSessionDeletion:
+    // Preserves the calendar event if another session remains on fechaToDelete, and never modifies events of other teams.
     try {
       if (fechaToDelete) {
         const parts = parseDateStrYearMonth(fechaToDelete);
         if (parts) {
           const { year, month } = parts;
+          const canonicalTeamId = resolveCanonicalTeamId(selectedTeam);
           const calKey = `team_monthly_calendar_${selectedTeam}_${year}_${month}`;
           const calSaved = localStorage.getItem(calKey);
           if (calSaved) {
             const calEvents = JSON.parse(calSaved);
-            if (calEvents[fechaToDelete] && calEvents[fechaToDelete].type === 'Entrenamiento') {
-              delete calEvents[fechaToDelete];
-              localStorage.setItem(calKey, JSON.stringify(calEvents));
+            const reconciledCal = reconcileMonthlyCalendarAfterSessionDeletion({
+              calendarEvents: calEvents,
+              deletedSession: sessionToDelete,
+              remainingSessions: updated,
+              teamName: selectedTeam,
+            });
+            if (reconciledCal.changed) {
+              localStorage.setItem(calKey, JSON.stringify(reconciledCal.updatedEvents));
               const firstOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
               await supabase.from('attendance_sessions').upsert({
                 id: `cal_master_${selectedTeam}_${year}_${month}`,
+                teamId: canonicalTeamId,
                 team: selectedTeam,
                 fecha: firstOfMonth,
                 tipo: 'CalendarioMensual',
                 descripcion: JSON.stringify({
                   month,
                   year,
+                  teamId: canonicalTeamId,
                   team: selectedTeam,
-                  events: calEvents,
+                  events: reconciledCal.updatedEvents,
                   updatedAt: new Date().toISOString()
                 }),
                 records: [],
                 tareas: [],
                 archivos: []
               });
-              window.dispatchEvent(new CustomEvent('calendar-updated', { detail: { team: selectedTeam, year, month } }));
+              window.dispatchEvent(new CustomEvent('calendar-updated', { detail: { teamId: canonicalTeamId, team: selectedTeam, year, month } }));
             }
           }
         }
       }
     } catch (e) {
-      console.warn('Error removing calendar event:', e);
+      console.warn('Error updating calendar event after session deletion:', e);
     }
 
     setConfirmDeleteSession(null);
