@@ -102,3 +102,26 @@ Esta entrega es un diagnóstico y diseño en rama. No se han modificado:
 - Rama `main`, despliegues ni publicación de la aplicación.
 
 La implementación deberá continuar en esta rama y someterse a pruebas aisladas antes de solicitar autorización para cualquier operación sobre usuarios o servicios de producción.
+
+
+## 6. Implementación preparada en rama (sin despliegue)
+
+Se han aplicado cambios de código en esta rama:
+
+- `server.ts` deja de mantener `serverScoutAccessMirror`; se elimina la fuente de permisos en memoria.
+- El servidor consulta `club_access/alejandro_scout` directamente con Firebase Admin SDK en la base de datos Firestore nombrada configurada por la aplicación.
+- Cada petición protegida del scout valida correo verificado, proyecto Firebase, estado activo, UID sellado y módulo requerido contra el documento persistente.
+- Si Firestore no está disponible, la API responde 503 y deniega la petición; no utiliza permisos antiguos en memoria.
+- Los endpoints antiguos de sincronización y sellado UID se mantienen temporalmente por compatibilidad, pero son de solo lectura: no aceptan cambios de permisos ni escriben UID.
+- Se han retirado del cliente las llamadas que sincronizaban el espejo de memoria.
+- La autorización del administrador requiere ahora que `CLUB_ADMIN_FIREBASE_UID` esté configurada en el entorno del servidor y coincida con el UID del token. El valor no está escrito en el repositorio.
+
+### Configuración pendiente para pruebas
+
+En un entorno aislado de preview/staging, configurar `CLUB_ADMIN_FIREBASE_UID` con el UID administrador confirmado, usando el gestor de variables de entorno del proveedor. No ponerlo en archivos versionados ni en variables `VITE_*`.
+
+La identidad de servicio del servidor debe tener permisos mínimos de lectura sobre el documento de permisos en la base Firestore nombrada. No se debe reutilizar una clave privada en el frontend.
+
+### Verificación aún pendiente
+
+No se ha ejecutado compilación TypeScript, pruebas de integración ni prueba con credenciales reales desde este entorno. Antes de dar la implementación por validada hay que ejecutar el pipeline de build/lint y probar los casos negativos/positivos enumerados en la sección 4. No desplegar ni activar custom claims todavía.
