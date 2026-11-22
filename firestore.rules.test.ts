@@ -232,7 +232,8 @@ describe('Auditoría de Seguridad Previa a Publicación – Captación y Scoutin
           email_verified: true,
         } as any,
         ['gestion-equipo', 'estadisticas-rivales'],
-        defaultMirror
+        defaultMirror,
+        'admin_uid_1'
       );
       assert.equal(res.allowed, true);
       assert.equal(res.role, 'admin');
