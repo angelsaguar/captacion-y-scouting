@@ -6,6 +6,7 @@ import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { fileURLToPath } from "url";
 import { getApps, initializeApp } from "firebase-admin/app";
 import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
+import { getFirestore } from "firebase-admin/firestore";
 import {
   extractCalendarData,
   fetchClasificacionData,
@@ -22,52 +23,26 @@ if (getApps().length === 0) {
   initializeApp({ projectId: EXPECTED_FIREBASE_PROJECT_ID });
 }
 
-export interface ServerScoutMirrorState {
-  email: string;
-  uid: string;
-  uidLocked: boolean;
-  active: boolean;
-  allowedModules: string[];
-  updatedBy: string;
-  updatedAtIso: string;
+export const FIRESTORE_DATABASE_ID = "ai-studio-remixcaptacionys-b51f65a2-fce1-4849-a665-604b0915604c";
+export const SCOUT_ACCESS_DOCUMENT = "club_access/alejandro_scout";
+const adminDb = getFirestore(undefined, FIRESTORE_DATABASE_ID);
+export interface ServerScoutAccessState {
+  email: string; uid: string; uidLocked: boolean; active: boolean; allowedModules: string[];
 }
-
-// Deny by default: all modules for Alejandro start disabled until explicitly enabled by Admin
-const serverScoutAccessMirror: ServerScoutMirrorState = {
-  email: ALEJANDRO_AUTHORIZED_EMAIL,
-  uid: "",
-  uidLocked: false,
-  active: true,
-  allowedModules: [],
-  updatedBy: ADMIN_AUTHORIZED_EMAIL,
-  updatedAtIso: new Date().toISOString(),
-};
-
-export function getServerScoutMirrorState(): ServerScoutMirrorState {
+export async function readScoutAccessFromFirestore(): Promise<ServerScoutAccessState | null> {
+  const snapshot = await adminDb.doc(SCOUT_ACCESS_DOCUMENT).get();
+  if (!snapshot.exists) return null;
+  const data = snapshot.data() || {};
+  const validModules = new Set(["scouting", "campograma", "needs", "gestion-equipo", "estadisticas-rivales"]);
   return {
-    ...serverScoutAccessMirror,
-    allowedModules: [...serverScoutAccessMirror.allowedModules],
+    email: typeof data.email === "string" ? data.email.trim().toLowerCase() : "",
+    uid: typeof data.uid === "string" ? data.uid.trim() : "",
+    uidLocked: data.uidLocked === true,
+    active: data.active === true,
+    allowedModules: Array.isArray(data.allowedModules)
+      ? data.allowedModules.filter((module: unknown): module is string => typeof module === "string" && validModules.has(module))
+      : [],
   };
-}
-
-export function setServerScoutMirrorState(partial: Partial<ServerScoutMirrorState>): ServerScoutMirrorState {
-  if (typeof partial.uid === "string") {
-    serverScoutAccessMirror.uid = partial.uid;
-  }
-  if (typeof partial.uidLocked === "boolean") {
-    serverScoutAccessMirror.uidLocked = partial.uidLocked;
-  }
-  if (typeof partial.active === "boolean") {
-    serverScoutAccessMirror.active = partial.active;
-  }
-  if (Array.isArray(partial.allowedModules)) {
-    serverScoutAccessMirror.allowedModules = partial.allowedModules.filter((m) => typeof m === "string");
-  }
-  if (typeof partial.updatedBy === "string") {
-    serverScoutAccessMirror.updatedBy = partial.updatedBy;
-  }
-  serverScoutAccessMirror.updatedAtIso = new Date().toISOString();
-  return getServerScoutMirrorState();
 }
 
 export interface ClubTokenVerificationResult {
@@ -82,90 +57,20 @@ export interface ClubTokenVerificationResult {
 /**
  * Pure verification evaluator used by the Express middleware after cryptographic verifyIdToken().
  */
-export function evaluateDecodedClubToken(
-  decoded: DecodedIdToken | null | undefined,
-  requiredModules: string[] = [],
-  scoutMirror: ServerScoutMirrorState = serverScoutAccessMirror
-): ClubTokenVerificationResult {
-  if (!decoded || !decoded.uid) {
-    return {
-      allowed: false,
-      statusCode: 401,
-      error: "No autenticado: Token de Firebase inválido o ausente.",
-    };
-  }
-
-  if (decoded.aud && decoded.aud !== EXPECTED_FIREBASE_PROJECT_ID) {
-    return {
-      allowed: false,
-      statusCode: 403,
-      error: `Proyecto Firebase no coincidente (${decoded.aud}).`,
-    };
-  }
-
+export function evaluateDecodedClubToken(decoded: DecodedIdToken | null | undefined, requiredModules: string[] = [], scoutAccess: ServerScoutAccessState | null = null): ClubTokenVerificationResult {
+  if (!decoded || !decoded.uid) return { allowed: false, statusCode: 401, error: "No autenticado: Token inválido o ausente." };
+  if (decoded.aud !== EXPECTED_FIREBASE_PROJECT_ID) return { allowed: false, statusCode: 403, error: "Proyecto Firebase no coincidente." };
   const email = (decoded.email || "").trim().toLowerCase();
-  if (!decoded.email_verified || !email) {
-    return {
-      allowed: false,
-      statusCode: 403,
-      error: "Acceso denegado: Se requiere una cuenta Google con correo verificado.",
-    };
+  if (!decoded.email_verified || !email) return { allowed: false, statusCode: 403, error: "Se requiere una cuenta con correo verificado." };
+  if (email === ADMIN_AUTHORIZED_EMAIL) return { allowed: true, statusCode: 200, role: "admin", email, uid: decoded.uid };
+  if (email !== ALEJANDRO_AUTHORIZED_EMAIL) return { allowed: false, statusCode: 403, error: "Cuenta no autorizada en Captación y Scouting." };
+  if (!scoutAccess || scoutAccess.email !== ALEJANDRO_AUTHORIZED_EMAIL) return { allowed: false, statusCode: 403, error: "Perfil de observador inexistente o no válido." };
+  if (!scoutAccess.active) return { allowed: false, statusCode: 403, error: "La cuenta de observador está desactivada." };
+  if (!scoutAccess.uidLocked || !scoutAccess.uid || scoutAccess.uid !== decoded.uid) return { allowed: false, statusCode: 403, error: "El UID no coincide con el vínculo autorizado y sellado." };
+  if (requiredModules.length > 0 && !requiredModules.some((module) => scoutAccess.allowedModules.includes(module))) {
+    return { allowed: false, statusCode: 403, error: "No está habilitado ninguno de los módulos requeridos: " + requiredModules.join(" / ") };
   }
-
-  if (email === ADMIN_AUTHORIZED_EMAIL) {
-    return {
-      allowed: true,
-      statusCode: 200,
-      role: "admin",
-      email,
-      uid: decoded.uid,
-    };
-  }
-
-  if (email === ALEJANDRO_AUTHORIZED_EMAIL) {
-    if (!scoutMirror.active) {
-      return {
-        allowed: false,
-        statusCode: 403,
-        error: "Acceso revocado: La cuenta de observador se encuentra desactivada por el administrador.",
-      };
-    }
-
-    if (scoutMirror.uidLocked && scoutMirror.uid && scoutMirror.uid !== decoded.uid) {
-      return {
-        allowed: false,
-        statusCode: 403,
-        error: "Alerta de seguridad: El UID de Firebase no coincide con el UID sellado para asaguar04@gmail.com.",
-      };
-    }
-
-    if (requiredModules.length > 0) {
-      const hasAnyRequiredModule = requiredModules.some((mod) =>
-        scoutMirror.allowedModules.includes(mod)
-      );
-      if (!hasAnyRequiredModule) {
-        return {
-          allowed: false,
-          statusCode: 403,
-          error: `Permiso denegado: El administrador no ha habilitado el módulo requerido (${requiredModules.join(" / ")}) para tu cuenta.`,
-        };
-      }
-    }
-
-    return {
-      allowed: true,
-      statusCode: 200,
-      role: "scout",
-      email,
-      uid: decoded.uid,
-    };
-  }
-
-  return {
-    allowed: false,
-    statusCode: 403,
-    error: `Acceso denegado: La cuenta ${email} no está autorizada en Captación y Scouting.`,
-  };
+  return { allowed: true, statusCode: 200, role: "scout", email, uid: decoded.uid };
 }
 
 let myFilename = "";
@@ -252,7 +157,16 @@ function requireClubAuth(requiredModules: string[] = [], adminOnly = false) {
       }
 
       const decoded = await getAuth().verifyIdToken(idToken);
-      const evaluation = evaluateDecodedClubToken(decoded, requiredModules, serverScoutAccessMirror);
+      let scoutAccess: ServerScoutAccessState | null = null;
+      if ((decoded.email || "").trim().toLowerCase() === ALEJANDRO_AUTHORIZED_EMAIL) {
+        try {
+          scoutAccess = await readScoutAccessFromFirestore();
+        } catch (firestoreError) {
+          console.error("Firestore authorization lookup failed:", firestoreError);
+          return res.status(503).json({ error: "No se pudo verificar el perfil de acceso. Inténtalo de nuevo." });
+        }
+      }
+      const evaluation = evaluateDecodedClubToken(decoded, requiredModules, scoutAccess);
 
       if (!evaluation.allowed) {
         return res.status(evaluation.statusCode).json({ error: evaluation.error });
@@ -305,48 +219,31 @@ async function startServer() {
     });
   });
 
-  // Admin endpoint to synchronize Alejandro's module permissions & UID lock to the server mirror
-  app.post(
-    "/api/admin/sync-scout-access",
-    createRateLimiter(30),
-    requireClubAuth([], true),
-    (req, res) => {
-      const { uid, uidLocked, active, allowedModules } = req.body || {};
-      const updated = setServerScoutMirrorState({
-        uid: typeof uid === "string" ? uid.trim().slice(0, 128) : serverScoutAccessMirror.uid,
-        uidLocked: typeof uidLocked === "boolean" ? uidLocked : serverScoutAccessMirror.uidLocked,
-        active: typeof active === "boolean" ? active : serverScoutAccessMirror.active,
-        allowedModules: Array.isArray(allowedModules) ? allowedModules : serverScoutAccessMirror.allowedModules,
-        updatedBy: ADMIN_AUTHORIZED_EMAIL,
-      });
-      return res.json({ ok: true, scoutAccess: updated });
+  // Compatibility endpoint: reports Firestore state; it never accepts writes.
+  app.post("/api/admin/sync-scout-access", createRateLimiter(30), requireClubAuth([], true), async (_req, res) => {
+    try {
+      const access = await readScoutAccessFromFirestore();
+      if (!access) return res.status(404).json({ error: "No existe el perfil de acceso del observador." });
+      return res.json({ ok: true, scoutAccess: access, source: "firestore" });
+    } catch (error) {
+      console.error("Firestore scout access read failed:", error);
+      return res.status(503).json({ error: "No se pudo consultar el perfil de acceso." });
     }
-  );
+  });
 
-  // One-time atomic UID seal mirror endpoint for Alejandro (asaguar04@gmail.com)
-  app.post(
-    "/api/scout/seal-uid",
-    createRateLimiter(15),
-    requireClubAuth([]),
-    (req, res) => {
-      const clubUser = (req as any).clubUser;
-      if (!clubUser || clubUser.email !== ALEJANDRO_AUTHORIZED_EMAIL) {
-        return res.status(403).json({ error: "Operación reservada para la vinculación UID de asaguar04@gmail.com." });
-      }
-      if (!serverScoutAccessMirror.uidLocked && !serverScoutAccessMirror.uid) {
-        setServerScoutMirrorState({
-          uid: clubUser.uid,
-          uidLocked: true,
-          updatedBy: ALEJANDRO_AUTHORIZED_EMAIL,
-        });
-      } else if (serverScoutAccessMirror.uid !== clubUser.uid) {
-        return res.status(403).json({
-          error: "El UID actual no coincide con el UID ya sellado para asaguar04@gmail.com.",
-        });
-      }
-      return res.json({ ok: true, uid: serverScoutAccessMirror.uid, uidLocked: serverScoutAccessMirror.uidLocked });
+  // Compatibility endpoint: validates UID against Firestore without changing it.
+  app.post("/api/scout/seal-uid", createRateLimiter(15), requireClubAuth([]), async (req, res) => {
+    const clubUser = (req as any).clubUser;
+    if (!clubUser || clubUser.email !== ALEJANDRO_AUTHORIZED_EMAIL) return res.status(403).json({ error: "Operación reservada para la cuenta de observador." });
+    try {
+      const access = await readScoutAccessFromFirestore();
+      if (!access || !access.active || !access.uidLocked || access.uid !== clubUser.uid) return res.status(403).json({ error: "El UID no coincide con el vínculo persistido en Firestore." });
+      return res.json({ ok: true, uidLocked: true, source: "firestore" });
+    } catch (error) {
+      console.error("Firestore UID verification failed:", error);
+      return res.status(503).json({ error: "No se pudo verificar el vínculo UID." });
     }
-  );
+  });
 
   // Official RFFM Classification Proxy (Protected by Firebase Admin verifyIdToken + Rate Limit)
   app.get(
