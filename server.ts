@@ -300,12 +300,9 @@ async function startServer() {
           return res.status(403).json({ error: "La cuenta administradora no coincide con la identidad verificada configurada." });
         }
 
-        const adminClaims = buildClubCustomClaims(adminRecord.customClaims || {}, "admin", true, []);
-        await authAdmin.setCustomUserClaims(ADMIN_AUTHORIZED_UID, adminClaims);
-
         const scoutAccess = await readScoutAccessFromFirestore();
         if (!scoutAccess || scoutAccess.email !== ALEJANDRO_AUTHORIZED_EMAIL || !scoutAccess.uidLocked || !scoutAccess.uid) {
-          return res.status(409).json({ error: "El perfil del scout no tiene un UID persistido y sellado; no se han actualizado sus claims." });
+          return res.status(409).json({ error: "El perfil del scout no tiene un UID persistido y sellado; no se han actualizado claims." });
         }
 
         const scoutRecord = await authAdmin.getUser(scoutAccess.uid);
@@ -313,12 +310,17 @@ async function startServer() {
           return res.status(403).json({ error: "La identidad Firebase del scout no coincide con el perfil autorizado." });
         }
 
+        const adminClaims = buildClubCustomClaims(adminRecord.customClaims || {}, "admin", true, []);
         const scoutClaims = buildClubCustomClaims(
           scoutRecord.customClaims || {},
           "scout",
           scoutAccess.active,
           scoutAccess.allowedModules
         );
+
+        // Firebase custom claims are written per user, not transactionally. Validate both
+        // identities and both payloads before starting either write.
+        await authAdmin.setCustomUserClaims(ADMIN_AUTHORIZED_UID, adminClaims);
         await authAdmin.setCustomUserClaims(scoutAccess.uid, scoutClaims);
 
         return res.json({
