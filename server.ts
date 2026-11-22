@@ -280,6 +280,61 @@ async function startServer() {
     }
   });
 
+  // Explicitly gated claims synchronization. Disabled unless an operator enables it
+  // in a non-production test environment after reviewing the rollout plan.
+  app.post(
+    "/api/admin/sync-firebase-claims",
+    createRateLimiter(3),
+    requireClubAuth([], true),
+    async (_req, res) => {
+      if (process.env.ENABLE_FIREBASE_CLAIMS_ISSUANCE !== "true") {
+        return res.status(409).json({ error: "La emisión de claims está deshabilitada en este entorno." });
+      }
+      if (!ADMIN_AUTHORIZED_UID) {
+        return res.status(503).json({ error: "Falta CLUB_ADMIN_FIREBASE_UID en el entorno del servidor." });
+      }
+      try {
+        const authAdmin = getAuth();
+        const adminRecord = await authAdmin.getUser(ADMIN_AUTHORIZED_UID);
+        if ((adminRecord.email || "").trim().toLowerCase() !== ADMIN_AUTHORIZED_EMAIL || !adminRecord.emailVerified) {
+          return res.status(403).json({ error: "La cuenta administradora no coincide con la identidad verificada configurada." });
+        }
+
+        const adminClaims = buildClubCustomClaims(adminRecord.customClaims || {}, "admin", true, []);
+        await authAdmin.setCustomUserClaims(ADMIN_AUTHORIZED_UID, adminClaims);
+
+        const scoutAccess = await readScoutAccessFromFirestore();
+        if (!scoutAccess || scoutAccess.email !== ALEJANDRO_AUTHORIZED_EMAIL || !scoutAccess.uidLocked || !scoutAccess.uid) {
+          return res.status(409).json({ error: "El perfil del scout no tiene un UID persistido y sellado; no se han actualizado sus claims." });
+        }
+
+        const scoutRecord = await authAdmin.getUser(scoutAccess.uid);
+        if ((scoutRecord.email || "").trim().toLowerCase() !== ALEJANDRO_AUTHORIZED_EMAIL || !scoutRecord.emailVerified) {
+          return res.status(403).json({ error: "La identidad Firebase del scout no coincide con el perfil autorizado." });
+        }
+
+        const scoutClaims = buildClubCustomClaims(
+          scoutRecord.customClaims || {},
+          "scout",
+          scoutAccess.active,
+          scoutAccess.allowedModules
+        );
+        await authAdmin.setCustomUserClaims(scoutAccess.uid, scoutClaims);
+
+        return res.json({
+          ok: true,
+          updated: ["admin", "scout"],
+          scoutActive: scoutAccess.active,
+          scoutModules: scoutClaims.allowed_modules,
+          note: "Los usuarios deben renovar su ID token para recibir los claims.",
+        });
+      } catch (error) {
+        console.error("Firebase claims synchronization failed:", error);
+        return res.status(500).json({ error: "No se pudieron sincronizar los claims de Firebase." });
+      }
+    }
+  );
+
   // Official RFFM Classification Proxy (Protected by Firebase Admin verifyIdToken + Rate Limit)
   app.get(
     "/api/rffm/clasificacion",
