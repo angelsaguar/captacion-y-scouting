@@ -46,6 +46,35 @@ export async function readScoutAccessFromFirestore(): Promise<ServerScoutAccessS
   };
 }
 
+export type ClubApplicationRole = "admin" | "scout";
+export const CLUB_MANAGED_CLAIM_KEYS = ["role", "app_role", "app_active", "allowed_modules"] as const;
+
+/**
+ * Pure claim builder. Call only from a trusted backend after independently
+ * verifying the user and deriving permissions from the authoritative source.
+ * Existing claims outside this application's namespace are preserved.
+ */
+export function buildClubCustomClaims(
+  existingClaims: Record<string, unknown>,
+  appRole: ClubApplicationRole,
+  active: boolean,
+  allowedModules: string[] = []
+): Record<string, unknown> {
+  const validModules = new Set(["scouting", "campograma", "needs", "gestion-equipo", "estadisticas-rivales"]);
+  const safeModules = appRole === "admin" || !active
+    ? []
+    : [...new Set(allowedModules.filter((module) => validModules.has(module)))];
+  const preserved = { ...existingClaims };
+  for (const key of CLUB_MANAGED_CLAIM_KEYS) delete preserved[key];
+  return {
+    ...preserved,
+    role: "authenticated",
+    app_role: appRole,
+    app_active: active,
+    allowed_modules: safeModules,
+  };
+}
+
 export interface ClubTokenVerificationResult {
   allowed: boolean;
   statusCode: number;
