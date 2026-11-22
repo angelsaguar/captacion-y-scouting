@@ -288,3 +288,14 @@ Hallazgo a revisar: `public.handle_new_user()` es la única función de aplicaci
 El usuario ejecutó la consulta de inventario de vistas y Supabase devolvió **Success. No rows returned**.
 
 Interpretación limitada al alcance de la consulta: no se devolvieron vistas que coincidan con los filtros consultados. No se concluye que no existan vistas en otros esquemas o que no haya otras superficies de exposición. No se ha modificado ningún objeto.
+
+
+## 17. Publicación Realtime (consulta 10, 22-11-2026)
+
+Resultado aportado mediante captura:
+- `pubname = supabase_realtime`
+- `puballtables = false`
+- `schema_name = NULL`
+- `table_name = NULL`
+
+Interpretación: la publicación existe, pero no está configurada para incluir automáticamente todas las tablas y la consulta no devuelve tablas concretas asociadas. Dentro del alcance de esta consulta no se observan tablas de la aplicación publicadas en Realtime. Resultado favorable para limitar la difusión de cambios. No se ha modificado la publicación.
