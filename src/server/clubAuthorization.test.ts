@@ -1,5 +1,5 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import { test } from "node:test";
+import * as assert from "node:assert/strict";
 
 // Set the protected test UID before importing server.ts, where the environment is read.
 process.env.CLUB_ADMIN_FIREBASE_UID = "admin-test-uid";
