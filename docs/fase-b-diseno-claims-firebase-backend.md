@@ -178,3 +178,8 @@ Siguiente paso:
 2. Configurar el UID en el entorno de prueba como secreto/variable de servidor.
 3. Configurar credenciales Firebase Admin SDK en ese entorno sin subir JSON ni claves al repositorio.
 4. Implementar y probar la ruta protegida de sincronización de claims en rama aislada; no asignar claims a usuarios reales ni desplegar a producción todavía.
+
+
+### Confirmación de correspondencia del UID administrador (22-11-2026)
+
+El usuario confirmó expresamente que el UID facilitado corresponde a la cuenta `angel.saguar@telefonica.net` del proyecto Firebase `gen-lang-client-0091658680`. El UID literal no se almacena en este documento ni en GitHub.
