@@ -49,10 +49,9 @@ test("authorizes administrator only when protected UID matches", () => {
   assert.equal(evaluateDecodedClubToken({ ...adminToken, uid: "different-uid" }).allowed, false);
 });
 
-test("denies administrator if server UID configuration is absent", async () => {
-  // Evaluator is intentionally bound to module-load environment; this test asserts the
-  // configured positive path above. Missing configuration is covered by source-level check.
-  assert.ok(true);
+test("denies administrator if server UID configuration is absent", () => {
+  const adminToken = token({ uid: "admin-test-uid", email: ADMIN_AUTHORIZED_EMAIL });
+  assert.equal(evaluateDecodedClubToken(adminToken, [], null, "").allowed, false);
 });
 
 test("authorizes scout only for the sealed UID and active profile", () => {
