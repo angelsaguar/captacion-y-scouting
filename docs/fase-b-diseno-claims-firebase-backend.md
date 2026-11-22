@@ -107,3 +107,61 @@ Antes de producción debe definirse autenticación, rate limiting, validación d
 ## 9. Límites
 
 Este documento no crea funciones, no asigna claims, no modifica Firebase Auth, Firestore ni Supabase, no cambia RLS y no despliega endpoints.
+
+
+## 10. Validación adicional de la integración oficial y decisiones de implementación (22-11-2026)
+
+Documentación oficial consultada:
+- Supabase Firebase Auth: https://supabase.com/docs/guides/auth/third-party/firebase-auth
+- Firebase custom claims: https://firebase.google.com/docs/auth/admin/custom-claims
+
+### Requisitos confirmados por Supabase
+- El cliente web debe pasar el Firebase ID token mediante la opción `accessToken` de `createClient`.
+- El token Firebase debe incluir el claim literal `role: "authenticated"`; sin él, Supabase asigna el rol PostgreSQL `anon`.
+- El proveedor Firebase ya está registrado como Third-Party Auth en el proyecto Supabase de producción (verificación previa del usuario), pero el registro del proveedor no añade claims a los usuarios ni modifica el cliente de la aplicación.
+- Un cliente Supabase que utiliza `accessToken` debe autenticarse y cerrar sesión con Firebase; no debe depender de `supabase.auth.signInWithPassword()` ni del Auth session de Supabase para esos mismos usuarios.
+
+### Requisitos confirmados por Firebase
+- Solo un entorno servidor con Firebase Admin SDK puede asignar custom claims.
+- Los claims actualizados se reflejan cuando el usuario recibe un token nuevo o fuerza su renovación con `getIdToken(true)`.
+- `setCustomUserClaims()` reemplaza el objeto completo de custom claims existente; cualquier implementación debe leer y preservar claims actuales no gestionados antes de escribir el objeto combinado.
+- El tamaño total de custom claims está limitado a 1000 bytes. Mantenerlos compactos; no guardar perfiles, emails, ni listas extensas.
+
+### Mapeo de permisos decidido para el diseño
+La interfaz actual usa `allowedModules` en camelCase, mientras el diseño de JWT usa `allowed_modules`. La implementación deberá mapear de forma explícita:
+- Firebase custom claim `role = "authenticated"` → rol PostgreSQL.
+- Firebase custom claim `app_role = "admin" | "scout"` → rol funcional.
+- Firebase custom claim `app_active = true | false` → estado.
+- Firebase custom claim `allowed_modules` → lista compacta de módulos.
+No confiar en el objeto Zustand/React ni en el email del body de una petición.
+
+### Hallazgo de endpoints administrativos ausentes
+El cliente `src/lib/clubAccessAndSync.ts` invoca:
+- `POST /api/admin/sync-scout-access`
+- `POST /api/scout/seal-uid`
+
+El árbol de archivos de esta rama no contiene `api/admin/sync-scout-access.ts` ni `api/scout/seal-uid.ts`. Antes de implementar el nuevo mecanismo, confirmar si estas rutas están realmente ausentes en la rama/deployment y corregir el desacoplamiento; no dar por hecho que el flujo de sellado y sincronización de UID ya dispone de backend.
+
+### Riesgo adicional de seed automático
+`src/App.tsx` invoca `syncJugadorasToDatabaseAndLocalStorage()` al iniciar sesión. En `src/lib/seedJugadoras.ts` se localizaron UPDATE de `players.foto_url` y UPSERT de registros iniciales. Debe extraerse del efecto general de login y convertirse en tarea administrativa explícita, protegida y auditable. No conservar permisos amplios para que el seed funcione desde cualquier sesión.
+
+### Plan de implementación seguro
+1. Crear backend Vercel Functions bajo `api/_lib` con Firebase Admin SDK inicializado mediante credenciales de entorno gestionadas por Vercel; nunca JSON de service account en Git.
+2. Verificar cada ID token Firebase en servidor con revocación cuando corresponda y validar `email_verified`, proyecto y UID esperado.
+3. Autorizar al administrador con allowlist de UID aprobado, no únicamente por un email enviado en el body. Confirmar UID real de administrador en Firebase Console antes de configurar el allowlist.
+4. Para el scout, leer la configuración de Firestore desde Admin SDK, comprobar `active`, UID bloqueado y módulos permitidos. Denegar por defecto si falta el documento o hay inconsistencia.
+5. Asignar claims preservando cualquier custom claim no gestionado, usando el mapeo anterior. Registrar auditoría de actor, UID objetivo, módulos y resultado, sin registrar tokens.
+6. Renovar el token del cliente y verificar claims emitidos antes de conectar Supabase.
+7. Solo entonces añadir `accessToken` al cliente remoto en una rama de prueba. El fallback local debe permanecer separado y no simular autenticación remota.
+8. Añadir RLS y GRANT restrictivos después de que el token real funcione en el proyecto de prueba.
+
+### Bloqueos que requieren verificación en consola o entorno aislado
+- Confirmar si Firebase Authentication del proyecto tiene Identity Platform y si puede utilizar blocking functions. No asumirlo.
+- Confirmar el UID Firebase real de administrador y scout; no se ha inferido ni inventado.
+- Configurar credenciales Admin SDK en entorno de prueba; no solicitar ni introducir secretos en GitHub/chat.
+- Verificar token de cada cuenta en servidor, incluyendo `iss`, `aud`, `sub`, `email_verified` y claims esperados.
+- Confirmar que el proveedor Third-Party Auth de Supabase acepta el token de prueba y asigna `authenticated`.
+- No cambiar claims de usuarios reales ni desplegar endpoints a producción durante esta fase de preparación.
+
+### Límites
+Esta revisión no ha asignado claims, no ha creado endpoints, no ha modificado el cliente Supabase, no ha ejecutado SQL y no ha cambiado Firebase/Supabase/Vercel producción.
