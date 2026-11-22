@@ -453,3 +453,26 @@ Referencias:
 Hallazgo adicional al contrastar llamadas API con el árbol completo de archivos de la rama: `src/lib/clubAccessAndSync.ts` invoca `/api/admin/sync-scout-access` y `/api/scout/seal-uid`, pero no se localizaron archivos de ruta correspondientes en el directorio `api/` de la rama inspeccionada (solo se localizaron endpoints RFFM y `api/tactical-advice.ts`). Debe comprobarse si esas rutas existen en otro despliegue o si las llamadas fallan en el estado actual. No crear endpoints que modifiquen Firestore o permisos sin definir autenticación server-side y fuente de verdad.
 
 La documentación oficial respalda el diseño, pero no se ha validado un token real en un proyecto aislado. No se ha cambiado código funcional, claims ni configuración de producción.
+
+
+## 23. Integración Firebase–Supabase: validación documental (22-11-2026)
+
+La documentación oficial actual de Supabase confirma que:
+- el cliente web debe enviar el Firebase ID token con la opción `accessToken`;
+- el token debe contener el claim literal `role: "authenticated"`; si falta, Supabase asigna el rol PostgreSQL `anon`;
+- los claims de aplicación `app_role`, `app_active` y `allowed_modules` son separados del rol PostgreSQL;
+- el token debe ser emitido por el proveedor Firebase registrado en Third-Party Auth.
+
+La documentación oficial de Firebase confirma que:
+- custom claims solo deben establecerse desde entorno servidor mediante Admin SDK;
+- `setCustomUserClaims` reemplaza todos los custom claims existentes, por lo que deben preservarse los no gestionados;
+- los claims nuevos se propagan al renovar el ID token.
+
+Fuentes oficiales:
+- https://supabase.com/docs/guides/auth/third-party/firebase-auth
+- https://firebase.google.com/docs/auth/admin/custom-claims
+
+La rama contiene el diseño ampliado en `docs/fase-b-diseno-claims-firebase-backend.md` y la hoja de ruta integral en `docs/fase-b-hoja-ruta-implementacion-integral.md`.
+
+### Bloqueo previo a implementación de backend
+No se ha confirmado todavía el UID Firebase de la cuenta administradora desde Firebase Console ni configurado el entorno de credenciales Admin SDK. Sin esos datos no se debe emitir claim de administrador ni implementar una ruta administrativa desplegable. No solicitar ni almacenar claves privadas o JSON de service account en el chat o GitHub.
