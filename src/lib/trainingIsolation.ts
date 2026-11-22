@@ -4,10 +4,18 @@ import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 export const PRE_TRAINING_ISOLATION_BACKUP_KEY = 'afe_pre_training_isolation_backup_v1';
 export const UNASSIGNED_SESSIONS_AUDIT_KEY = 'afe_unassigned_sessions_audit_v1';
 export const TRAINING_ISOLATION_MIGRATION_VERSION_KEY = 'afe_training_isolation_migration_v2';
-const CUSTOM_TEAM_REGISTRY_KEY = 'afe_custom_team_registry_v1';
+export const CUSTOM_TEAM_REGISTRY_KEY = 'afe_custom_team_registry_v1';
+
+export interface CustomTeamRegistryEntry {
+  teamId: string;
+  displayName: string;
+  aliases: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 // ---------------------------------------------------------------------------
-// 1. Canonical Immutable Team Identifier (teamId) Resolution
+// 1. Canonical Immutable Team Identifier (teamId) Resolution & Custom Teams
 // ---------------------------------------------------------------------------
 
 function normalizeTeamLookupToken(raw?: string | null): string {
@@ -19,13 +27,29 @@ function normalizeTeamLookupToken(raw?: string | null): string {
     .replace(/\s+/g, ' ');
 }
 
-function getCustomTeamRegistry(): Record<string, { teamId: string; displayName: string }> {
+export function getCustomTeamRegistry(): Record<string, CustomTeamRegistryEntry> {
   if (typeof localStorage === 'undefined') return {};
   try {
     const raw = localStorage.getItem(CUSTOM_TEAM_REGISTRY_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') return parsed;
+      if (parsed && typeof parsed === 'object') {
+        const normalizedMap: Record<string, CustomTeamRegistryEntry> = {};
+        for (const [k, val] of Object.entries(parsed as Record<string, any>)) {
+          if (val && typeof val === 'object' && typeof val.teamId === 'string') {
+            normalizedMap[k] = {
+              teamId: val.teamId,
+              displayName: String(val.displayName || k).trim(),
+              aliases: Array.isArray(val.aliases)
+                ? val.aliases.map((a: any) => String(a || '').trim()).filter(Boolean)
+                : [String(val.displayName || k).trim()],
+              createdAt: val.createdAt,
+              updatedAt: val.updatedAt,
+            };
+          }
+        }
+        return normalizedMap;
+      }
     }
   } catch {}
   return {};
@@ -46,10 +70,46 @@ export function findClubTeamRegistryItem(teamOrId?: string | null): ClubTeamRegi
   return null;
 }
 
+export function findCustomTeamRegistryEntry(
+  teamOrId?: string | null
+): CustomTeamRegistryEntry | null {
+  const raw = String(teamOrId || '').trim();
+  const token = normalizeTeamLookupToken(raw);
+  if (!token) return null;
+
+  const customMap = getCustomTeamRegistry();
+  if (customMap[raw.toLowerCase()]) return customMap[raw.toLowerCase()];
+  if (customMap[token]) return customMap[token];
+
+  for (const entry of Object.values(customMap)) {
+    if (!entry || !entry.teamId) continue;
+    if (normalizeTeamLookupToken(entry.teamId) === token) return entry;
+    if (normalizeTeamLookupToken(entry.displayName) === token) return entry;
+    if (
+      Array.isArray(entry.aliases) &&
+      entry.aliases.some((alias) => normalizeTeamLookupToken(alias) === token)
+    ) {
+      return entry;
+    }
+  }
+  return null;
+}
+
+function buildDeterministicCustomTeamId(rawName: string): string {
+  const token = normalizeTeamLookupToken(rawName);
+  const slug = token
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48);
+  return `team_custom_${slug || 'unknown'}`;
+}
+
 /**
  * Resolves any team identifier, code, or visible team name into its permanent,
  * immutable internal `teamId` (e.g. 'INFANTIL B' -> 'team_08_infantil_b').
- * Even if a team's visible display name is changed in the future, its `teamId` remains invariant.
+ * Pure read-only operation: NEVER performs automatic writes to localStorage during reads.
+ * Even if a custom team's visible display name is changed, its `teamId` remains invariant.
  */
 export function resolveCanonicalTeamId(teamOrId?: string | null): string {
   const raw = String(teamOrId || '').trim();
@@ -58,29 +118,21 @@ export function resolveCanonicalTeamId(teamOrId?: string | null): string {
   const found = findClubTeamRegistryItem(raw);
   if (found) return found.teamId;
 
-  if (raw.startsWith('team_')) {
+  const customEntry = findCustomTeamRegistryEntry(raw);
+  if (customEntry?.teamId) {
+    return customEntry.teamId;
+  }
+
+  if (raw.toLowerCase().startsWith('team_')) {
     return raw.toLowerCase();
   }
 
-  // Fallback for any custom user-created team: resolve deterministic immutable teamId without writing on read
-  const token = normalizeTeamLookupToken(raw);
-  const customMap = getCustomTeamRegistry();
-  if (customMap[token]?.teamId) {
-    return customMap[token].teamId;
-  }
-
-  const slug = token
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 48);
-  const generatedId = `team_custom_${slug || 'unknown'}`;
-
-  return generatedId;
+  return buildDeterministicCustomTeamId(raw);
 }
 
 /**
- * Resolves a canonical `teamId` (or legacy team name) to its current visible display name.
+ * Resolves a canonical `teamId` (or legacy/previous team name) to its current visible display name.
+ * Pure read-only operation: NEVER performs automatic writes to localStorage.
  */
 export function getTeamDisplayName(teamIdOrName?: string | null): string {
   const raw = String(teamIdOrName || '').trim();
@@ -89,12 +141,277 @@ export function getTeamDisplayName(teamIdOrName?: string | null): string {
   const found = findClubTeamRegistryItem(raw);
   if (found) return found.displayName;
 
-  const customMap = getCustomTeamRegistry();
-  for (const entry of Object.values(customMap)) {
-    if (entry.teamId === raw) return entry.displayName;
+  const customEntry = findCustomTeamRegistryEntry(raw);
+  if (customEntry?.displayName) {
+    return customEntry.displayName;
+  }
+
+  if (raw.toLowerCase().startsWith('team_custom_')) {
+    return raw.slice('team_custom_'.length).replace(/_/g, ' ').trim().toUpperCase();
   }
 
   return raw;
+}
+
+/**
+ * Explicitly registers or persists a custom team in `afe_custom_team_registry_v1`,
+ * preserving its canonical `teamId` across renames and maintaining the association
+ * with its historical sessions, attendance records, rosters, and calendars.
+ * Should only be called when a team is explicitly created, registered, renamed, or saved.
+ */
+export function registerOrPersistCustomTeam(
+  teamName: string,
+  options?: {
+    explicitTeamId?: string;
+    previousName?: string;
+    migrateStorageOnRename?: boolean;
+  }
+): CustomTeamRegistryEntry | null {
+  const cleanName = String(teamName || '').trim();
+  if (!cleanName) return null;
+
+  // Official club teams are already in CLUB_TEAM_REGISTRY and do not need custom registry entries
+  if (
+    findClubTeamRegistryItem(cleanName) &&
+    !options?.previousName &&
+    !options?.explicitTeamId
+  ) {
+    return null;
+  }
+
+  if (typeof localStorage === 'undefined') return null;
+
+  const existingByPrev = options?.previousName
+    ? findCustomTeamRegistryEntry(options.previousName)
+    : null;
+  const existingByExplicitId = options?.explicitTeamId
+    ? findCustomTeamRegistryEntry(options.explicitTeamId)
+    : null;
+  const existingByCurrent = findCustomTeamRegistryEntry(cleanName);
+  const existingEntry = existingByPrev || existingByExplicitId || existingByCurrent;
+
+  let canonicalTeamId = '';
+  if (options?.explicitTeamId && options.explicitTeamId.trim().toLowerCase().startsWith('team_')) {
+    canonicalTeamId = options.explicitTeamId.trim().toLowerCase();
+  } else if (existingEntry?.teamId) {
+    canonicalTeamId = existingEntry.teamId;
+  } else if (options?.previousName) {
+    canonicalTeamId = resolveCanonicalTeamId(options.previousName);
+  } else if (cleanName.toLowerCase().startsWith('team_')) {
+    canonicalTeamId = cleanName.toLowerCase();
+  } else {
+    canonicalTeamId = buildDeterministicCustomTeamId(cleanName);
+  }
+
+  const previousDisplayName =
+    String(options?.previousName || existingEntry?.displayName || '').trim();
+  const displayName = cleanName.toLowerCase().startsWith('team_')
+    ? existingEntry?.displayName || cleanName
+    : cleanName;
+
+  const aliasesSet = new Set<string>();
+  if (existingEntry?.aliases) {
+    existingEntry.aliases.forEach((a) => {
+      if (a && a.trim()) aliasesSet.add(a.trim());
+    });
+  }
+  if (existingEntry?.displayName) aliasesSet.add(existingEntry.displayName.trim());
+  if (previousDisplayName) aliasesSet.add(previousDisplayName);
+  if (displayName) aliasesSet.add(displayName);
+
+  const customMap = getCustomTeamRegistry();
+  // Remove any obsolete top-level keys that pointed to the same canonicalTeamId
+  const nextMap: Record<string, CustomTeamRegistryEntry> = {};
+  for (const [k, v] of Object.entries(customMap)) {
+    if (v && v.teamId !== canonicalTeamId) {
+      nextMap[k] = v;
+    }
+  }
+
+  const nowIso = new Date().toISOString();
+  const updatedEntry: CustomTeamRegistryEntry = {
+    teamId: canonicalTeamId,
+    displayName,
+    aliases: Array.from(aliasesSet),
+    createdAt: existingEntry?.createdAt || nowIso,
+    updatedAt: nowIso,
+  };
+
+  nextMap[canonicalTeamId] = updatedEntry;
+
+  const prevSerialized = localStorage.getItem(CUSTOM_TEAM_REGISTRY_KEY);
+  const nextSerialized = JSON.stringify(nextMap);
+  if (prevSerialized !== nextSerialized) {
+    localStorage.setItem(CUSTOM_TEAM_REGISTRY_KEY, nextSerialized);
+  }
+
+  // If the team was renamed, keep all historical sessions, attendance records, rosters, and calendars associated
+  const shouldMigrateRename =
+    options?.migrateStorageOnRename !== false &&
+    previousDisplayName &&
+    previousDisplayName !== displayName &&
+    !previousDisplayName.toLowerCase().startsWith('team_');
+
+  if (shouldMigrateRename) {
+    migrateCustomTeamHistoricalStorageOnRename(
+      canonicalTeamId,
+      previousDisplayName,
+      displayName
+    );
+  }
+
+  return updatedEntry;
+}
+
+/**
+ * Renames a custom team while preserving its canonical `teamId` and migrating/maintaining
+ * all its historical training sessions, attendance records, rosters, and monthly calendars.
+ */
+export function renameCustomTeam(
+  currentTeamOrId: string,
+  newDisplayName: string
+): CustomTeamRegistryEntry | null {
+  const cleanCurrent = String(currentTeamOrId || '').trim();
+  const cleanNew = String(newDisplayName || '').trim();
+  if (!cleanCurrent || !cleanNew) return null;
+
+  const existingEntry = findCustomTeamRegistryEntry(cleanCurrent);
+  const canonicalTeamId = existingEntry?.teamId || resolveCanonicalTeamId(cleanCurrent);
+  const previousName = existingEntry?.displayName || cleanCurrent;
+
+  return registerOrPersistCustomTeam(cleanNew, {
+    explicitTeamId: canonicalTeamId,
+    previousName,
+    migrateStorageOnRename: true,
+  });
+}
+
+function migrateCustomTeamHistoricalStorageOnRename(
+  canonicalTeamId: string,
+  oldName: string,
+  newName: string
+): void {
+  if (typeof localStorage === 'undefined' || !oldName || !newName || oldName === newName) return;
+
+  try {
+    // 1. Migrate team_sessions_${oldName} -> team_sessions_${newName} preserving every session ID & attendance record
+    const oldSessionsKey = `team_sessions_${oldName}`;
+    const newSessionsKey = `team_sessions_${newName}`;
+    const oldSessionsRaw = localStorage.getItem(oldSessionsKey);
+    if (oldSessionsRaw) {
+      const oldSessions: any[] = JSON.parse(oldSessionsRaw);
+      const newSessionsRaw = localStorage.getItem(newSessionsKey);
+      const newSessions: any[] = newSessionsRaw ? JSON.parse(newSessionsRaw) : [];
+      if (Array.isArray(oldSessions)) {
+        const stampedOld = oldSessions.map((s: any) => ({
+          ...s,
+          teamId: canonicalTeamId,
+          team: newName,
+        }));
+        const stampedNew = (Array.isArray(newSessions) ? newSessions : []).map((s: any) => ({
+          ...s,
+          teamId: canonicalTeamId,
+          team: newName,
+        }));
+        const seenOld = new Map<string, number>();
+        const seenNew = new Map<string, number>();
+        const mergedByKey = new Map<string, any>();
+
+        stampedOld.forEach((s: any) => {
+          const { dedupKey, effectiveSessionId, hasExplicitValidId } =
+            getStrictFullSessionDeduplicationKey(s, seenOld);
+          mergedByKey.set(dedupKey, {
+            ...s,
+            id: hasExplicitValidId ? String(s.id).trim() : (s.id || effectiveSessionId),
+          });
+        });
+        stampedNew.forEach((s: any) => {
+          const { dedupKey, effectiveSessionId, hasExplicitValidId } =
+            getStrictFullSessionDeduplicationKey(s, seenNew);
+          const prev = mergedByKey.get(dedupKey);
+          mergedByKey.set(dedupKey, {
+            ...(prev || {}),
+            ...s,
+            id: hasExplicitValidId ? String(s.id).trim() : (s.id || prev?.id || effectiveSessionId),
+            records: prev
+              ? reconcileSessionAttendanceRecords(s.records || [], prev.records || [])
+              : s.records || [],
+          });
+        });
+
+        localStorage.setItem(newSessionsKey, JSON.stringify(Array.from(mergedByKey.values())));
+      }
+    }
+
+    // 2. Migrate team_roster_${oldName} -> team_roster_${newName}
+    const oldRosterKey = `team_roster_${oldName}`;
+    const newRosterKey = `team_roster_${newName}`;
+    const oldRosterRaw = localStorage.getItem(oldRosterKey);
+    if (oldRosterRaw && !localStorage.getItem(newRosterKey)) {
+      localStorage.setItem(newRosterKey, oldRosterRaw);
+    }
+
+    // 3. Update ud_lapoveda_table_attendance_sessions rows belonging to this canonicalTeamId
+    const tableRaw = localStorage.getItem('ud_lapoveda_table_attendance_sessions');
+    if (tableRaw) {
+      const rows = JSON.parse(tableRaw);
+      if (Array.isArray(rows)) {
+        let changed = false;
+        const updatedRows = rows.map((row: any) => {
+          if (!row || typeof row !== 'object') return row;
+          const rowTeamId = extractRecordCanonicalTeamId(row);
+          if (rowTeamId === canonicalTeamId) {
+            changed = true;
+            return {
+              ...row,
+              teamId: canonicalTeamId,
+              team: newName,
+            };
+          }
+          return row;
+        });
+        if (changed) {
+          localStorage.setItem(
+            'ud_lapoveda_table_attendance_sessions',
+            JSON.stringify(updatedRows)
+          );
+        }
+      }
+    }
+
+    // 4. Copy monthly calendars team_monthly_calendar_${oldName}_${year}_${month} -> team_monthly_calendar_${newName}_${year}_${month}
+    const calPrefix = `team_monthly_calendar_${oldName}_`;
+    const keysToCopy: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(calPrefix)) {
+        keysToCopy.push(k);
+      }
+    }
+    for (const oldCalKey of keysToCopy) {
+      const suffix = oldCalKey.slice(calPrefix.length);
+      const newCalKey = `team_monthly_calendar_${newName}_${suffix}`;
+      const rawCal = localStorage.getItem(oldCalKey);
+      if (rawCal && !localStorage.getItem(newCalKey)) {
+        try {
+          const parsedCal = JSON.parse(rawCal);
+          if (parsedCal && typeof parsedCal === 'object') {
+            const stampedCal: Record<string, any> = {};
+            for (const [dateStr, ev] of Object.entries(parsedCal as Record<string, any>)) {
+              if (ev && typeof ev === 'object') {
+                stampedCal[dateStr] = {
+                  ...ev,
+                  teamId: canonicalTeamId,
+                  team: newName,
+                };
+              }
+            }
+            localStorage.setItem(newCalKey, JSON.stringify(stampedCal));
+          }
+        } catch {}
+      }
+    }
+  } catch {}
 }
 
 /**
@@ -184,10 +501,210 @@ export function detectExplicitClubTeamInText(text?: string | null): string {
 }
 
 /**
- * FASE A — Computes a deterministic 32-bit FNV-1a hex fingerprint of a full session's sporting content
- * (`fecha`, `hora`, `tipo`, `descripcion`, `observaciones`, marked attendance `playerId:status` pairs, and `tareas`).
- * Excludes unmarked roster padding (`status === undefined`) so the same session before/after roster hydration
- * produces the exact same content fingerprint across `localStorage`, `Supabase`, and `Firestore`.
+ * Checks whether an attendance status represents an explicitly marked state
+ * (e.g. 'Presente', 'Ausente', 'Retraso', 'Justificado', 'Lesionado', 'No Justificó').
+ * Empty strings, null, undefined, or 'Pendiente' are not considered marked attendance states.
+ */
+export function hasMarkedAttendanceStatus(status: any): boolean {
+  if (status === undefined || status === null) return false;
+  const clean = String(status).trim();
+  if (!clean) return false;
+  return clean.toLowerCase() !== 'pendiente';
+}
+
+/**
+ * Reconciles two attendance records belonging to the same player (`playerId`) between local and cloud:
+ * - Preserves marked attendance statuses (`Presente`, `Ausente`, etc.) so an unmarked local record
+ *   NEVER overwrites a marked cloud record (and vice versa).
+ * - Never overwrites valid non-empty fields with empty/undefined values.
+ * - Retains all additional properties and historical fields.
+ */
+export function reconcileAttendanceRecordPair(localRec: any, cloudRec: any): any {
+  if (!localRec || typeof localRec !== 'object') return cloudRec ? { ...cloudRec } : localRec;
+  if (!cloudRec || typeof cloudRec !== 'object') return { ...localRec };
+
+  const localMarked = hasMarkedAttendanceStatus(localRec.status);
+  const cloudMarked = hasMarkedAttendanceStatus(cloudRec.status);
+
+  let resolvedStatus: any = localRec.status;
+  if (localMarked && !cloudMarked) {
+    resolvedStatus = localRec.status;
+  } else if (cloudMarked && !localMarked) {
+    resolvedStatus = cloudRec.status;
+  } else if (localMarked && cloudMarked) {
+    const localTs = Number(localRec._updatedAtMs ?? localRec.updatedAtMs ?? 0);
+    const cloudTs = Number(cloudRec._updatedAtMs ?? cloudRec.updatedAtMs ?? 0);
+    resolvedStatus = cloudTs > localTs ? cloudRec.status : localRec.status;
+  } else {
+    // Neither is marked: if one explicitly carries 'Pendiente' while the other is undefined/empty, keep 'Pendiente';
+    // if both are undefined (like the 15 JUGADORAS_ADJUNTAS in the August sessions), preserve undefined.
+    const localClean =
+      localRec.status !== undefined && localRec.status !== null
+        ? String(localRec.status).trim()
+        : '';
+    const cloudClean =
+      cloudRec.status !== undefined && cloudRec.status !== null
+        ? String(cloudRec.status).trim()
+        : '';
+    if (localClean) {
+      resolvedStatus = localRec.status;
+    } else if (cloudClean) {
+      resolvedStatus = cloudRec.status;
+    } else {
+      resolvedStatus = localRec.status !== undefined ? localRec.status : cloudRec.status;
+    }
+  }
+
+  const merged: Record<string, any> = {};
+  const allKeys = new Set<string>([...Object.keys(cloudRec), ...Object.keys(localRec)]);
+  for (const key of allKeys) {
+    if (key === 'status') continue;
+    const lVal = localRec[key];
+    const cVal = cloudRec[key];
+    const lHasValue =
+      lVal !== undefined && lVal !== null && (typeof lVal !== 'string' || lVal.trim() !== '');
+    const cHasValue =
+      cVal !== undefined && cVal !== null && (typeof cVal !== 'string' || cVal.trim() !== '');
+
+    if (lHasValue) {
+      merged[key] = lVal;
+    } else if (cHasValue) {
+      merged[key] = cVal;
+    } else {
+      merged[key] = lVal !== undefined ? lVal : cVal;
+    }
+  }
+
+  const canonicalPid = String(
+    localRec.playerId ?? localRec.id ?? cloudRec.playerId ?? cloudRec.id ?? ''
+  ).trim();
+  if (canonicalPid) {
+    merged.playerId = canonicalPid;
+  }
+  merged.status = resolvedStatus;
+
+  return merged;
+}
+
+/**
+ * Reconciles two attendance record lists (`localRecords` and `cloudRecords`) by player (`playerId`):
+ * - Identifies each record by `playerId` (with safe fallback for legacy records).
+ * - Preserves marked attendance statuses (`Presente`, `Ausente`, etc.) from either side without
+ *   overwriting valid statuses with unmarked/empty records.
+ * - Preserves all extra metadata fields and historical records (including the 21 records of the August sessions).
+ * - Produces zero duplicates.
+ */
+export function reconcileSessionAttendanceRecords(
+  localRecords?: any[],
+  cloudRecords?: any[]
+): any[] {
+  const localArr = Array.isArray(localRecords) ? localRecords : [];
+  const cloudArr = Array.isArray(cloudRecords) ? cloudRecords : [];
+
+  const getRecordKey = (rec: any, fallbackPrefix: string, idx: number): string => {
+    if (!rec || typeof rec !== 'object') return `${fallbackPrefix}_invalid_${idx}`;
+    const pid = String(rec.playerId ?? rec.id ?? '').trim();
+    if (pid) return `pid::${pid}`;
+    const nameKey = `${String(rec.playerName || rec.nombre || '').trim().toUpperCase()}__${String(
+      rec.playerLastName || rec.apellidos || ''
+    )
+      .trim()
+      .toUpperCase()}`;
+    if (nameKey !== '__') return `name::${nameKey}`;
+    return `${fallbackPrefix}_unkeyed_${idx}`;
+  };
+
+  const cloudByKey = new Map<string, any>();
+  cloudArr.forEach((cr, idx) => {
+    if (!cr || typeof cr !== 'object') return;
+    const key = getRecordKey(cr, 'cloud', idx);
+    const prev = cloudByKey.get(key);
+    cloudByKey.set(key, prev ? reconcileAttendanceRecordPair(prev, cr) : { ...cr });
+  });
+
+  const reconciledMap = new Map<string, any>();
+  localArr.forEach((lr, idx) => {
+    if (!lr || typeof lr !== 'object') return;
+    const key = getRecordKey(lr, 'local', idx);
+    const existingLocal = reconciledMap.get(key);
+    const baseLocal = existingLocal ? reconcileAttendanceRecordPair(existingLocal, lr) : { ...lr };
+    const matchingCloud = cloudByKey.get(key);
+    if (matchingCloud) {
+      reconciledMap.set(key, reconcileAttendanceRecordPair(baseLocal, matchingCloud));
+      cloudByKey.delete(key);
+    } else {
+      reconciledMap.set(key, baseLocal);
+    }
+  });
+
+  // Append any remaining cloud records not present in localRecords
+  cloudByKey.forEach((cr, key) => {
+    reconciledMap.set(key, cr);
+  });
+
+  return Array.from(reconciledMap.values());
+}
+
+/**
+ * Reconciles session sub-item arrays (`tareas`, `archivos`, `videos`) by `id` (or natural title/url key)
+ * without losing items or creating duplicates.
+ */
+export function reconcileSessionSubItemsById<T = any>(
+  localItems?: T[],
+  cloudItems?: T[]
+): T[] {
+  const localArr = Array.isArray(localItems) ? localItems : [];
+  const cloudArr = Array.isArray(cloudItems) ? cloudItems : [];
+  if (localArr.length === 0) return [...cloudArr];
+  if (cloudArr.length === 0) return [...localArr];
+
+  const getKey = (item: any, prefix: string, idx: number): string => {
+    if (!item || typeof item !== 'object') return `${prefix}_${idx}`;
+    const id = String(item.id || '').trim();
+    if (id) return `id::${id}`;
+    const natural = String(item.titulo || item.nombre || item.url || '').trim().toLowerCase();
+    if (natural) return `nat::${natural}`;
+    return `${prefix}_${idx}`;
+  };
+
+  const merged = new Map<string, T>();
+  localArr.forEach((item, idx) => {
+    merged.set(getKey(item, 'local', idx), item);
+  });
+  cloudArr.forEach((item, idx) => {
+    const k = getKey(item, 'cloud', idx);
+    if (!merged.has(k)) {
+      merged.set(k, item);
+    } else {
+      merged.set(k, { ...(item as any), ...(merged.get(k) as any) });
+    }
+  });
+  return Array.from(merged.values());
+}
+
+/**
+ * Generates a unique, persistent identifier for a newly created training session at creation time.
+ * That identifier is preserved across `localStorage`, `Supabase`, and `Firestore`.
+ */
+export function createPersistentSessionId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  const randHex = () =>
+    Math.floor((1 + Math.random()) * 0x10000)
+      .toString(16)
+      .substring(1);
+  return `${randHex()}${randHex()}-${randHex()}-4${randHex().slice(1)}-a${randHex().slice(1)}-${randHex()}${randHex()}${randHex()}`;
+}
+
+/**
+ * FASE A — Computes a deterministic 32-bit FNV-1a hex fingerprint of a legacy ID-less session's
+ * full content (`fecha`, `hora`, `tipo`, `descripcion`, `lugar`, `observaciones`, `createdAt`,
+ * `records`, `tareas`, `archivos`, `videos`).
+ * Ensures that two different legacy sessions without an explicit ID that share the same descriptive
+ * fields (`fecha`, `hora`, `tipo`, `descripcion`, `lugar`) produce distinct fingerprints whenever
+ * any of their records, observations, tasks, files, videos, or timestamps differ, while repeated reads
+ * of the same legacy session always produce the exact same deterministic fingerprint.
  */
 export function computeSessionContentFingerprint(session: any): string {
   const fecha = String(session?.fecha || session?.dateStr || '').trim();
@@ -196,27 +713,61 @@ export function computeSessionContentFingerprint(session: any): string {
   const desc = String(session?.descripcion || session?.title || 'Sesión de entrenamiento')
     .trim()
     .toLowerCase();
-  const obs = String(session?.observaciones || '').trim().toLowerCase();
+  const lugar = String(session?.lugar || '').trim().toLowerCase();
+  const obs = String(session?.observaciones || session?.notas || '').trim().toLowerCase();
+  const metaOrigin = String(
+    session?.createdAt ||
+      session?.created_at ||
+      session?._createdAtMs ||
+      session?.turno ||
+      session?.sessionIndex ||
+      ''
+  ).trim();
 
-  const markedSig = (Array.isArray(session?.records) ? session.records : [])
-    .filter(
-      (r: any) =>
-        r &&
-        r.status !== undefined &&
-        r.status !== null &&
-        String(r.status).trim() !== '' &&
-        String(r.status).trim() !== 'Pendiente'
+  const recordsArr: any[] = Array.isArray(session?.records) ? session.records : [];
+  const recordsSig = recordsArr
+    .map((r: any) => {
+      const pid = String(r?.playerId ?? r?.id ?? '').trim();
+      const st = r?.status !== undefined && r?.status !== null ? String(r.status).trim() : '';
+      const extra = String(r?.comentario || r?.motivo || r?.horaLlegada || '')
+        .trim()
+        .toLowerCase();
+      return pid || st || extra ? `${pid}:${st}:${extra}` : '';
+    })
+    .filter(Boolean)
+    .sort()
+    .join('|');
+
+  const tareasArr: any[] = Array.isArray(session?.tareas) ? session.tareas : [];
+  const tareasSig = tareasArr
+    .map(
+      (t: any) =>
+        `${String(t?.id || '').trim()}:${String(t?.titulo || '')
+          .trim()
+          .toLowerCase()}:${String(t?.duracion || '')
+          .trim()
+          .toLowerCase()}:${String(t?.descripcion || '')
+          .trim()
+          .toLowerCase()}`
     )
-    .map((r: any) => `${String(r.playerId || r.id || '').trim()}:${String(r.status).trim()}`)
-    .sort()
     .join('|');
 
-  const tasksSig = (Array.isArray(session?.tareas) ? session.tareas : [])
-    .map((t: any) => String(t?.id || t?.titulo || '').trim().toLowerCase())
-    .sort()
+  const archivosArr: any[] = Array.isArray(session?.archivos) ? session.archivos : [];
+  const archivosSig = archivosArr
+    .map((f: any) => `${String(f?.id || '').trim()}:${String(f?.nombre || '').trim().toLowerCase()}`)
     .join('|');
 
-  const raw = `${fecha}__${hora}__${tipo}__${desc}__${obs}__${markedSig}__${tasksSig}`;
+  const videosArr: any[] = Array.isArray(session?.videos) ? session.videos : [];
+  const videosSig = videosArr
+    .map(
+      (v: any) =>
+        `${String(v?.id || '').trim()}:${String(v?.nombre || v?.url || '')
+          .trim()
+          .toLowerCase()}`
+    )
+    .join('|');
+
+  const raw = `${fecha}__${hora}__${tipo}__${desc}__${lugar}__${obs}__${metaOrigin}__${recordsSig}__${tareasSig}__${archivosSig}__${videosSig}`;
   let hash = 2166136261;
   for (let i = 0; i < raw.length; i++) {
     hash ^= raw.charCodeAt(i);
@@ -228,11 +779,16 @@ export function computeSessionContentFingerprint(session: any): string {
 /**
  * FASE A — Strict deduplication key generator for Full Sessions (`AttendanceSession`).
  * Guarantees simultaneously:
- * 1. Two different sessions on the same day NEVER merge (different `id`s, or one with `id` and one without,
- *    or both without `id` with different content, or both without `id` in the same store via `seenCounterInCurrentStore`).
- * 2. The exact same session replicated across `localStorage`, `Supabase`, and `Firestore` (with or without `id`)
- *    produces the exact same `dedupKey` and NEVER appears duplicated.
- * 3. Historical identifiers (`1773944162835`, UUIDs, etc.) are NEVER modified.
+ * 1. Every new session receives a unique persistent ID at creation time (`createPersistentSessionId()`),
+ *    preserved across `localStorage`, `Supabase`, and `Firestore`.
+ * 2. Any session that already has a valid persistent ID (including historical IDs like `'1773944162835'`,
+ *    UUIDs, or an already-assigned deterministic ID `'unidentified_...'`) is recognized across all stores
+ *    by that exact identifier (`dedupKey: "id::" + rawId`), so modifying its attendance or notes never
+ *    changes its identity or creates duplicates.
+ * 3. Two different sessions NEVER merge, even if they lack an ID and share identical descriptive data
+ *    (`fecha`, `hora`, `tipo`, `descripcion`, `lugar`).
+ * 4. For legacy sessions without an ID, assigns a deterministic ID (`unidentified_<fecha>_<fp>_<occIndex>`)
+ *    without generating random UUIDs on read and without deleting any records.
  */
 export function getStrictFullSessionDeduplicationKey(
   session: any,
@@ -247,6 +803,15 @@ export function getStrictFullSessionDeduplicationKey(
   const isBareDateId = /^\d{4}-\d{2}-\d{2}$/.test(rawId) || (fecha !== '' && rawId === fecha);
 
   if (rawId && !isBareDateId) {
+    const syntheticMatch = /^unidentified_(.+)_([0-9a-f]{8})_(\d+)$/.exec(rawId);
+    if (syntheticMatch && seenCounterInCurrentStore) {
+      const baseFpKey = `fp::${syntheticMatch[1]}::${syntheticMatch[2]}`;
+      const existingOcc = Number(syntheticMatch[3]);
+      const currCount = seenCounterInCurrentStore.get(baseFpKey) ?? 0;
+      if (Number.isFinite(existingOcc) && existingOcc + 1 > currCount) {
+        seenCounterInCurrentStore.set(baseFpKey, existingOcc + 1);
+      }
+    }
     return {
       dedupKey: `id::${rawId}`,
       effectiveSessionId: rawId,
@@ -261,9 +826,10 @@ export function getStrictFullSessionDeduplicationKey(
     seenCounterInCurrentStore.set(baseFpKey, occIndex + 1);
   }
 
+  const effectiveSessionId = `unidentified_${fecha || 'nodate'}_${fp}_${occIndex}`;
   return {
-    dedupKey: `${baseFpKey}::occ_${occIndex}`,
-    effectiveSessionId: `unidentified_${fecha || 'nodate'}_${fp}_${occIndex}`,
+    dedupKey: `id::${effectiveSessionId}`,
+    effectiveSessionId,
     hasExplicitValidId: false,
   };
 }
@@ -307,17 +873,25 @@ export function isSessionAllowedForActiveTeamView(
       JUGADORAS_ADJUNTAS.forEach((j) => targetRosterIds.add(String(j.id).trim()));
     }
     const targetDisplayName = getTeamDisplayName(targetTeamId);
-    try {
-      const rawTargetRoster = localStorage.getItem(`team_roster_${targetDisplayName}`);
-      if (rawTargetRoster) {
-        const parsed = JSON.parse(rawTargetRoster);
-        if (Array.isArray(parsed)) {
-          parsed.forEach((p: any) => {
-            if (p?.id) targetRosterIds.add(String(p.id).trim());
-          });
+    const customTargetEntry = findCustomTeamRegistryEntry(targetTeamId);
+    const candidateTargetNames = new Set<string>([targetDisplayName]);
+    if (customTargetEntry?.aliases) {
+      customTargetEntry.aliases.forEach((a) => candidateTargetNames.add(a));
+    }
+    for (const candidateName of candidateTargetNames) {
+      if (!candidateName) continue;
+      try {
+        const rawTargetRoster = localStorage.getItem(`team_roster_${candidateName}`);
+        if (rawTargetRoster) {
+          const parsed = JSON.parse(rawTargetRoster);
+          if (Array.isArray(parsed)) {
+            parsed.forEach((p: any) => {
+              if (p?.id) targetRosterIds.add(String(p.id).trim());
+            });
+          }
         }
-      }
-    } catch {}
+      } catch {}
+    }
 
     const foreignRosterIds = new Set<string>();
     const foreignSessionIds = new Set<string>();

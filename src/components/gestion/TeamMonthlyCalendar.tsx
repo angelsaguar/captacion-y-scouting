@@ -46,12 +46,15 @@ import {
   upsertTeamMatchesToFirestore,
 } from '@/lib/firestoreMatches';
 import {
+  createPersistentSessionId,
   doesRecordBelongToTeam,
   extractRecordCanonicalTeamId,
+  findClubTeamRegistryItem,
   hasUserModifiedSessionContent,
   isDateStrictlyInMonth,
   isLegacyDefaultSampleCalendarMap,
   isSessionAllowedForActiveTeamView,
+  registerOrPersistCustomTeam,
   resolveCanonicalTeamId,
   runTrainingSessionsIsolationAuditAndMigration,
 } from '@/lib/trainingIsolation';
@@ -432,6 +435,9 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
       return;
     }
     try {
+      if (!findClubTeamRegistryItem(selectedTeam)) {
+        registerOrPersistCustomTeam(selectedTeam, { explicitTeamId: targetTeamId });
+      }
       localStorage.setItem(targetStorageKey, JSON.stringify(stampedEvents));
     } catch (e) {
       console.warn('Error saving calendar events to localStorage:', e);
@@ -1058,14 +1064,26 @@ export default function TeamMonthlyCalendar({ selectedTeam }: TeamMonthlyCalenda
         const sessionsKey = `team_sessions_${selectedTeam}`;
         const savedSessionsStr = localStorage.getItem(sessionsKey);
         let currentSessions: any[] = savedSessionsStr ? JSON.parse(savedSessionsStr) : [];
-        const existingIdx = currentSessions.findIndex((s: any) => s.fecha === editingDate);
-        const sessionId = existingIdx >= 0 && currentSessions[existingIdx]?.id
-          ? currentSessions[existingIdx].id
-          : crypto.randomUUID();
+        const existingIdx = currentSessions.findIndex((s: any) =>
+          eventToSave.sessionId ? s.id === eventToSave.sessionId : s.fecha === editingDate
+        );
+        const sessionId =
+          existingIdx >= 0 &&
+          currentSessions[existingIdx]?.id &&
+          currentSessions[existingIdx].id !== editingDate
+            ? String(currentSessions[existingIdx].id).trim()
+            : eventToSave.sessionId && eventToSave.sessionId !== editingDate
+              ? String(eventToSave.sessionId).trim()
+              : createPersistentSessionId();
+
+        eventToSave.sessionId = sessionId;
+        updatedEvents[editingDate] = eventToSave;
+        saveEvents(updatedEvents, canonicalTeamId, storageKey);
 
         if (existingIdx >= 0) {
           currentSessions[existingIdx] = {
             ...currentSessions[existingIdx],
+            id: sessionId,
             teamId: canonicalTeamId,
             team: selectedTeam,
             isUserCreated: true,

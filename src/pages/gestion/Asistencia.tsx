@@ -46,10 +46,15 @@ import {
   safeLocalStorageSetSessions 
 } from '@/lib/fileStorage';
 import {
+  createPersistentSessionId,
   doesRecordBelongToTeam,
   extractRecordCanonicalTeamId,
+  findClubTeamRegistryItem,
   getStrictFullSessionDeduplicationKey,
   isSessionAllowedForActiveTeamView,
+  reconcileSessionAttendanceRecords,
+  reconcileSessionSubItemsById,
+  registerOrPersistCustomTeam,
   resolveCanonicalTeamId,
   runTrainingSessionsIsolationAuditAndMigration,
 } from '@/lib/trainingIsolation';
@@ -581,13 +586,28 @@ export default function Asistencia() {
               }
 
               const cloudRecords = cleanSessionRecords(cloudItem.records || [], currentRoster);
-              const { dedupKey, effectiveSessionId } = getStrictFullSessionDeduplicationKey(
+              const { dedupKey, effectiveSessionId, hasExplicitValidId } = getStrictFullSessionDeduplicationKey(
                 cloudItem,
                 supabaseMergeSeen
               );
               const existing = mergedMap.get(dedupKey);
               
               if (!existing) {
+                const cloudPlayerIds = new Set(cloudRecords.map(r => r.playerId));
+                const hydratedCloudRecords: AttendanceRecord[] = [...cloudRecords];
+                currentRoster.forEach(p => {
+                  if (!cloudPlayerIds.has(p.id)) {
+                    hydratedCloudRecords.push({
+                      playerId: p.id,
+                      status: undefined,
+                      playerName: p.nombre,
+                      playerLastName: p.apellidos,
+                      playerDorsal: p.dorsal,
+                      playerPosition: p.posicion,
+                      isGuest: false
+                    });
+                  }
+                });
                 mergedMap.set(dedupKey, {
                   id: effectiveSessionId,
                   teamId: canonicalTeamId,
@@ -597,30 +617,34 @@ export default function Asistencia() {
                   tipo: cloudItem.tipo as any,
                   descripcion: cloudItem.descripcion || 'Sesión de entrenamiento',
                   observaciones: cloudItem.observaciones || '',
-                  records: cloudRecords,
+                  records: hydratedCloudRecords,
                   tareas: cloudItem.tareas || [],
                   archivos: cloudItem.archivos || [],
                   videos: cloudItem.videos || []
                 });
               } else if (existing) {
-                const localIds = new Set(existing.records.map(r => r.playerId));
-                cloudRecords.forEach(cr => {
-                  if (!localIds.has(cr.playerId)) {
-                    existing.records.push(cr);
-                  }
-                });
+                existing.records = reconcileSessionAttendanceRecords(
+                  existing.records || [],
+                  cloudRecords
+                );
+                if (hasExplicitValidId && existing.id.startsWith('unidentified_')) {
+                  existing.id = String(cloudItem.id).trim();
+                }
                 if (!existing.observaciones && cloudItem.observaciones) {
                   existing.observaciones = cloudItem.observaciones;
                 }
-                if ((!existing.tareas || existing.tareas.length === 0) && cloudItem.tareas && cloudItem.tareas.length > 0) {
-                  existing.tareas = cloudItem.tareas;
-                }
-                if ((!existing.archivos || existing.archivos.length === 0) && cloudItem.archivos && cloudItem.archivos.length > 0) {
-                  existing.archivos = cloudItem.archivos;
-                }
-                if ((!existing.videos || existing.videos.length === 0) && cloudItem.videos && cloudItem.videos.length > 0) {
-                  existing.videos = cloudItem.videos;
-                }
+                existing.tareas = reconcileSessionSubItemsById(
+                  existing.tareas || [],
+                  cloudItem.tareas || []
+                );
+                existing.archivos = reconcileSessionSubItemsById(
+                  existing.archivos || [],
+                  cloudItem.archivos || []
+                );
+                existing.videos = reconcileSessionSubItemsById(
+                  existing.videos || [],
+                  cloudItem.videos || []
+                );
               }
             });
 
@@ -782,17 +806,20 @@ export default function Asistencia() {
 
   const saveSessions = async (updated: AttendanceSession[]) => {
     const canonicalTeamId = resolveCanonicalTeamId(selectedTeam);
+    if (!findClubTeamRegistryItem(selectedTeam)) {
+      registerOrPersistCustomTeam(selectedTeam, { explicitTeamId: canonicalTeamId });
+    }
 
     const saveSeen = new Map<string, number>();
 
-    // Ensure all sessions have valid UUIDs, immutable teamId, and strip inline base64 photos from records
+    // Ensure all sessions have stable deterministic or explicit IDs, immutable teamId, and strip inline base64 photos from records
     const validSessions = updated
       .filter(sess => {
         const sessTeamId = extractRecordCanonicalTeamId(sess);
         return !sessTeamId || sessTeamId === canonicalTeamId;
       })
       .map((sess) => {
-        const { hasExplicitValidId, effectiveSessionId } = getStrictFullSessionDeduplicationKey(
+        const { effectiveSessionId } = getStrictFullSessionDeduplicationKey(
           sess,
           saveSeen
         );
@@ -805,7 +832,7 @@ export default function Asistencia() {
         });
         return {
           ...sess,
-          id: hasExplicitValidId ? effectiveSessionId : crypto.randomUUID(),
+          id: effectiveSessionId,
           teamId: canonicalTeamId,
           team: selectedTeam,
           records: cleanRecords
@@ -927,7 +954,7 @@ export default function Asistencia() {
     }));
 
     const newSession: AttendanceSession = {
-      id: crypto.randomUUID(),
+      id: createPersistentSessionId(),
       teamId: canonicalTeamId,
       team: selectedTeam,
       isUserCreated: true,
@@ -949,7 +976,7 @@ export default function Asistencia() {
       localStorage.setItem(deletedKey, JSON.stringify(filtered));
     } catch {}
 
-    const updated = [newSession, ...sessions.filter(s => s.fecha !== newSession.fecha)];
+    const updated = [newSession, ...sessions.filter(s => s.id !== newSession.id)];
     await saveSessions(updated);
     await syncSessionToCalendarStorage(selectedTeam, newSession, undefined, true);
     setSelectedSession(newSession);

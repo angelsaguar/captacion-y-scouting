@@ -28,9 +28,13 @@ import {
 } from './firestoreMatches';
 import {
   extractRecordCanonicalTeamId,
+  findClubTeamRegistryItem,
   getStrictFullSessionDeduplicationKey,
   hasUserModifiedSessionContent,
   isSessionAllowedForActiveTeamView,
+  reconcileSessionAttendanceRecords,
+  reconcileSessionSubItemsById,
+  registerOrPersistCustomTeam,
   resolveCanonicalTeamId,
   runTrainingSessionsIsolationAuditAndMigration,
 } from './trainingIsolation';
@@ -41,7 +45,10 @@ import {
  * - Deduplicates strictly via `getStrictFullSessionDeduplicationKey(session, seenCounterInCurrentStore)`,
  *   NEVER falling back to `s.fecha`, NEVER merging two different sessions on the same date (even without ID),
  *   and NEVER duplicating the same session replicated across localStorage, Supabase, and Firestore.
- * - Preserves historical session IDs and additively merges attendance records so no historical records are lost.
+ * - Reconciles attendance records by `playerId` via `reconcileSessionAttendanceRecords` so marked statuses
+ *   ('Presente', 'Ausente', etc.) from either local or cloud are always preserved and never overwritten by
+ *   unmarked ('Pendiente' / undefined) records.
+ * - Preserves historical session IDs and all additional fields.
  */
 export function mergeAndFilterTeamSessionsForTargetTeam(
   cloudItems: any[],
@@ -67,11 +74,27 @@ export function mergeAndFilterTeamSessionsForTargetTeam(
     if (!isDel(s.id, s.fecha)) {
       const { dedupKey, effectiveSessionId, hasExplicitValidId } =
         getStrictFullSessionDeduplicationKey(s, cloudSeen);
+      const prevCloud = bySessionKey.get(dedupKey);
+      const reconciledCloudRecords = prevCloud
+        ? reconcileSessionAttendanceRecords(prevCloud.records || [], s.records || [])
+        : Array.isArray(s.records)
+          ? [...s.records]
+          : [];
       bySessionKey.set(dedupKey, {
+        ...(prevCloud || {}),
         ...s,
-        id: hasExplicitValidId ? String(s.id).trim() : (s.id || effectiveSessionId),
+        id: hasExplicitValidId
+          ? String(s.id).trim()
+          : prevCloud?.id && !String(prevCloud.id).startsWith('unidentified_')
+            ? prevCloud.id
+            : effectiveSessionId,
         teamId: targetCanonicalTeamId,
         team: teamName,
+        records: reconciledCloudRecords,
+        observaciones: s.observaciones || prevCloud?.observaciones || '',
+        tareas: reconcileSessionSubItemsById(prevCloud?.tareas, s.tareas),
+        archivos: reconcileSessionSubItemsById(prevCloud?.archivos, s.archivos),
+        videos: reconcileSessionSubItemsById(prevCloud?.videos, s.videos),
       });
     }
   });
@@ -86,39 +109,29 @@ export function mergeAndFilterTeamSessionsForTargetTeam(
       const { dedupKey, effectiveSessionId, hasExplicitValidId } =
         getStrictFullSessionDeduplicationKey(ls, localSeen);
       const cloudExisting = bySessionKey.get(dedupKey);
-      const localRecords: any[] = Array.isArray(ls.records) ? [...ls.records] : [];
-      if (cloudExisting && Array.isArray(cloudExisting.records)) {
-        const localPlayerIds = new Set(
-          localRecords.map((r: any) => String(r?.playerId || r?.id || '').trim()).filter(Boolean)
-        );
-        cloudExisting.records.forEach((cr: any) => {
-          const cPid = String(cr?.playerId || cr?.id || '').trim();
-          if (cPid && !localPlayerIds.has(cPid)) {
-            localRecords.push(cr);
-            localPlayerIds.add(cPid);
-          }
-        });
-      }
+      const reconciledRecords = reconcileSessionAttendanceRecords(
+        Array.isArray(ls.records) ? ls.records : [],
+        Array.isArray(cloudExisting?.records) ? cloudExisting.records : []
+      );
+      const resolvedId = hasExplicitValidId
+        ? String(ls.id).trim()
+        : cloudExisting?.id && !String(cloudExisting.id).startsWith('unidentified_')
+          ? String(cloudExisting.id).trim()
+          : effectiveSessionId;
+
       bySessionKey.set(dedupKey, {
         ...(cloudExisting || {}),
         ...ls,
-        id: hasExplicitValidId ? String(ls.id).trim() : (ls.id || cloudExisting?.id || effectiveSessionId),
+        id: resolvedId,
         teamId: targetCanonicalTeamId,
         team: teamName,
-        records: localRecords,
+        hora: ls.hora || cloudExisting?.hora || '19:30 h',
+        descripcion: ls.descripcion || cloudExisting?.descripcion || 'Sesión de entrenamiento',
+        records: reconciledRecords,
         observaciones: ls.observaciones || cloudExisting?.observaciones || '',
-        tareas:
-          Array.isArray(ls.tareas) && ls.tareas.length > 0
-            ? ls.tareas
-            : cloudExisting?.tareas || [],
-        archivos:
-          Array.isArray(ls.archivos) && ls.archivos.length > 0
-            ? ls.archivos
-            : cloudExisting?.archivos || [],
-        videos:
-          Array.isArray(ls.videos) && ls.videos.length > 0
-            ? ls.videos
-            : cloudExisting?.videos || [],
+        tareas: reconcileSessionSubItemsById(ls.tareas, cloudExisting?.tareas),
+        archivos: reconcileSessionSubItemsById(ls.archivos, cloudExisting?.archivos),
+        videos: reconcileSessionSubItemsById(ls.videos, cloudExisting?.videos),
       });
     }
   });
@@ -665,6 +678,9 @@ export async function syncAllClubDataWithFirestore(options?: {
             pulled++;
           }
         } else if (data.category === 'team_sessions' && data.team && Array.isArray(items)) {
+          if (!findClubTeamRegistryItem(data.team)) {
+            registerOrPersistCustomTeam(data.team);
+          }
           const key = `team_sessions_${data.team}`;
           const localRaw = localStorage.getItem(key);
           const localArr: any[] = localRaw ? JSON.parse(localRaw) : [];

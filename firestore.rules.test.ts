@@ -39,16 +39,24 @@ import {
   mergeTwoMatches,
 } from './src/lib/firestoreMatches';
 import {
+  CUSTOM_TEAM_REGISTRY_KEY,
   PRE_TRAINING_ISOLATION_BACKUP_KEY,
   UNASSIGNED_SESSIONS_AUDIT_KEY,
   computeSessionContentFingerprint,
   createAndVerifyTrainingSafetyBackup,
+  createPersistentSessionId,
   doesRecordBelongToTeam,
+  findCustomTeamRegistryEntry,
   getStrictFullSessionDeduplicationKey,
   getTeamDisplayName,
+  hasMarkedAttendanceStatus,
   isDateStrictlyInMonth,
   isSessionAllowedForActiveTeamView,
   parseStrictYearMonthFromDateStr,
+  reconcileAttendanceRecordPair,
+  reconcileSessionAttendanceRecords,
+  registerOrPersistCustomTeam,
+  renameCustomTeam,
   resolveCanonicalTeamId,
   restoreTrainingSafetyBackup,
   runTrainingSessionsIsolationAuditAndMigration,
@@ -1210,6 +1218,463 @@ describe('Auditoría de Seguridad Previa a Publicación – Captación y Scoutin
         );
         assert.equal(unmarkedAdjuntas.length, 15, 'Debe mantener intactos los 15 registros de JUGADORAS_ADJUNTAS');
       }
+    });
+
+    it('reconcilia asistencias por playerId entre local y nube conservando estados marcados (Presente, Ausente, Retraso, etc.) sin que registros locales vacíos sobrescriban los de la nube', () => {
+      assert.equal(hasMarkedAttendanceStatus('Presente'), true);
+      assert.equal(hasMarkedAttendanceStatus('Ausente'), true);
+      assert.equal(hasMarkedAttendanceStatus('Retraso'), true);
+      assert.equal(hasMarkedAttendanceStatus('Justificado'), true);
+      assert.equal(hasMarkedAttendanceStatus('Lesionado'), true);
+      assert.equal(hasMarkedAttendanceStatus('No Justificó'), true);
+      assert.equal(hasMarkedAttendanceStatus('Pendiente'), false);
+      assert.equal(hasMarkedAttendanceStatus(undefined), false);
+      assert.equal(hasMarkedAttendanceStatus(null), false);
+
+      // Caso 1: Local tiene al jugador con status undefined/Pendiente (plantilla hidratada) y la nube tiene status 'Presente' o 'Ausente'
+      const localUnmarkedRecords = [
+        {
+          playerId: JUGADORAS_ADJUNTAS[0].id,
+          playerName: JUGADORAS_ADJUNTAS[0].nombre,
+          playerLastName: JUGADORAS_ADJUNTAS[0].apellidos,
+          playerDorsal: JUGADORAS_ADJUNTAS[0].dorsal,
+          status: undefined,
+        },
+        {
+          playerId: JUGADORAS_ADJUNTAS[1].id,
+          playerName: JUGADORAS_ADJUNTAS[1].nombre,
+          playerLastName: JUGADORAS_ADJUNTAS[1].apellidos,
+          status: 'Pendiente',
+        },
+        {
+          playerId: JUGADORAS_ADJUNTAS[2].id,
+          playerName: JUGADORAS_ADJUNTAS[2].nombre,
+          status: 'Presente',
+          comentario: 'Nota local',
+        },
+      ];
+
+      const cloudMarkedRecords = [
+        {
+          playerId: JUGADORAS_ADJUNTAS[0].id,
+          status: 'Presente',
+          horaLlegada: '19:25',
+        },
+        {
+          playerId: JUGADORAS_ADJUNTAS[1].id,
+          status: 'Ausente',
+          motivo: 'Exámenes',
+        },
+        {
+          playerId: JUGADORAS_ADJUNTAS[2].id,
+          status: undefined,
+          playerDorsal: JUGADORAS_ADJUNTAS[2].dorsal,
+        },
+      ];
+
+      const reconciled = reconcileSessionAttendanceRecords(localUnmarkedRecords, cloudMarkedRecords);
+      assert.equal(reconciled.length, 3);
+
+      const rec0 = reconciled.find((r) => r.playerId === JUGADORAS_ADJUNTAS[0].id);
+      assert.equal(rec0?.status, 'Presente', 'El estado Presente de la nube debe prevalecer sobre undefined local');
+      assert.equal(rec0?.playerName, JUGADORAS_ADJUNTAS[0].nombre, 'Debe conservar el nombre local');
+      assert.equal(rec0?.horaLlegada, '19:25', 'Debe conservar campos adicionales de la nube');
+
+      const rec1 = reconciled.find((r) => r.playerId === JUGADORAS_ADJUNTAS[1].id);
+      assert.equal(rec1?.status, 'Ausente', 'El estado Ausente de la nube debe prevalecer sobre Pendiente local');
+      assert.equal(rec1?.motivo, 'Exámenes');
+
+      const rec2 = reconciled.find((r) => r.playerId === JUGADORAS_ADJUNTAS[2].id);
+      assert.equal(rec2?.status, 'Presente', 'El estado Presente local debe prevalecer sobre undefined de la nube');
+      assert.equal(rec2?.comentario, 'Nota local');
+      assert.equal(rec2?.playerDorsal, JUGADORAS_ADJUNTAS[2].dorsal);
+
+      const pairCheck = reconcileAttendanceRecordPair(
+        { playerId: 'p1', status: undefined, playerName: 'Jugadora 1' },
+        { playerId: 'p1', status: 'Retraso', playerLastName: 'Apellidos 1' }
+      );
+      assert.equal(pairCheck.status, 'Retraso');
+      assert.equal(pairCheck.playerName, 'Jugadora 1');
+      assert.equal(pairCheck.playerLastName, 'Apellidos 1');
+
+      // Caso 2: Reconciliación completa a través de mergeAndFilterTeamSessionsForTargetTeam (PUSH/PULL)
+      const localSessWithUnmarkedRoster = {
+        id: 'sess-reconcile-test',
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+        fecha: '2026-09-15',
+        hora: '19:30 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Sesión táctica',
+        records: localUnmarkedRecords,
+      };
+      const cloudSessWithMarkedAttendance = {
+        id: 'sess-reconcile-test',
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+        fecha: '2026-09-15',
+        hora: '19:30 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Sesión táctica',
+        records: cloudMarkedRecords,
+      };
+
+      const mergedSessions = mergeAndFilterTeamSessionsForTargetTeam(
+        [cloudSessWithMarkedAttendance],
+        [localSessWithUnmarkedRoster],
+        'SENIOR FEMENINO'
+      );
+      assert.equal(mergedSessions.length, 1);
+      const mergedRecs = mergedSessions[0].records;
+      assert.equal(
+        mergedRecs.find((r: any) => r.playerId === JUGADORAS_ADJUNTAS[0].id)?.status,
+        'Presente'
+      );
+      assert.equal(
+        mergedRecs.find((r: any) => r.playerId === JUGADORAS_ADJUNTAS[1].id)?.status,
+        'Ausente'
+      );
+      assert.equal(
+        mergedRecs.find((r: any) => r.playerId === JUGADORAS_ADJUNTAS[2].id)?.status,
+        'Presente'
+      );
+    });
+
+    it('mantiene la identidad de una sesión estable mediante su identificador persistente aunque cambien sus estados de asistencia, evitando duplicados entre local y nube', () => {
+      // 1. Sesión antigua sin ID explícito: en su primera lectura recibe un effectiveSessionId determinista (nunca aleatorio)
+      const legacySessionInitial = {
+        id: undefined,
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+        fecha: '2026-09-22',
+        hora: '19:30 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Entrenamiento físico-táctico',
+        observaciones: '',
+        records: [
+          { playerId: JUGADORAS_ADJUNTAS[0].id, status: undefined },
+          { playerId: JUGADORAS_ADJUNTAS[1].id, status: undefined },
+        ],
+        tareas: [],
+      };
+
+      const read1 = getStrictFullSessionDeduplicationKey(legacySessionInitial, new Map());
+      const read2 = getStrictFullSessionDeduplicationKey(legacySessionInitial, new Map());
+      assert.equal(
+        read1.effectiveSessionId,
+        read2.effectiveSessionId,
+        'Lecturas repetidas de una sesión antigua sin ID jamás deben asignar identificadores aleatorios'
+      );
+
+      // 2. Una vez asignado su identificador determinista (o su UUID al crearse), al modificar asistencias, observaciones o tareas conserva exactamente el mismo ID y dedupKey
+      const persistedSessionId = read1.effectiveSessionId;
+      const localSavedBeforeAttendance = {
+        ...legacySessionInitial,
+        id: persistedSessionId,
+      };
+      const cloudUpdatedWithAttendanceAndNotes = {
+        ...legacySessionInitial,
+        id: persistedSessionId,
+        observaciones: 'Excelente intensidad del grupo',
+        records: [
+          { playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' },
+          { playerId: JUGADORAS_ADJUNTAS[1].id, status: 'Ausente' },
+        ],
+        tareas: [{ id: 't1', titulo: 'Rondo 4v2', duracion: '15m', descripcion: 'Presión' }],
+      };
+
+      const keyLocal = getStrictFullSessionDeduplicationKey(localSavedBeforeAttendance, new Map());
+      const keyCloud = getStrictFullSessionDeduplicationKey(cloudUpdatedWithAttendanceAndNotes, new Map());
+      assert.equal(keyLocal.dedupKey, keyCloud.dedupKey);
+      assert.equal(keyLocal.effectiveSessionId, persistedSessionId);
+      assert.equal(keyCloud.effectiveSessionId, persistedSessionId);
+
+      // Incluso si un almacén aún conserva la copia original sin ID (id: undefined) y el otro ya guardó el ID determinista y marcó asistencias, ambos se reconocen por el mismo dedupKey
+      const mergedAcrossStores = mergeAndFilterTeamSessionsForTargetTeam(
+        [cloudUpdatedWithAttendanceAndNotes],
+        [legacySessionInitial],
+        'SENIOR FEMENINO'
+      );
+      assert.equal(
+        mergedAcrossStores.length,
+        1,
+        'La misma sesión con diferentes estados de asistencia entre local y nube jamás debe duplicarse'
+      );
+      assert.equal(mergedAcrossStores[0].id, persistedSessionId);
+      assert.equal(
+        mergedAcrossStores[0].records.find((r: any) => r.playerId === JUGADORAS_ADJUNTAS[0].id)?.status,
+        'Presente'
+      );
+      assert.equal(
+        mergedAcrossStores[0].records.find((r: any) => r.playerId === JUGADORAS_ADJUNTAS[1].id)?.status,
+        'Ausente'
+      );
+      assert.equal(mergedAcrossStores[0].observaciones, 'Excelente intensidad del grupo');
+      assert.equal(mergedAcrossStores[0].tareas.length, 1);
+    });
+
+    it('impide que dos sesiones distintas sin ID con exactamente los mismos datos descriptivos se fusionen y sincroniza correctamente ambas sesiones entre localStorage, Supabase y Firestore', () => {
+      // CASO A: Dos sesiones distintas SIN ID que tienen EXACTAMENTE los mismos datos descriptivos (fecha, hora, tipo, descripcion, lugar)
+      // en distintos almacenes (ej. localStorage y Supabase/Firestore)
+      const sharedDescriptiveData = {
+        id: undefined,
+        teamId: 'team_01_senior_femenino',
+        team: 'SENIOR FEMENINO',
+        fecha: '2026-09-24',
+        hora: '19:30 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Sesión de entrenamiento',
+        lugar: 'Campo Municipal 1',
+      };
+
+      const distinctNoIdSessionA = {
+        ...sharedDescriptiveData,
+        observaciones: 'Subgrupo A - Trabajo defensivo',
+        records: [
+          { playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' },
+          { playerId: JUGADORAS_ADJUNTAS[1].id, status: undefined },
+        ],
+        tareas: [{ id: 'task-a', titulo: 'Basculaciones', duracion: '20m', descripcion: 'Línea de 4' }],
+      };
+
+      const distinctNoIdSessionB = {
+        ...sharedDescriptiveData,
+        observaciones: 'Subgrupo B - Finalización',
+        records: [
+          { playerId: JUGADORAS_ADJUNTAS[0].id, status: undefined },
+          { playerId: JUGADORAS_ADJUNTAS[2].id, status: 'Presente' },
+        ],
+        tareas: [{ id: 'task-b', titulo: 'Remates', duracion: '20m', descripcion: 'Centros laterales' }],
+      };
+
+      const fpA = computeSessionContentFingerprint(distinctNoIdSessionA);
+      const fpB = computeSessionContentFingerprint(distinctNoIdSessionB);
+      assert.notEqual(
+        fpA,
+        fpB,
+        'Dos sesiones distintas sin ID que coincidan en fecha, hora, tipo, descripción y lugar deben generar huellas distintas'
+      );
+
+      const keyA = getStrictFullSessionDeduplicationKey(distinctNoIdSessionA, new Map());
+      const keyB = getStrictFullSessionDeduplicationKey(distinctNoIdSessionB, new Map());
+      assert.notEqual(keyA.dedupKey, keyB.dedupKey);
+      assert.notEqual(keyA.effectiveSessionId, keyB.effectiveSessionId);
+
+      // Al sincronizar entre almacenes (Session A en localStorage y Session B en Supabase/Firestore), NUNCA deben fusionarse
+      const mergedDistinctAcrossStores = mergeAndFilterTeamSessionsForTargetTeam(
+        [distinctNoIdSessionB],
+        [distinctNoIdSessionA],
+        'SENIOR FEMENINO'
+      );
+      assert.equal(
+        mergedDistinctAcrossStores.length,
+        2,
+        'Dos sesiones distintas sin ID con los mismos datos descriptivos en distintos almacenes jamás deben fusionarse'
+      );
+      const foundA = mergedDistinctAcrossStores.find((s) => s.id === keyA.effectiveSessionId);
+      const foundB = mergedDistinctAcrossStores.find((s) => s.id === keyB.effectiveSessionId);
+      assert.ok(foundA, 'Debe conservarse la sesión A con su identificador determinista');
+      assert.ok(foundB, 'Debe conservarse la sesión B con su identificador determinista');
+      assert.equal(foundA.observaciones, 'Subgrupo A - Trabajo defensivo');
+      assert.equal(foundB.observaciones, 'Subgrupo B - Finalización');
+
+      // CASO B: Dos sesiones distintas SIN ID que coinciden incluso en todos sus campos iniciales dentro de un almacén
+      // y posteriormente se sincronizan y actualizan entre localStorage, Supabase y Firestore
+      const twinNoId1 = {
+        ...sharedDescriptiveData,
+        fecha: '2026-09-25',
+        records: [{ playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' }],
+      };
+      const twinNoId2 = {
+        ...sharedDescriptiveData,
+        fecha: '2026-09-25',
+        records: [{ playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' }],
+      };
+
+      const initialStoreSeen = new Map<string, number>();
+      const twinKey1 = getStrictFullSessionDeduplicationKey(twinNoId1, initialStoreSeen);
+      const twinKey2 = getStrictFullSessionDeduplicationKey(twinNoId2, initialStoreSeen);
+      assert.notEqual(
+        twinKey1.effectiveSessionId,
+        twinKey2.effectiveSessionId,
+        'Dos sesiones sin ID con datos idénticos en la misma lista deben recibir identificadores deterministas diferentes (occ_0 vs occ_1)'
+      );
+
+      // Una vez asignados sus IDs deterministas al guardarse, se replican en localStorage, Supabase y Firestore
+      // y se marcan asistencias distintas en cada una sin que se fusionen ni se dupliquen
+      const localStoreAfterSave = [
+        {
+          ...twinNoId1,
+          id: twinKey1.effectiveSessionId,
+          records: [
+            { playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' },
+            { playerId: JUGADORAS_ADJUNTAS[1].id, status: 'Presente' },
+          ],
+        },
+        {
+          ...twinNoId2,
+          id: twinKey2.effectiveSessionId,
+          records: [
+            { playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' },
+            { playerId: JUGADORAS_ADJUNTAS[1].id, status: undefined },
+          ],
+        },
+      ];
+
+      const cloudStoreWithUpdatedSecondSession = [
+        {
+          ...twinNoId1,
+          id: twinKey1.effectiveSessionId,
+          records: [
+            { playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' },
+            { playerId: JUGADORAS_ADJUNTAS[1].id, status: undefined },
+          ],
+        },
+        {
+          ...twinNoId2,
+          id: twinKey2.effectiveSessionId,
+          records: [
+            { playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' },
+            { playerId: JUGADORAS_ADJUNTAS[1].id, status: 'Ausente' },
+          ],
+        },
+      ];
+
+      const syncedTwins = mergeAndFilterTeamSessionsForTargetTeam(
+        cloudStoreWithUpdatedSecondSession,
+        localStoreAfterSave,
+        'SENIOR FEMENINO'
+      );
+      assert.equal(
+        syncedTwins.length,
+        2,
+        'Las dos sesiones deben mantenerse separadas y sincronizarse cada una con su homóloga entre almacenes'
+      );
+      const syncedTwin1 = syncedTwins.find((s) => s.id === twinKey1.effectiveSessionId);
+      const syncedTwin2 = syncedTwins.find((s) => s.id === twinKey2.effectiveSessionId);
+      assert.ok(syncedTwin1);
+      assert.ok(syncedTwin2);
+      assert.equal(
+        syncedTwin1.records.find((r: any) => r.playerId === JUGADORAS_ADJUNTAS[1].id)?.status,
+        'Presente',
+        'La primera sesión debe conservar su estado Presente'
+      );
+      assert.equal(
+        syncedTwin2.records.find((r: any) => r.playerId === JUGADORAS_ADJUNTAS[1].id)?.status,
+        'Ausente',
+        'La segunda sesión debe reconciliar su estado Ausente desde la nube sin mezclarse con la primera'
+      );
+
+      // CASO C: Toda sesión nueva recibe un identificador único y persistente en el momento de su creación
+      // y dos sesiones nuevas con exactamente los mismos datos descriptivos nunca se fusionan
+      const newPersistentId1 = createPersistentSessionId();
+      const newPersistentId2 = createPersistentSessionId();
+      assert.ok(newPersistentId1.length >= 16);
+      assert.ok(newPersistentId2.length >= 16);
+      assert.notEqual(newPersistentId1, newPersistentId2);
+
+      const newSession1 = {
+        ...sharedDescriptiveData,
+        id: newPersistentId1,
+        fecha: '2026-09-26',
+        records: [{ playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Presente' }],
+      };
+      const newSession2 = {
+        ...sharedDescriptiveData,
+        id: newPersistentId2,
+        fecha: '2026-09-26',
+        records: [{ playerId: JUGADORAS_ADJUNTAS[0].id, status: 'Retraso' }],
+      };
+
+      const syncedNewSessions = mergeAndFilterTeamSessionsForTargetTeam(
+        [newSession2],
+        [newSession1],
+        'SENIOR FEMENINO'
+      );
+      assert.equal(syncedNewSessions.length, 2);
+      assert.ok(syncedNewSessions.find((s) => s.id === newPersistentId1));
+      assert.ok(syncedNewSessions.find((s) => s.id === newPersistentId2));
+    });
+
+    it('persiste equipos personalizados sin escrituras en lectura y conserva su teamId canónico y sesiones históricas aunque cambie su nombre visible', () => {
+      // 1. Resolver un equipo personalizado durante una lectura NO debe realizar ninguna escritura en localStorage
+      assert.equal(localStorage.getItem(CUSTOM_TEAM_REGISTRY_KEY), null);
+      const readOnlyTeamId = resolveCanonicalTeamId('CADETE C PERSONALIZADO');
+      assert.equal(readOnlyTeamId, 'team_custom_cadete_c_personalizado');
+      assert.equal(
+        localStorage.getItem(CUSTOM_TEAM_REGISTRY_KEY),
+        null,
+        'resolveCanonicalTeamId no debe escribir en localStorage durante una simple lectura'
+      );
+      assert.equal(getTeamDisplayName(readOnlyTeamId), 'CADETE C PERSONALIZADO');
+      assert.equal(
+        localStorage.getItem(CUSTOM_TEAM_REGISTRY_KEY),
+        null,
+        'getTeamDisplayName tampoco debe escribir en localStorage durante una simple lectura'
+      );
+
+      // 2. Registro explícito al crear/guardar un equipo personalizado
+      const createdEntry = registerOrPersistCustomTeam('CADETE C PERSONALIZADO');
+      assert.ok(createdEntry);
+      assert.equal(createdEntry.teamId, 'team_custom_cadete_c_personalizado');
+      assert.equal(createdEntry.displayName, 'CADETE C PERSONALIZADO');
+      assert.notEqual(
+        localStorage.getItem(CUSTOM_TEAM_REGISTRY_KEY),
+        null,
+        'registerOrPersistCustomTeam debe persistir el equipo personalizado en localStorage'
+      );
+
+      // Sesiones históricas asociadas al teamId canónico del equipo personalizado
+      const customTeamHistoricalSession = {
+        id: 'sess-custom-hist-1',
+        teamId: createdEntry.teamId,
+        team: 'CADETE C PERSONALIZADO',
+        fecha: '2026-10-05',
+        hora: '18:30 h',
+        tipo: 'Entrenamiento',
+        descripcion: 'Sesión histórica equipo personalizado',
+        records: [{ playerId: 'p-custom-1', status: 'Presente' }],
+      };
+      assert.equal(
+        doesRecordBelongToTeam(customTeamHistoricalSession, 'CADETE C PERSONALIZADO'),
+        true
+      );
+
+      // 3. Renombrado del equipo personalizado: debe conservar el MISMO teamId canónico y mantener todas sus sesiones históricas
+      const renamedEntry = renameCustomTeam('CADETE C PERSONALIZADO', 'CADETE B ESPECIAL');
+      assert.ok(renamedEntry);
+      assert.equal(
+        renamedEntry?.teamId,
+        'team_custom_cadete_c_personalizado',
+        'El teamId canónico debe mantenerse inmutable tras renombrar el equipo personalizado'
+      );
+      assert.equal(renamedEntry?.displayName, 'CADETE B ESPECIAL');
+      assert.equal(resolveCanonicalTeamId('CADETE B ESPECIAL'), 'team_custom_cadete_c_personalizado');
+      assert.equal(
+        resolveCanonicalTeamId('CADETE C PERSONALIZADO'),
+        'team_custom_cadete_c_personalizado'
+      );
+      assert.equal(
+        getTeamDisplayName('team_custom_cadete_c_personalizado'),
+        'CADETE B ESPECIAL'
+      );
+      assert.ok(findCustomTeamRegistryEntry('CADETE B ESPECIAL'));
+
+      // Las sesiones históricas creadas con el nombre anterior siguen asociadas al equipo renombrado
+      assert.equal(
+        doesRecordBelongToTeam(customTeamHistoricalSession, 'CADETE B ESPECIAL'),
+        true,
+        'Las sesiones históricas deben mantener su asociación con el equipo personalizado tras el cambio de nombre'
+      );
+      const mergedForRenamedTeam = mergeAndFilterTeamSessionsForTargetTeam(
+        [customTeamHistoricalSession],
+        [],
+        'CADETE B ESPECIAL'
+      );
+      assert.equal(mergedForRenamedTeam.length, 1);
+      assert.equal(mergedForRenamedTeam[0].id, 'sess-custom-hist-1');
+      assert.equal(mergedForRenamedTeam[0].teamId, 'team_custom_cadete_c_personalizado');
+      assert.equal(mergedForRenamedTeam[0].records[0].status, 'Presente');
     });
   });
 });
