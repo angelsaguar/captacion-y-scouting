@@ -92,3 +92,8 @@ La autorización dada para continuar Fase B permite análisis y preparación en 
 - fusionar a `main` o desplegar la aplicación.
 
 Cualquier cambio real de producción requerirá una autorización expresa posterior y un plan de ejecución con backup y rollback.
+
+
+## Actualización 22-11-2026 — Diagnóstico del backend
+
+Se ha añadido `docs/fase-b-diagnostico-backend-autorizacion.md` tras revisar el código real de `server.ts` y `src/lib/clubAccessAndSync.ts`. El hallazgo principal es que los permisos persistentes de Firestore se duplican en un espejo de memoria del servidor; la autorización de API usa ese espejo y la vinculación UID también se replica solo en memoria. La siguiente implementación debe eliminar esa segunda fuente de verdad y leer el documento persistente desde Firebase Admin usando la base de datos nombrada correcta. La emisión de custom claims y la conexión Supabase quedan sujetas a pruebas y autorización separada; no se han tocado usuarios ni servicios de producción.
