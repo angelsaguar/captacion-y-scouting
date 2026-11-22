@@ -17,6 +17,7 @@ import {
 
 export const EXPECTED_FIREBASE_PROJECT_ID = "gen-lang-client-0091658680";
 export const ADMIN_AUTHORIZED_EMAIL = "angel.saguar@telefonica.net";
+const ADMIN_AUTHORIZED_UID = (process.env.CLUB_ADMIN_FIREBASE_UID || "").trim();
 export const ALEJANDRO_AUTHORIZED_EMAIL = "asaguar04@gmail.com";
 
 if (getApps().length === 0) {
@@ -62,7 +63,12 @@ export function evaluateDecodedClubToken(decoded: DecodedIdToken | null | undefi
   if (decoded.aud !== EXPECTED_FIREBASE_PROJECT_ID) return { allowed: false, statusCode: 403, error: "Proyecto Firebase no coincidente." };
   const email = (decoded.email || "").trim().toLowerCase();
   if (!decoded.email_verified || !email) return { allowed: false, statusCode: 403, error: "Se requiere una cuenta con correo verificado." };
-  if (email === ADMIN_AUTHORIZED_EMAIL) return { allowed: true, statusCode: 200, role: "admin", email, uid: decoded.uid };
+  if (email === ADMIN_AUTHORIZED_EMAIL) {
+    if (!ADMIN_AUTHORIZED_UID || decoded.uid !== ADMIN_AUTHORIZED_UID) {
+      return { allowed: false, statusCode: 403, error: "Identidad de administrador no vinculada al UID autorizado del entorno." };
+    }
+    return { allowed: true, statusCode: 200, role: "admin", email, uid: decoded.uid };
+  }
   if (email !== ALEJANDRO_AUTHORIZED_EMAIL) return { allowed: false, statusCode: 403, error: "Cuenta no autorizada en Captación y Scouting." };
   if (!scoutAccess || scoutAccess.email !== ALEJANDRO_AUTHORIZED_EMAIL) return { allowed: false, statusCode: 403, error: "Perfil de observador inexistente o no válido." };
   if (!scoutAccess.active) return { allowed: false, statusCode: 403, error: "La cuenta de observador está desactivada." };
