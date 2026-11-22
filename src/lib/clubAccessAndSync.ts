@@ -264,7 +264,7 @@ export async function getAuthBearerHeaders(extraHeaders: Record<string, string> 
 }
 
 /**
- * Reads Alejandro's access configuration from /club_access/alejandro_scout.
+ * Reads Alejandro's access configuration from the persistent /club_access/alejandro_scout document.
  */
 export async function getAlejandroAccessConfig(): Promise<ScoutAccessConfig> {
   const path = `club_access/${ALEJANDRO_ACCESS_DOC_ID}`;
@@ -297,8 +297,8 @@ export async function getAlejandroAccessConfig(): Promise<ScoutAccessConfig> {
 }
 
 /**
- * Called when the Administrator (angel.saguar@telefonica.net) logs in to ensure
- * /club_access/alejandro_scout exists in Firestore with allowedModules: [] by default.
+ * Called when the Administrator logs in to ensure the Firestore access document exists
+ * with allowedModules: [] by default. Server authorization reads this document directly.
  */
 export async function ensureAlejandroAccessInitializedByAdmin(): Promise<ScoutAccessConfig> {
   const currentUser = auth.currentUser;
@@ -328,22 +328,6 @@ export async function ensureAlejandroAccessInitializedByAdmin(): Promise<ScoutAc
       cfg = await getAlejandroAccessConfig();
     }
 
-    try {
-      const headers = await getAuthBearerHeaders({ 'Content-Type': 'application/json' });
-      await fetch('/api/admin/sync-scout-access', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          uid: cfg.uid,
-          uidLocked: cfg.uidLocked,
-          active: cfg.active,
-          allowedModules: cfg.allowedModules,
-        }),
-      });
-    } catch {
-      // Non-fatal if server mirror sync fails
-    }
-
     return cfg;
   } catch (err) {
     console.warn('Error ensuring /club_access/alejandro_scout initialization:', err);
@@ -352,7 +336,7 @@ export async function ensureAlejandroAccessInitializedByAdmin(): Promise<ScoutAc
 }
 
 /**
- * Cryptographically binds and verifies Alejandro's real Firebase Auth UID upon Google sign-in.
+ * Binds and verifies Alejandro's Firebase Auth UID in Firestore upon Google sign-in.
  * - Requires email_verified === true and email === 'asaguar04@gmail.com'.
  * - If /club_access/alejandro_scout has uid === '' and uidLocked === false, atomically seals
  *   his real Firebase UID (without enabling any modules).
@@ -397,13 +381,6 @@ export async function bindAndVerifyAlejandroUid(fbUser: {
     throw new Error(
       'Alerta de seguridad: El UID de Firebase Authentication no coincide con el UID sellado para asaguar04@gmail.com.'
     );
-  }
-
-  try {
-    const headers = await getAuthBearerHeaders({ 'Content-Type': 'application/json' });
-    await fetch('/api/scout/seal-uid', { method: 'POST', headers });
-  } catch {
-    // Non-fatal if server mirror is unreachable
   }
 
   return await getAlejandroAccessConfig();
@@ -466,22 +443,6 @@ export async function updateAlejandroAccessByAdmin(updates: {
     }
 
     const updatedCfg = await getAlejandroAccessConfig();
-    try {
-      const headers = await getAuthBearerHeaders({ 'Content-Type': 'application/json' });
-      await fetch('/api/admin/sync-scout-access', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          uid: updatedCfg.uid,
-          uidLocked: updatedCfg.uidLocked,
-          active: updatedCfg.active,
-          allowedModules: updatedCfg.allowedModules,
-        }),
-      });
-    } catch {
-      // Non-fatal
-    }
-
     return updatedCfg;
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, path);
