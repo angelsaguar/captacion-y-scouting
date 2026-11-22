@@ -321,3 +321,15 @@ Interpretación:
 - `rolsuper=false` para postgres en esta salida no invalida sus privilegios administrativos mostrados; se registran exactamente los atributos devueltos por la consulta.
 
 Este resultado no reduce el riesgo previamente identificado: `anon` y `authenticated` no necesitan BYPASSRLS para aprovechar políticas permisivas y privilegios de tabla que les concedan acceso. No se ha modificado ningún rol.
+
+
+## 19. Configuración PostgreSQL (consulta 12, 22-11-2026)
+
+Resultado aportado mediante captura:
+- `row_security = on`
+- `search_path = "$user", public, extensions`
+
+Interpretación:
+- La configuración global `row_security=on` está activa. Esto es favorable, pero no corrige políticas permisivas ni sustituye los GRANT; las políticas RLS detectadas siguen requiriendo remediación.
+- El `search_path` de sesión incluye `"$user", public, extensions`. Es una configuración general de sesión, no prueba el `search_path` efectivo de cada función. Las funciones privilegiadas deben fijarlo explícitamente a un esquema seguro cuando corresponda.
+- La consulta 12 queda completada. No se ha cambiado ninguna configuración.
