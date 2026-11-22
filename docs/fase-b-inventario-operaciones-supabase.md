@@ -333,3 +333,15 @@ Interpretación:
 - La configuración global `row_security=on` está activa. Esto es favorable, pero no corrige políticas permisivas ni sustituye los GRANT; las políticas RLS detectadas siguen requiriendo remediación.
 - El `search_path` de sesión incluye `"$user", public, extensions`. Es una configuración general de sesión, no prueba el `search_path` efectivo de cada función. Las funciones privilegiadas deben fijarlo explícitamente a un esquema seguro cuando corresponda.
 - La consulta 12 queda completada. No se ha cambiado ninguna configuración.
+
+
+## 20. Políticas RLS de Storage (consulta adicional, 22-11-2026)
+
+El usuario ejecutó la consulta de `pg_policies` para `storage.objects` y recibió **Success. No rows returned**.
+
+Interpretación:
+- No se devolvieron políticas RLS definidas para `storage.objects` en el resultado consultado.
+- El bucket `avatars` está marcado como público. En Supabase, la lectura/descarga mediante URL pública de un bucket público no requiere una política SELECT de `storage.objects`; esto no habilita por sí mismo la subida, actualización ni eliminación.
+- Sin políticas aplicables de INSERT/UPDATE/DELETE, las operaciones normales de gestión de objetos mediante Storage API no quedan autorizadas por RLS para los clientes.
+- Antes de añadir políticas, inventariar cómo la aplicación carga, sustituye y elimina imágenes, y confirmar que las llamadas se hacen mediante Storage API y no mediante backend/credenciales privilegiadas.
+- No se ha modificado el bucket ni sus políticas.
