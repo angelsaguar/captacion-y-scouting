@@ -153,3 +153,21 @@ No se ha añadido todavía accessToken: () => auth.currentUser?.getIdToken() al 
 5. Solo entonces implementar código y pruebas en esta rama.
 
 No se han modificado archivos de ejecución ni se han efectuado llamadas de escritura a Supabase en esta revisión.
+
+
+## 8. Matriz propuesta de permisos (22-11-2026)
+
+Se ha creado `docs/fase-b-matriz-propuesta-permisos-rls.md` con una matriz inicial para las 13 tablas auditadas. El modelo propuesto es:
+
+- anon: sin acceso a datos de negocio;
+- admin: CRUD operativo completo;
+- scout: lectura/escritura solo en módulos expresamente autorizados; borrado denegado por defecto;
+- users/permisos: lectura propia para el usuario; cambios de rol, estado y módulos solo desde backend.
+
+### Hallazgo de compatibilidad Firebase
+
+El esquema histórico declara `public.users.id UUID REFERENCES auth.users(id)`, mientras la aplicación usa Firebase UID. La integración Third-Party Auth no debe tratarse como si creara automáticamente filas en `auth.users` o disparase `handle_new_user()`. Antes de políticas ejecutables hay que probar el claim `sub` real y evitar depender de `auth.uid()` si el UID Firebase no es UUID. El diseño inicial propone leer la identidad como texto mediante `auth.jwt()->>'sub'` y claims firmados `app_role`, `app_active` y `allowed_modules`.
+
+### Estado de ejecución
+
+La matriz es un diseño de mínimo privilegio, no una migración lista para producción. No se ha ejecutado SQL ni se ha modificado RLS, datos o código de ejecución. Queda pendiente completar el inventario de operaciones de todos los módulos, Storage y Realtime, y validar la matriz con pruebas aisladas antes de generar SQL idempotente y reversible.
