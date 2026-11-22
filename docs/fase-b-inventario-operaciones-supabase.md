@@ -175,3 +175,52 @@ Consecuencia crítica: el esquema mezcla referencias directas a `auth.users` con
 3. Mantener la unicidad de `observers.nombre` y `tactics(season,team)` en pruebas de concurrencia/UPSERT.
 4. La política de `created_by` no puede basarse en una columna homogénea; hay que decidir si se conserva Supabase Auth para ownership, se introduce una tabla de mapeo Firebase UID ↔ UUID Supabase, o se migra el modelo de referencias en una futura migración revisada.
 5. No generar aún migración RLS ejecutable ni cambiar las FK; faltan consultas de índices, políticas Storage y permisos de funciones.
+
+
+## 11. Políticas RLS reales de producción (consulta 4, 22-11-2026)
+
+Resultado de `pg_policies` aportado por el usuario. Las políticas son PERMISSIVE, por lo que varias políticas aplicables se combinan mediante OR. Una política restrictiva no queda protegida si existe otra política permisiva más amplia para el mismo comando/rol.
+
+### Hallazgos críticos
+
+**Políticas ALL con `qual=true` y `with_check=true`:**
+- `anthropometrics`: `anon, authenticated`.
+- `attendance_sessions`: `anon, authenticated`; además SELECT público.
+- `match_plans`: dos políticas ALL para `anon, authenticated`; además SELECT público.
+- `physical_tests`: `anon, authenticated`.
+- `players`: ALL para `anon, authenticated`; además ALL para authenticated.
+- `tactics`: dos políticas ALL para `anon, authenticated`; además SELECT público.
+- `team_matches`: ALL para `anon, authenticated`.
+- `team_sessions`: ALL para `anon, authenticated`.
+
+Estas reglas permiten acceso muy amplio a las tablas, sujeto también a los GRANT efectivos. En RLS, la política no otorga por sí sola privilegios SQL, pero cuando ambos existen permite operaciones que la política debería restringir.
+
+**Otras tablas con políticas excesivas:**
+- `coaches`: SELECT público y varias políticas INSERT/UPDATE/DELETE para authenticated con checks true. Hay políticas adicionales para rol public condicionadas solo a `auth.uid() IS NOT NULL`.
+- `needs`: patrón equivalente al de coaches: SELECT público, CRUD authenticated sin condición real y escrituras public basadas solo en UID no nulo.
+- `observers`: SELECT público y políticas INSERT/DELETE authenticated con true.
+- `player_attributes`: política `Permitir todo a usuarios autenticados` con ALL true. Esta regla anula en la práctica las restricciones admin/scout de otras políticas permisivas. También hay INSERT y SELECT generales sin restricción.
+- `users`: SELECT/UPDATE propio por `auth.uid() = id`, con políticas duplicadas; no se observa política de INSERT/DELETE en este resultado.
+
+### Efecto OR y riesgo
+
+Las políticas admin/scout de `players` y `player_attributes` no limitan el acceso si coexisten con políticas permisivas más abiertas. En particular:
+- `players`: las políticas ALL públicas/anon-authenticated hacen irrelevantes las reglas admin-only de DELETE y las reglas de UPDATE por rol para cualquier rol incluido en esas políticas.
+- `player_attributes`: la política ALL para authenticated hace irrelevantes las políticas que reservan DELETE a admin.
+- `coaches` y `needs`: las políticas public condicionadas a UID no nulo permiten operaciones a cualquier usuario con identidad JWT aceptada, sin distinguir admin/scout.
+- `observers`: lectura pública y escritura general authenticated; no existe ownership en el esquema para aislar por usuario.
+
+### Relación con GRANT
+
+RLS y GRANT son controles acumulativos: para acceder se necesita privilegio SQL y pasar la política RLS (salvo roles que eluden RLS, propietarios y service_role). La consulta 5 de privilegios efectivos sigue siendo necesaria para determinar la exposición efectiva por rol. No afirmar que anon puede operar una tabla únicamente por ver una política si no se han confirmado sus GRANT.
+
+### Prioridad correctiva
+
+1. Preparar sustitución coordinada de las políticas abiertas en una migración atómica, no ir borrando reglas una a una en producción.
+2. Verificar GRANT efectivos para anon/authenticated/service_role.
+3. Probar tokens Firebase admin/scout y token sin claims en entorno aislado.
+4. No usar `auth.uid()` como identidad Firebase hasta probar el comportamiento; las relaciones FK actuales apuntan a `auth.users`.
+5. Incorporar tablas sensibles de datos físicos y asistencia con permisos de módulo explícitos.
+6. Evitar acceso público a filas completas de jugadores, planes, tácticas, sesiones y personal si no hay requisito público validado.
+
+Este hallazgo es evidencia de configuración permisiva, no evidencia de que haya ocurrido una filtración o acceso indebido. La exposición efectiva depende también de los GRANT, del proveedor JWT y de las vías de acceso configuradas.
