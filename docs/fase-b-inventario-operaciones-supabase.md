@@ -141,3 +141,37 @@ El usuario aportó el resultado completo de `information_schema.columns` del pro
 Este contraste corrige las suposiciones del inventario inicial. La matriz debe incorporar las tablas `anthropometrics`, `physical_tests` y `team_sessions` con políticas explícitas. También debe tener en cuenta que la autorización por fila basada en propietario no es viable en `observers` con el esquema actual.
 
 La información recibida describe columnas y tipos, no contiene filas de negocio; no se han inspeccionado registros personales.
+
+
+## 10. Constraints y relaciones confirmadas en producción (consulta 3, 22-11-2026)
+
+Resultado aportado por el usuario desde `pg_constraint`:
+
+### Relaciones con jugadores
+- `anthropometrics.player_id → players.id`, ON DELETE CASCADE.
+- `physical_tests.player_id → players.id`, ON DELETE CASCADE.
+- `player_attributes.player_id → players.id`, ON DELETE CASCADE.
+- `player_attributes` tiene UNIQUE (`player_id`, `atributo`).
+
+Consecuencia: borrar un jugador elimina en cascada sus datos antropométricos, pruebas físicas y atributos. El permiso DELETE sobre `players` tiene un impacto destructivo indirecto y debe reservarse a un flujo administrativo controlado, con confirmación y respaldo; no concederlo al scout por defecto.
+
+### Relaciones de identidad
+- `users.id → auth.users.id`, ON DELETE CASCADE.
+- `players.created_by → auth.users.id`.
+- `needs.created_by → auth.users.id`.
+- `coaches.created_by → public.users.id`.
+- `tactics.updated_by → public.users.id`, ON DELETE SET NULL.
+
+Consecuencia crítica: el esquema mezcla referencias directas a `auth.users` con referencias a `public.users`. La conexión Supabase Third-Party Auth con Firebase valida JWT para acceder a Postgres, pero no crea automáticamente una fila en `auth.users` para cada Firebase UID. No se debe asumir que un usuario Firebase puede insertarse en `players.created_by` o `needs.created_by`, ni que la tabla `public.users` se poblará automáticamente. Antes de activar el cliente Supabase con tokens Firebase, hay que resolver explícitamente el modelo de identidad y las claves foráneas. No eliminar ni alterar constraints en producción durante esta fase.
+
+### Restricciones únicas
+- `observers.nombre` es UNIQUE: no hay columna de propietario; las políticas por usuario no pueden aislar registros individuales.
+- `tactics(season, team)` es UNIQUE: UPSERT debe conservar esa clave de conflicto.
+- Todas las tablas públicas tienen PK. Los IDs de negocio son UUID con default salvo `users.id`, que es explícito.
+
+### Consecuencias de diseño
+1. Las operaciones DELETE sobre `players` deben denegarse a scout inicialmente por la cascada de datos asociados.
+2. Los DELETE de antropometría, pruebas físicas y atributos deben probarse junto con la lógica de borrado del jugador para evitar inconsistencias.
+3. Mantener la unicidad de `observers.nombre` y `tactics(season,team)` en pruebas de concurrencia/UPSERT.
+4. La política de `created_by` no puede basarse en una columna homogénea; hay que decidir si se conserva Supabase Auth para ownership, se introduce una tabla de mapeo Firebase UID ↔ UUID Supabase, o se migra el modelo de referencias en una futura migración revisada.
+5. No generar aún migración RLS ejecutable ni cambiar las FK; faltan consultas de índices, políticas Storage y permisos de funciones.
