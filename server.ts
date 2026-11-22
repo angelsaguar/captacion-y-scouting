@@ -87,13 +87,13 @@ export interface ClubTokenVerificationResult {
 /**
  * Pure verification evaluator used by the Express middleware after cryptographic verifyIdToken().
  */
-export function evaluateDecodedClubToken(decoded: DecodedIdToken | null | undefined, requiredModules: string[] = [], scoutAccess: ServerScoutAccessState | null = null): ClubTokenVerificationResult {
+export function evaluateDecodedClubToken(decoded: DecodedIdToken | null | undefined, requiredModules: string[] = [], scoutAccess: ServerScoutAccessState | null = null, adminUid: string = ADMIN_AUTHORIZED_UID): ClubTokenVerificationResult {
   if (!decoded || !decoded.uid) return { allowed: false, statusCode: 401, error: "No autenticado: Token inválido o ausente." };
   if (decoded.aud !== EXPECTED_FIREBASE_PROJECT_ID) return { allowed: false, statusCode: 403, error: "Proyecto Firebase no coincidente." };
   const email = (decoded.email || "").trim().toLowerCase();
   if (!decoded.email_verified || !email) return { allowed: false, statusCode: 403, error: "Se requiere una cuenta con correo verificado." };
   if (email === ADMIN_AUTHORIZED_EMAIL) {
-    if (!ADMIN_AUTHORIZED_UID || decoded.uid !== ADMIN_AUTHORIZED_UID) {
+    if (!adminUid || decoded.uid !== adminUid) {
       return { allowed: false, statusCode: 403, error: "Identidad de administrador no vinculada al UID autorizado del entorno." };
     }
     return { allowed: true, statusCode: 200, role: "admin", email, uid: decoded.uid };
