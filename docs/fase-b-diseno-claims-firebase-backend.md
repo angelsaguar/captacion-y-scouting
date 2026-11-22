@@ -165,3 +165,16 @@ El árbol de archivos de esta rama no contiene `api/admin/sync-scout-access.ts` 
 
 ### Límites
 Esta revisión no ha asignado claims, no ha creado endpoints, no ha modificado el cliente Supabase, no ha ejecutado SQL y no ha cambiado Firebase/Supabase/Vercel producción.
+
+
+## 11. UID de administrador recibido (22-11-2026)
+
+El usuario ha facilitado el UID de Firebase correspondiente a la cuenta administradora desde Firebase Authentication → Users. Se considera dato recibido, pendiente de una comprobación final de correspondencia con el email y el proyecto antes de usarlo en cualquier proceso de asignación de claims.
+
+Por seguridad, el valor literal del UID no se incorpora a este repositorio ni a documentación pública. La implementación deberá leerlo desde una variable de entorno de servidor, por ejemplo `FIREBASE_ADMIN_UID`, configurada únicamente en el entorno aislado de pruebas. No usar una variable `VITE_*`.
+
+Siguiente paso:
+1. Confirmar que la cuenta de la que se copió el UID es `angel.saguar@telefonica.net` y pertenece al proyecto `gen-lang-client-0091658680`.
+2. Configurar el UID en el entorno de prueba como secreto/variable de servidor.
+3. Configurar credenciales Firebase Admin SDK en ese entorno sin subir JSON ni claves al repositorio.
+4. Implementar y probar la ruta protegida de sincronización de claims en rama aislada; no asignar claims a usuarios reales ni desplegar a producción todavía.
