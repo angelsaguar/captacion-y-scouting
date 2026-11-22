@@ -222,3 +222,81 @@ Para cada tabla y operación, probar con:
 Las pruebas deben demostrar tanto el resultado permitido como el denegado y comprobar que ninguna política PERMISSIVE antigua amplía acceso por OR.
 
 No se ha generado ni ejecutado SQL. No se han modificado permisos, tablas, datos, claims, Storage ni configuración de producción.
+
+
+## 12. Decisiones funcionales confirmadas por el responsable (22-11-2026)
+
+Se incorporan como requisitos aprobados para el diseño, no como permisos ya activados:
+
+| Ámbito | Decisión confirmada | Consecuencia técnica |
+|---|---|---|
+| Jugadoras | El scout puede crear y editar; no borrar | Permitir INSERT/UPDATE bajo claim de módulo aprobado; DELETE solo admin |
+| Necesidades | Solo lectura para scout | SELECT con claim `needs`; INSERT/UPDATE/DELETE solo admin |
+| Entrenadores | Solo lectura para scout | SELECT con claim `gestion-equipo`; INSERT/UPDATE/DELETE solo admin |
+| Datos personales de jugadoras | El scout puede consultar todos los campos disponibles | No aplicar ocultación de columnas por ahora; mantener autenticación, autorización por módulo y auditoría de acceso |
+
+La autorización de todos los campos no elimina la obligación de protegerlos: el acceso seguirá limitado a usuarios autenticados y al módulo habilitado. Se recomienda registrar accesos administrativos y revisar periódicamente quién mantiene el módulo scouting.
+
+## 13. Diseño técnico derivado de las decisiones
+
+### 13.1 Matriz definitiva de scout para las tablas activas
+
+| Tabla | Claim requerido | SELECT scout | INSERT scout | UPDATE scout | DELETE scout |
+|---|---|---:|---:|---:|---:|
+| `players` | `scouting` | Sí | Sí | Sí | No |
+| `player_attributes` | `scouting` | Sí | Sí | Sí | No |
+| `needs` | `needs` | Sí | No | No | No |
+| `coaches` | `gestion-equipo` | Sí | No | No | No |
+| `tactics` | `campograma` | Sí | Sí | Sí | No |
+| `team_matches` | `gestion-equipo` | Sí | Sí | Sí | No |
+| `match_plans` | `gestion-equipo` | Sí | Sí | Sí | No |
+| `attendance_sessions` | `gestion-equipo` | Sí | Sí | Sí | No |
+| `observers` | Admin | No | No | No | No |
+| `users` | Admin / perfil propio | Solo perfil propio, cuando se implemente lectura acotada | No | No desde cliente | No |
+| `anthropometrics` | Sin claim por ahora | No | No | No | No |
+| `physical_tests` | Sin claim por ahora | No | No | No | No |
+| `team_sessions` | Sin claim por ahora | No | No | No | No |
+
+Admin conserva las operaciones de negocio autorizadas, pero las operaciones masivas, gestión de identidad y borrados con cascada deben pasar por backend confiable. El backend no debe convertirse en un bypass genérico: cada endpoint tendrá autorización y validación específicas.
+
+**Dependencia que hay que resolver antes de activar esta matriz:** la aplicación también crea/actualiza filas de `players` desde flujos de asistencia y sincronización de gestión de equipos. El requisito funcional aprobado permite al scout crear/editar jugadoras en scouting, pero no autoriza implícitamente a conceder escritura general de `players` a cualquier scout con `gestion-equipo`. Antes de escribir la migración, se separarán esas operaciones o se aprobará expresamente la escritura necesaria por flujo.
+
+### 13.2 Patrón de autorización RLS
+
+El SQL de pruebas deberá implementar funciones auxiliares equivalentes a:
+
+- `current_firebase_uid()`: lee `auth.jwt()->>'sub'` como texto.
+- `is_authenticated_app_user()`: exige claim PostgreSQL `role = authenticated`, `app_active = true` y `app_role` reconocido.
+- `is_app_admin()`: usuario activo con `app_role = admin`.
+- `has_app_module(module_id)`: administrador o scout activo cuyo `allowed_modules` contiene exactamente el módulo solicitado.
+
+Las funciones serán de solo lectura, con `search_path` fijado, sin argumentos que permitan al cliente declarar su propio UID/rol, y con EXECUTE concedido solo a los roles necesarios. Los helpers no deben confiar en un campo del body, localStorage ni perfil editable desde React.
+
+### 13.3 Políticas por operación, no una política ALL
+
+Se crearán políticas separadas para SELECT, INSERT, UPDATE y DELETE. Se eliminarán por nombre exacto las políticas permisivas heredadas que amplían acceso. No se utilizará una política `ALL USING (true)`.
+
+Para UPDATE, se exigirán tanto `USING` como `WITH CHECK` para impedir que el usuario cambie el propietario, equipo o ámbito de una fila hacia otro ámbito. Para INSERT, el servidor o la política debe comprobar la identidad y los campos de autoría cuando exista una relación de identidad válida.
+
+### 13.4 Identidad y columnas de autoría
+
+No utilizar `auth.uid()` ni comparar Firebase UID con UUID de `public.users.id` o `auth.users.id` hasta resolver el modelo de identidad. Las columnas `created_by` que referencian `auth.users` tampoco pueden rellenarse con Firebase UID arbitrario.
+
+Antes de la migración aislada se debe decidir una de estas opciones:
+1. Mantener Firebase UID como texto en una tabla propia de mapeo de identidades, con FK de negocio hacia esa tabla.
+2. Utilizar una identidad UUID interna generada por backend y mapearla de forma explícita al UID Firebase.
+3. Eliminar/redefinir las FK heredadas que dependan de Supabase Auth, mediante migración controlada y pruebas de integridad.
+
+No se debe resolver este problema con casts de texto a UUID ni generando UUID deterministas en el navegador.
+
+### 13.5 Orden de trabajo técnico inmediato
+
+1. Separar las escrituras de `players` por módulo/flujo (scouting frente a gestión-equipo y sincronización).
+2. Resolver identidad y autoría (`created_by`, `updated_by`, `public.users`).
+3. Preparar proyecto Supabase aislado y dataset sintético.
+4. Generar migración de prueba con REVOKE/GRANT mínimos y políticas por operación.
+5. Añadir pruebas SQL/API para admin, scout con cada módulo, scout sin módulo, usuario inactivo y anónimo.
+6. Probar todas las pantallas y sincronizaciones con la nueva matriz.
+7. Preparar rollback y revisión antes de solicitar autorización independiente para producción.
+
+**Estado:** las decisiones funcionales anteriores se consideran incorporadas al diseño. No se ha generado ni ejecutado una migración SQL, ni se ha modificado el proyecto Supabase de producción, Firebase, Storage, datos, claims o despliegues.
