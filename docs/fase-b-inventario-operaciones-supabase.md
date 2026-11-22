@@ -255,3 +255,14 @@ El campo `is_grantable` no es un indicador de si el privilegio está concedido; 
 El usuario ejecutó la consulta de `information_schema.role_usage_grants` para secuencias en los esquemas `public` y `storage`; Supabase devolvió **Success. No rows returned**.
 
 Interpretación: no se reportan privilegios de secuencias para los grantees incluidos en esa consulta. Esto no modifica la evaluación de privilegios sobre tablas. Las tablas de negocio usan UUID con `gen_random_uuid()` como default (según consulta 2), por lo que no requieren secuencias serial para generar esos IDs. No se debe inferir nada sobre funciones UUID o permisos de ejecución a partir de este resultado.
+
+
+## 14. Buckets de Storage (consulta 7, 22-11-2026)
+
+Resultado aportado por el usuario: un único bucket, `avatars`:
+- `id/name`: `avatars`
+- `public`: `true`
+- `file_size_limit`: `NULL`
+- `allowed_mime_types`: `NULL`
+
+Interpretación: el bucket está configurado como público y no tiene límite de tamaño ni lista de MIME permitidos configurados a nivel de bucket. Esto no demuestra por sí solo que los roles anónimos o autenticados puedan subir, actualizar o borrar objetos: esas operaciones dependen de las políticas RLS de `storage.objects`, que deben auditarse por separado. No se ha modificado la configuración.
