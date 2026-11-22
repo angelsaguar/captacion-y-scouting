@@ -281,3 +281,10 @@ Funciones con `SECURITY DEFINER=true` (4):
 Las otras funciones de Storage mostradas pertenecen a `supabase_storage_admin` y no tienen SECURITY DEFINER. Varias tienen EXECUTE true para anon/authenticated/service_role; interpretar esos permisos en el contexto de las funciones auxiliares de Storage, sin concluir por sí solos que permiten acceso directo a objetos o bypass de RLS.
 
 Hallazgo a revisar: `public.handle_new_user()` es la única función de aplicación marcada SECURITY DEFINER y no fija `search_path` explícitamente. Aunque su INSERT está cualificado como `public.users` y su tipo trigger limita su invocación, conviene documentar el trigger asociado, revisar el contexto de ejecución y evaluar una configuración segura de `search_path` antes de proponer cambios. No se ha modificado ninguna función ni permiso.
+
+
+## 16. Vistas de base de datos (consulta 9, 22-11-2026)
+
+El usuario ejecutó la consulta de inventario de vistas y Supabase devolvió **Success. No rows returned**.
+
+Interpretación limitada al alcance de la consulta: no se devolvieron vistas que coincidan con los filtros consultados. No se concluye que no existan vistas en otros esquemas o que no haya otras superficies de exposición. No se ha modificado ningún objeto.
