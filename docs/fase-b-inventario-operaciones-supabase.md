@@ -266,3 +266,18 @@ Resultado aportado por el usuario: un único bucket, `avatars`:
 - `allowed_mime_types`: `NULL`
 
 Interpretación: el bucket está configurado como público y no tiene límite de tamaño ni lista de MIME permitidos configurados a nivel de bucket. Esto no demuestra por sí solo que los roles anónimos o autenticados puedan subir, actualizar o borrar objetos: esas operaciones dependen de las políticas RLS de `storage.objects`, que deben auditarse por separado. No se ha modificado la configuración.
+
+
+## 15. Funciones y SECURITY DEFINER (consulta 8, 22-11-2026)
+
+Resultado aportado por el usuario: 25 funciones en los esquemas `public` y `storage`.
+
+Funciones con `SECURITY DEFINER=true` (4):
+- `public.handle_new_user()`: owner `postgres`; `function_config=NULL` (sin `search_path` explícito); permisos de ejecución indicados como true para `anon`, `authenticated` y `service_role`. Es función trigger. Su cuerpo inserta en `public.users`, asigna rol fijo `scout` y, en conflicto, actualiza nombre/email sin cambiar role. La inserción usa nombre de tabla cualificado (`public.users`). El flag EXECUTE no significa que pueda invocarse como una función ordinaria: su retorno es `trigger` y se ejecuta mediante el trigger asociado. Revisar definición y trigger asociado antes de cualquier cambio.
+- `storage.protect_active_lifecycle_states()`: owner `supabase_storage_admin`; `search_path=pg_catalog`; EXECUTE false para los tres roles consultados.
+- `storage.reconcile_lifecycle_state(text, boolean)`: owner `supabase_storage_admin`; `search_path=pg_catalog`; EXECUTE false para anon/authenticated y true para service_role.
+- `storage.wake_lifecycle_state()`: owner `supabase_storage_admin`; `search_path=pg_catalog`; EXECUTE false para los tres roles consultados.
+
+Las otras funciones de Storage mostradas pertenecen a `supabase_storage_admin` y no tienen SECURITY DEFINER. Varias tienen EXECUTE true para anon/authenticated/service_role; interpretar esos permisos en el contexto de las funciones auxiliares de Storage, sin concluir por sí solos que permiten acceso directo a objetos o bypass de RLS.
+
+Hallazgo a revisar: `public.handle_new_user()` es la única función de aplicación marcada SECURITY DEFINER y no fija `search_path` explícitamente. Aunque su INSERT está cualificado como `public.users` y su tipo trigger limita su invocación, conviene documentar el trigger asociado, revisar el contexto de ejecución y evaluar una configuración segura de `search_path` antes de proponer cambios. No se ha modificado ninguna función ni permiso.
