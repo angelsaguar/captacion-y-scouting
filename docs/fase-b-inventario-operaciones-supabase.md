@@ -248,3 +248,10 @@ El resultado también muestra filas para anon/authenticated en algunas tablas in
 ### Precaución de interpretación
 
 El campo `is_grantable` no es un indicador de si el privilegio está concedido; solo expresa si puede ser concedido a terceros. Para confirmar privilegios efectivos se puede usar `has_table_privilege(role, 'public.tabla', 'SELECT')` para cada rol/tabla. No inferir ausencia de GRANT a partir de `is_grantable=NO`.
+
+
+## 13. Privilegios de secuencias (consulta 6, 22-11-2026)
+
+El usuario ejecutó la consulta de `information_schema.role_usage_grants` para secuencias en los esquemas `public` y `storage`; Supabase devolvió **Success. No rows returned**.
+
+Interpretación: no se reportan privilegios de secuencias para los grantees incluidos en esa consulta. Esto no modifica la evaluación de privilegios sobre tablas. Las tablas de negocio usan UUID con `gen_random_uuid()` como default (según consulta 2), por lo que no requieren secuencias serial para generar esos IDs. No se debe inferir nada sobre funciones UUID o permisos de ejecución a partir de este resultado.
