@@ -299,3 +299,25 @@ Resultado aportado mediante captura:
 - `table_name = NULL`
 
 Interpretación: la publicación existe, pero no está configurada para incluir automáticamente todas las tablas y la consulta no devuelve tablas concretas asociadas. Dentro del alcance de esta consulta no se observan tablas de la aplicación publicadas en Realtime. Resultado favorable para limitar la difusión de cambios. No se ha modificado la publicación.
+
+
+## 18. Roles PostgreSQL (consulta 11, 22-11-2026)
+
+Resultado aportado por el usuario:
+
+| Rol | super | inherit | createrole | createdb | canlogin | replication | bypassrls |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| anon | false | true | false | false | false | false | false |
+| authenticated | false | true | false | false | false | false | false |
+| authenticator | false | false | false | false | true | false | false |
+| postgres | false | true | true | true | true | true | true |
+| service_role | false | true | false | false | false | false | true |
+
+Interpretación:
+- `anon` y `authenticated` no tienen `BYPASSRLS`, ni atributos administrativos especiales.
+- `authenticator` puede iniciar sesión y no tiene `BYPASSRLS`; normalmente actúa como rol de conexión que cambia al rol de API correspondiente.
+- `postgres` tiene atributos administrativos y `BYPASSRLS`; es un rol privilegiado.
+- `service_role` tiene `BYPASSRLS=true`, por lo que sus operaciones pueden eludir RLS. Su clave/credenciales deben mantenerse exclusivamente en entornos de servidor y nunca exponerse al cliente.
+- `rolsuper=false` para postgres en esta salida no invalida sus privilegios administrativos mostrados; se registran exactamente los atributos devueltos por la consulta.
+
+Este resultado no reduce el riesgo previamente identificado: `anon` y `authenticated` no necesitan BYPASSRLS para aprovechar políticas permisivas y privilegios de tabla que les concedan acceso. No se ha modificado ningún rol.
