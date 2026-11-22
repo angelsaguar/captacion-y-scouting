@@ -82,14 +82,15 @@ ORDER BY table_schema, table_name, grantee, privilege_type;
 
 -- 6) Privilegios de secuencias
 SELECT
-  sequence_schema,
-  sequence_name,
+  object_schema AS sequence_schema,
+  object_name AS sequence_name,
   grantee,
-  privilege_type
+  privilege_type,
+  is_grantable
 FROM information_schema.role_usage_grants
 WHERE object_type = 'SEQUENCE'
-  AND sequence_schema IN ('public','storage')
-ORDER BY sequence_schema, sequence_name, grantee, privilege_type;
+  AND object_schema IN ('public','storage')
+ORDER BY object_schema, object_name, grantee, privilege_type;
 
 -- 7) Buckets de Storage (metadatos, no objetos/archivos)
 SELECT
