@@ -8,14 +8,19 @@ Este documento prepara la remediación. No ejecuta cambios en Supabase, no modif
 ## 1. Evidencias de la auditoría
 
 Resultados obtenidos en el proyecto Supabase consultado el 22-11-2026:
+
 - 13 tablas en el esquema public.
 - RLS aparece habilitado en las 13 tablas; FORCE ROW LEVEL SECURITY aparece deshabilitado en las 13.
 - La consulta de privilegios efectivos mostró true para SELECT, INSERT, UPDATE y DELETE de anon y authenticated en las 13 tablas.
-- La exportación contiene 66 políticas RLS. Entre ellas hay políticas permisivas ALL con condiciones true para roles anónimos y autenticados, incluyendo tablas de jugadores, sesiones, tácticas y partidos.
-- Se encontró public.handle_new_user() como función SECURITY DEFINER, propiedad de postgres. Inserta en public.users, toma el nombre de raw_user_meta_data, guarda el email y asigna el rol fijo scout; en conflicto actualiza nombre y email.
+- La exportación contiene 66 políticas RLS. Hay políticas permisivas ALL con qual=true y with_check=true para anon y authenticated en ocho tablas: anthropometrics, attendance_sessions, match_plans, physical_tests, players, tactics, team_matches y team_sessions.
+- En player_attributes hay además una política ALL para authenticated con qual=true y with_check=true. Esta política permisiva neutraliza en la práctica la intención de las políticas más específicas de admin/scout para ese rol.
+- coaches y needs tienen políticas públicas de lectura y políticas authenticated de INSERT/UPDATE/DELETE con condiciones true, además de duplicados y reglas basadas en auth.uid().
+- observers tiene lectura pública y políticas authenticated de INSERT/DELETE con condiciones true, también duplicadas.
+- users tiene políticas de SELECT/UPDATE condicionadas a auth.uid() = id.
+- Se encontró public.handle_new_user() como función SECURITY DEFINER, propiedad de postgres. La definición mostrada inserta en public.users, toma el nombre de raw_user_meta_data con fallback, guarda el email y asigna el rol fijo scout; en conflicto actualiza nombre y email.
 - La consulta mostró proconfig = NULL para esa función; no se observó un search_path fijado a nivel de función.
 
-Estos resultados demuestran una configuración permisiva en los metadatos consultados, pero no prueban por sí solos que una persona externa haya accedido a los datos. El alcance efectivo depende también de los privilegios concedidos, la API expuesta, las claves disponibles y las rutas reales de acceso.
+Estas evidencias muestran políticas muy permisivas en metadatos. El riesgo efectivo depende también de privilegios SQL, exposición por API, configuración de claves y autenticación utilizada. No demuestran por sí solas que haya ocurrido un acceso indebido.
 
 ## 2. Dependencia crítica: autenticación
 
@@ -32,25 +37,34 @@ No se elegirá una opción hasta inventariar todas las operaciones de lectura y 
 
 ## 3. Matriz priorizada de corrección
 
-### Prioridad crítica — datos sensibles
-- players
-- player_attributes
-- anthropometrics / Pruebas físicas (confirmar nombre exacto en catálogo)
-- attendance_sessions / sesiones_de_asistencia...
-- team_sessions / sesiones_de_equipo
+### Prioridad crítica — acceso anónimo de escritura sin filtro
+- anthropometrics
+- attendance_sessions
 - match_plans
+- physical_tests
+- players
 - tactics
+- team_matches
+- team_sessions
 
-Acción prevista: retirar acceso anónimo de escritura y limitar lectura y escritura a identidades verificadas y roles autorizados, una vez que la autenticación esté integrada y probada. Definir explícitamente qué datos pueden ser públicos; no asumir que todas las tablas deben quedar privadas.
+En estas tablas se encontraron políticas ALL para anon y authenticated con qual=true y with_check=true. La prioridad es eliminar el acceso anónimo de escritura y definir acceso de lectura pública solo cuando esté expresamente justificado. Para authenticated, sustituir el acceso general por permisos de rol verificados.
 
-### Prioridad alta — gestión y configuración
+### Prioridad crítica — política general que anula controles específicos
+- player_attributes
+
+Existe una política ALL para authenticated con qual=true y with_check=true, además de políticas específicas para admin/scout. Por ser permisiva, la política general se combina mediante OR con las específicas y hace que las restricciones específicas no limiten el acceso de authenticated.
+
+### Prioridad alta — gestión
+- coaches
+- needs
+- observers
+
+Separar la lectura pública justificada de las operaciones de escritura. Eliminar duplicados y asegurar que INSERT/UPDATE/DELETE se autoricen por rol y no solo por estar autenticado.
+
+### Prioridad alta — perfiles
 - users
-- coaches / entrenadores
-- observers / observadores
-- needs / necesita
-- team_matches / partidos_de_equipo
 
-Acción prevista: separar lectura pública justificada de operaciones de escritura. Las operaciones administrativas deben comprobar el rol desde una fuente no manipulable por el propio usuario.
+Mantener la regla de acceso al propio perfil solo después de confirmar que auth.uid() corresponde a la identidad real del usuario de la aplicación. Proteger especialmente la columna role para impedir escalada de privilegios mediante actualización del perfil.
 
 ### Función privilegiada
 Para public.handle_new_user():
@@ -74,6 +88,7 @@ No modificar la función en producción desde esta rama.
 8. Solo tras validación y autorización expresa, planificar una ventana de despliegue con backup verificado y rollback.
 
 ## 5. Criterios de aceptación
+
 - Ningún usuario anónimo puede leer o modificar información sensible.
 - Un scout solo puede realizar las operaciones aprobadas para su rol.
 - Las operaciones administrativas están reservadas a administradores verificados.
@@ -83,8 +98,9 @@ No modificar la función en producción desde esta rama.
 - No hay secretos de servidor en el bundle del navegador.
 
 ## 6. Límites de esta rama
+
 - No ejecutar SQL contra Supabase.
 - No cambiar políticas, privilegios, tablas, funciones ni datos en producción.
 - No modificar main.
 - No fusionar ramas ni crear despliegues de Vercel producción.
-- Los nombres de tablas deben contrastarse con el catálogo real antes de generar la migración final: las capturas muestran nombres traducidos o recortados y el repositorio contiene esquemas históricos distintos.
+- Los nombres del CSV exportado son los nombres SQL exactos de las 13 tablas y se utilizan aquí tal como aparecen. Los esquemas del repositorio son históricos y no deben considerarse prueba de que coinciden con producción.
