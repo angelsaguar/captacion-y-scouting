@@ -188,3 +188,22 @@ Política por defecto: deny by default. Un usuario nuevo o no reconocido no reci
 ## 9. Estado de esta entrega
 
 Este documento es un plan de ejecución. No contiene una migración para producción y no se ha ejecutado SQL, asignado claims, desplegado backend ni modificado código funcional.
+
+
+## 10. Verificación con documentación oficial vigente
+
+Consulta de documentación oficial de Supabase (Firebase Auth, actualizada el 18-11-2026):
+- El cliente web debe proporcionar el Firebase ID token mediante la opción accessToken.
+- Firebase ID tokens no incluyen role=authenticated por defecto; sin ese claim Supabase asigna el rol SQL anon.
+- El claim role=authenticated debe asignarse a los usuarios que acceden a la Data API, Storage o Realtime como usuarios autenticados.
+- Supabase recomienda políticas RLS restrictivas para limitar el acceso a tokens de otros proyectos Firebase cuando se usa self-hosting; en Supabase Hosted, los proyectos Firebase no registrados se rechazan antes de llegar a la base de datos.
+- El token debe renovarse tras asignar claims; un onCreate no síncrono no garantiza que el primer token contenga el claim.
+- El cliente con accessToken usa Firebase para iniciar/cerrar sesión y no debe mezclarse con métodos de autenticación Supabase en ese mismo cliente.
+
+Documentación: https://supabase.com/docs/guides/auth/third-party/firebase-auth
+
+Firebase indica que los custom claims se propagan al cliente en el siguiente inicio de sesión, renovación del token o mediante getIdToken(true), y que la autorización de backend debe validarse a partir del ID token verificado, no de valores enviados por el cliente.
+
+Documentación: https://firebase.google.com/docs/auth/admin/custom-claims
+
+Esta documentación respalda el diseño propuesto, pero no sustituye la prueba con un JWT de la cuenta de test en el proyecto Supabase aislado.
