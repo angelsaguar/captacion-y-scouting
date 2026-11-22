@@ -119,3 +119,25 @@ Este documento no es un script SQL ni autorización de cambio productivo.
 - No se modificaron tablas, datos, privilegios, RLS, Storage ni funciones.
 - No se modificó código ejecutable.
 - No se fusionó ni desplegó.
+
+
+## 9. Contraste con el esquema real de producción (consulta 2, 22-11-2026)
+
+El usuario aportó el resultado completo de `information_schema.columns` del proyecto de producción. Se confirman las 13 tablas públicas auditadas y estas precisiones:
+
+- `public.users.id` es UUID NOT NULL sin default; no se puede asumir que un Firebase UID de texto se pueda guardar directamente ahí ni que coincida con `auth.uid()`.
+- `public.players` contiene teléfono, tipo de contacto, año de nacimiento, email y observaciones; tratar estos campos como información personal y limitar exposición por rol/módulo.
+- `public.coaches` contiene email, teléfono y observaciones; limitar su lectura y exportación.
+- `public.anthropometrics` y `public.physical_tests` son tablas independientes con `player_id UUID`, `team text`, `fecha date` y campos físicos específicos. No asumir que todo se guarda en `player_attributes`.
+- `public.player_attributes` contiene `player_id UUID`, `atributo text` y `valor integer`; revisar los valores reales de `atributo` sin exportar datos personales para clasificar el alcance.
+- `public.attendance_sessions` contiene `team text`, `fecha date`, `tipo text`, `records/tareas/archivos JSONB`; **no** contiene `teamId`.
+- `public.team_sessions` existe como tabla independiente y contiene `team text`, `fecha date`, `hora text`, `tipo text`, `asistentes JSONB`.
+- `public.tactics` guarda `roster` y `lineup` en JSONB; `team_matches` guarda estadísticas JSONB; `match_plans` guarda convocatoria JSONB. Las políticas RLS no filtran automáticamente los elementos internos de esos JSONB: cada fila completa queda visible a quien pueda hacer SELECT.
+- `observers` contiene nombre y foto_url, sin columna de propietario/created_by; no se debe diseñar una política de propiedad por usuario sin cambiar el modelo.
+- `needs` y `coaches` tienen `created_by UUID`, pero su relación con Firebase aún debe definirse.
+- Las tablas de negocio tienen IDs UUID generados por `gen_random_uuid()`, salvo `users.id`, que requiere valor explícito.
+- La exportación incluye metadatos de Storage, pero no aporta todavía la configuración real de buckets, sus políticas ni los permisos de `storage.objects`.
+
+Este contraste corrige las suposiciones del inventario inicial. La matriz debe incorporar las tablas `anthropometrics`, `physical_tests` y `team_sessions` con políticas explícitas. También debe tener en cuenta que la autorización por fila basada en propietario no es viable en `observers` con el esquema actual.
+
+La información recibida describe columnas y tipos, no contiene filas de negocio; no se han inspeccionado registros personales.
