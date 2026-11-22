@@ -30,6 +30,8 @@ const adminDb = getFirestore(undefined, FIRESTORE_DATABASE_ID);
 export interface ServerScoutAccessState {
   email: string; uid: string; uidLocked: boolean; active: boolean; allowedModules: string[];
 }
+// Backward-compatible shape used by the repository's broader security regression suite.
+export type ServerScoutMirrorState = ServerScoutAccessState & { updatedBy?: string; updatedAtIso?: string };
 export async function readScoutAccessFromFirestore(): Promise<ServerScoutAccessState | null> {
   const snapshot = await adminDb.doc(SCOUT_ACCESS_DOCUMENT).get();
   if (!snapshot.exists) return null;
