@@ -1,3 +1,5 @@
+import { applyApiCors, authorizeClubRequest } from "../../src/server/clubAuth";
+
 const RFFM_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 };
@@ -173,12 +175,21 @@ function prefixRffmImg(img?: string): string {
 }
 
 export default async function handler(req: any, res: any) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (!applyApiCors(req, res, ["GET", "POST"])) {
+    return res.status(403).json({ error: "Origen no autorizado." });
+  }
+  if (req.method === "OPTIONS") return res.status(204).end();
+  if (!["GET", "POST"].includes(req.method)) {
+    res.setHeader("Allow", "GET, POST, OPTIONS");
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+  const authorization = await authorizeClubRequest(
+    req.headers?.authorization,
+    ["estadisticas-rivales", "gestion-equipo"]
+  );
+  if (!authorization.ok) {
+    return res.status(authorization.statusCode).json({ error: authorization.error });
   }
 
   try {
