@@ -5,7 +5,7 @@ import fs from "fs";
 import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { fileURLToPath } from "url";
 import { getApps, initializeApp } from "firebase-admin/app";
-import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
+import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 import {
   extractCalendarData,
@@ -32,6 +32,8 @@ export {
   ALEJANDRO_AUTHORIZED_EMAIL,
   evaluateDecodedClubToken,
 } from "./src/server/clubAuth";
+
+const ADMIN_AUTHORIZED_UID = (process.env.CLUB_ADMIN_FIREBASE_UID || "").trim();
 
 export const CLUB_MANAGED_CLAIM_KEYS = ["role", "app_role", "app_active", "allowed_modules"] as const;
 
