@@ -15,40 +15,24 @@ import {
   syncActasDetailedData,
 } from "./src/lib/rffmServerLogic";
 
-export const EXPECTED_FIREBASE_PROJECT_ID = "gen-lang-client-0091658680";
-export const ADMIN_AUTHORIZED_EMAIL = "angel.saguar@telefonica.net";
-const ADMIN_AUTHORIZED_UID = (process.env.CLUB_ADMIN_FIREBASE_UID || "").trim();
-export const ALEJANDRO_AUTHORIZED_EMAIL = "asaguar04@gmail.com";
+import {
+  EXPECTED_FIREBASE_PROJECT_ID,
+  ADMIN_AUTHORIZED_EMAIL,
+  ALEJANDRO_AUTHORIZED_EMAIL,
+  FIRESTORE_DATABASE_ID,
+  SCOUT_ACCESS_DOCUMENT,
+  readScoutAccessFromFirestore,
+  evaluateDecodedClubToken,
+  type ServerScoutAccessState,
+  type ClubApplicationRole,
+} from "./src/server/clubAuth";
+export {
+  EXPECTED_FIREBASE_PROJECT_ID,
+  ADMIN_AUTHORIZED_EMAIL,
+  ALEJANDRO_AUTHORIZED_EMAIL,
+  evaluateDecodedClubToken,
+} from "./src/server/clubAuth";
 
-if (getApps().length === 0) {
-  initializeApp({ projectId: EXPECTED_FIREBASE_PROJECT_ID });
-}
-
-export const FIRESTORE_DATABASE_ID = "ai-studio-remixcaptacionys-b51f65a2-fce1-4849-a665-604b0915604c";
-export const SCOUT_ACCESS_DOCUMENT = "club_access/alejandro_scout";
-const adminDb = getFirestore(undefined, FIRESTORE_DATABASE_ID);
-export interface ServerScoutAccessState {
-  email: string; uid: string; uidLocked: boolean; active: boolean; allowedModules: string[];
-}
-// Backward-compatible shape used by the repository's broader security regression suite.
-export type ServerScoutMirrorState = ServerScoutAccessState & { updatedBy?: string; updatedAtIso?: string };
-export async function readScoutAccessFromFirestore(): Promise<ServerScoutAccessState | null> {
-  const snapshot = await adminDb.doc(SCOUT_ACCESS_DOCUMENT).get();
-  if (!snapshot.exists) return null;
-  const data = snapshot.data() || {};
-  const validModules = new Set(["scouting", "campograma", "needs", "gestion-equipo", "estadisticas-rivales"]);
-  return {
-    email: typeof data.email === "string" ? data.email.trim().toLowerCase() : "",
-    uid: typeof data.uid === "string" ? data.uid.trim() : "",
-    uidLocked: data.uidLocked === true,
-    active: data.active === true,
-    allowedModules: Array.isArray(data.allowedModules)
-      ? data.allowedModules.filter((module: unknown): module is string => typeof module === "string" && validModules.has(module))
-      : [],
-  };
-}
-
-export type ClubApplicationRole = "admin" | "scout";
 export const CLUB_MANAGED_CLAIM_KEYS = ["role", "app_role", "app_active", "allowed_modules"] as const;
 
 /**
@@ -75,39 +59,6 @@ export function buildClubCustomClaims(
     app_active: active,
     allowed_modules: safeModules,
   };
-}
-
-export interface ClubTokenVerificationResult {
-  allowed: boolean;
-  statusCode: number;
-  error?: string;
-  role?: "admin" | "scout";
-  email?: string;
-  uid?: string;
-}
-
-/**
- * Pure verification evaluator used by the Express middleware after cryptographic verifyIdToken().
- */
-export function evaluateDecodedClubToken(decoded: DecodedIdToken | null | undefined, requiredModules: string[] = [], scoutAccess: ServerScoutAccessState | null = null, adminUid: string = ADMIN_AUTHORIZED_UID): ClubTokenVerificationResult {
-  if (!decoded || !decoded.uid) return { allowed: false, statusCode: 401, error: "No autenticado: Token inválido o ausente." };
-  if (decoded.aud !== EXPECTED_FIREBASE_PROJECT_ID) return { allowed: false, statusCode: 403, error: "Proyecto Firebase no coincidente." };
-  const email = (decoded.email || "").trim().toLowerCase();
-  if (!decoded.email_verified || !email) return { allowed: false, statusCode: 403, error: "Se requiere una cuenta con correo verificado." };
-  if (email === ADMIN_AUTHORIZED_EMAIL) {
-    if (!adminUid || decoded.uid !== adminUid) {
-      return { allowed: false, statusCode: 403, error: "Identidad de administrador no vinculada al UID autorizado del entorno." };
-    }
-    return { allowed: true, statusCode: 200, role: "admin", email, uid: decoded.uid };
-  }
-  if (email !== ALEJANDRO_AUTHORIZED_EMAIL) return { allowed: false, statusCode: 403, error: "Cuenta no autorizada en Captación y Scouting." };
-  if (!scoutAccess || scoutAccess.email !== ALEJANDRO_AUTHORIZED_EMAIL) return { allowed: false, statusCode: 403, error: "Perfil de observador inexistente o no válido." };
-  if (!scoutAccess.active) return { allowed: false, statusCode: 403, error: "La cuenta de observador está desactivada." };
-  if (!scoutAccess.uidLocked || !scoutAccess.uid || scoutAccess.uid !== decoded.uid) return { allowed: false, statusCode: 403, error: "El UID no coincide con el vínculo autorizado y sellado." };
-  if (requiredModules.length > 0 && !requiredModules.some((module) => scoutAccess.allowedModules.includes(module))) {
-    return { allowed: false, statusCode: 403, error: "No está habilitado ninguno de los módulos requeridos: " + requiredModules.join(" / ") };
-  }
-  return { allowed: true, statusCode: 200, role: "scout", email, uid: decoded.uid };
 }
 
 let myFilename = "";
