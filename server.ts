@@ -63,6 +63,16 @@ export function buildClubCustomClaims(
   };
 }
 
+export interface ServerScoutMirrorState {
+  email: string;
+  uid: string;
+  uidLocked: boolean;
+  active: boolean;
+  allowedModules: string[];
+  updatedBy: string;
+  updatedAtIso: string;
+}
+
 let myFilename = "";
 let myDirname = "";
 
