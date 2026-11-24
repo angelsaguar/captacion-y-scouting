@@ -2,7 +2,7 @@
 
 **Fecha:** 24-11-2026  
 **Rama:** `feat/fase-b-hardening-supabase`  
-**Estado:** cambios de autorización y validación en rama de trabajo. CI superado para el commit `32639f6b38b616396a44cbc96a78fbcc4b15af70` (24-11-2026). No desplegado.
+**Estado:** cambios de autorización, validación RFFM y credenciales Firebase Admin preparados en rama de trabajo. CI superado para el commit `01fe40159479516a5767ab484810ef73c4c1f4a1` (24-11-2026). No desplegado.
 
 ## Cambios realizados
 
@@ -19,7 +19,10 @@ Creado `src/server/clubAuth.ts`:
 ### 2. Express
 `server.ts` importa ahora las constantes, lectura Firestore y evaluación de token del módulo compartido. Se mantiene el middleware Express y la emisión de claims existente; no se ha cambiado la política funcional de usuarios.
 
-### 3. Funciones RFFM protegidas
+### 3. Endpoint de asesoramiento táctico
+`api/tactical-advice.ts` también utiliza `authorizeClubRequest` y `applyApiCors` desde `src/server/clubAuth.ts`. Exige el módulo `gestion-equipo` y ya no mantiene inicialización Firebase ni comprobaciones de identidad duplicadas. Se conserva el método POST y la lógica de generación de asesoramiento.
+
+### 4. Funciones RFFM protegidas
 Se añadió autenticación Firebase obligatoria y autorización de módulo en:
 - `api/rffm/clasificacion.ts`
 - `api/rffm/resultados.ts`
@@ -31,7 +34,7 @@ Las funciones aceptan únicamente los métodos que ya se identificaron como nece
 
 Para el scout se exige al menos uno de los módulos `estadisticas-rivales` o `gestion-equipo`, manteniendo la compatibilidad de los flujos identificados. El administrador sigue las reglas de identidad existentes.
 
-### 4. Validación defensiva de parámetros RFFM
+### 5. Validación defensiva de parámetros RFFM
 Creado `src/server/rffmValidation.ts` y aplicado en los cinco handlers:
 - Temporada: entre 1 y 3 dígitos después de normalizar los formatos de temporada ya reconocidos.
 - Competición y grupo: solo dígitos, con máximo de 12 caracteres.
@@ -43,16 +46,16 @@ Creado `src/server/rffmValidation.ts` y aplicado en los cinco handlers:
 
 En `sync-actas-detailed` se limita cada ejecución a 60 actas y se valida el código devuelto por la Federación antes de construir la URL del acta. El límite es una protección de volumen por petición, no un rate limit global.
 
-### 5. Pruebas
-- Creado `src/server/clubAuth.test.ts` con pruebas de token ausente, proyecto incorrecto, email no verificado, UID de administrador, perfil scout activo, UID sellado y permisos de módulo.
+### 6. Pruebas
+- Creado `src/server/clubAuth.test.ts` con pruebas de token ausente, proyecto incorrecto, email no verificado, UID de administrador, perfil scout activo, UID sellado, permisos de módulo y parser de credenciales de servicio.
 - Creado `src/server/rffmValidation.test.ts` para los formatos válidos e inválidos, los límites de jornada y longitudes.
 - Actualizado `test:security` para ejecutar las pruebas de autorización y validación.
 
 ## Validación CI de los cambios actuales
 
-El workflow `Fase B security checks` terminó correctamente para el commit `32639f6b38b616396a44cbc96a78fbcc4b15af70`. Los pasos `Security unit tests`, `TypeScript validation` y `Production build` finalizaron con éxito. Esto valida las pruebas automatizadas, los tipos y la compilación de los cambios de autorización y validación RFFM.
+El workflow `Fase B security checks` terminó correctamente para el commit `01fe40159479516a5767ab484810ef73c4c1f4a1`. Los pasos `Security unit tests`, `TypeScript validation` y `Production build` finalizaron con éxito. Las pruebas de seguridad registraron 24 casos superados y 0 fallidos. La ejecución valida la autorización compartida, el parser de credenciales, la validación RFFM y la compilación, incluido el endpoint de asesoramiento táctico.
 
-[Consultar ejecución CI superada](https://github.com/angelsaguar/captacion-y-scouting/actions/runs/45387572241)
+[Consultar ejecución CI superada](https://github.com/angelsaguar/captacion-y-scouting/actions/runs/45397915781)
 
 CI verde no demuestra por sí solo que Firebase Admin disponga de credenciales funcionales en el runtime de Vercel; esa comprobación sigue pendiente.
 
@@ -70,8 +73,8 @@ La modificación añade pruebas unitarias del parser, pero no crea ni carga cred
 2. **Preview:** los dominios temporales de Preview no se permiten por defecto. Si se prueba desde Preview, habrá que añadir el origen concreto a `APP_ALLOWED_ORIGINS` solo después de verificarlo; no se recomienda permitir todos los dominios `*.vercel.app`.
 3. **Rate limiting:** esta primera implementación no añade un límite global para funciones serverless. El Map en memoria de Express no sería un límite global fiable en Vercel. Debe diseñarse un control adicional sin contratar servicios nuevos.
 4. **Rate limiting global:** sigue pendiente un límite global entre instancias serverless. No se ha añadido un proveedor externo ni se presenta el límite de 60 actas por petición como sustituto de ese control.
-5. **Endpoints no RFFM:** `api/tactical-advice.ts` mantiene su propia verificación Firebase duplicada. Conviene migrarlo al helper después de validar esta primera integración.
-6. **Despliegue:** no se ha realizado ni se debe realizar despliegue a producción hasta que CI esté verde, se confirme Firebase Admin en Vercel y se complete una revisión manual del diff.
+5. **Endpoints:** los seis endpoints de `api/` identificados (cinco RFFM y asesoramiento táctico) usan el helper compartido. No se ha ejecutado una prueba end-to-end contra Firebase/Vercel con credenciales reales.
+6. **Despliegue:** no se ha realizado ni se debe realizar despliegue a producción hasta que se configure de forma segura la credencial, se confirme Firebase Admin en un entorno controlado y se complete una revisión manual del diff.
 
 ## Seguridad de cambios
 
