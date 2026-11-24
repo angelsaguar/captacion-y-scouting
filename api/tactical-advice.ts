@@ -1,90 +1,12 @@
-import { getApps, initializeApp } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
-import { getFirestore } from "firebase-admin/firestore";
+import { applyApiCors, authorizeClubRequest } from "../src/server/clubAuth";
 import { generateLocalTacticalAdvice } from "../src/lib/tacticalAdvisor";
-
-const FIREBASE_PROJECT_ID = "gen-lang-client-0091658680";
-const FIRESTORE_DATABASE_ID = "ai-studio-remixcaptacionys-b51f65a2-fce1-4849-a665-604b0915604c";
-const SCOUT_ACCESS_DOCUMENT = "club_access/alejandro_scout";
-const ADMIN_EMAIL = "angel.saguar@telefonica.net";
-const SCOUT_EMAIL = "asaguar04@gmail.com";
-const REQUIRED_MODULE = "gestion-equipo";
-const PRODUCTION_ORIGIN = "https://captacion-y-scouting.vercel.app";
-
-if (getApps().length === 0) {
-  initializeApp({ projectId: FIREBASE_PROJECT_ID });
-}
-
-const adminDb = getFirestore(undefined, FIRESTORE_DATABASE_ID);
-
-function allowedOrigins(): Set<string> {
-  const configured = (process.env.APP_ALLOWED_ORIGINS || "")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-  return new Set([PRODUCTION_ORIGIN, "http://localhost:3000", "http://localhost:5173", ...configured]);
-}
-
-function applyCors(req: any, res: any): boolean {
-  const origin = typeof req.headers.origin === "string" ? req.headers.origin : "";
-  if (!origin) return true; // Non-browser clients still require a valid Firebase token.
-  if (!allowedOrigins().has(origin)) return false;
-  res.setHeader("Access-Control-Allow-Origin", origin);
-  res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.setHeader("Access-Control-Max-Age", "600");
-  return true;
-}
-
-async function authorizeRequest(req: any): Promise<{ uid: string; role: "admin" | "scout" } | null> {
-  const authorization = typeof req.headers.authorization === "string" ? req.headers.authorization : "";
-  if (!authorization.startsWith("Bearer ")) return null;
-  const token = authorization.slice(7).trim();
-  if (!token) return null;
-
-  const decoded = await getAuth().verifyIdToken(token);
-  if (decoded.aud !== FIREBASE_PROJECT_ID || !decoded.email_verified || !decoded.email) return null;
-  const email = decoded.email.trim().toLowerCase();
-
-  if (email === ADMIN_EMAIL) {
-    const adminUid = (process.env.CLUB_ADMIN_FIREBASE_UID || "").trim();
-    if (!adminUid || decoded.uid !== adminUid) return null;
-    return { uid: decoded.uid, role: "admin" };
-  }
-
-  if (email !== SCOUT_EMAIL) return null;
-  let snapshot;
-  try {
-    snapshot = await adminDb.doc(SCOUT_ACCESS_DOCUMENT).get();
-  } catch (error) {
-    const dependencyError = new Error("Firestore authorization lookup failed");
-    (dependencyError as any).name = "AuthorizationDependencyError";
-    (dependencyError as any).cause = error;
-    throw dependencyError;
-  }
-  if (!snapshot.exists) return null;
-  const access = snapshot.data() || {};
-  const allowedModules = Array.isArray(access.allowedModules) ? access.allowedModules : [];
-  if (
-    typeof access.email !== "string" ||
-    access.email.trim().toLowerCase() !== SCOUT_EMAIL ||
-    access.active !== true ||
-    access.uidLocked !== true ||
-    typeof access.uid !== "string" ||
-    access.uid !== decoded.uid ||
-    !allowedModules.includes(REQUIRED_MODULE)
-  ) return null;
-
-  return { uid: decoded.uid, role: "scout" };
-}
 
 function boundedString(value: unknown, maxLength: number, fallback = ""): string {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : fallback;
 }
 
 export default async function handler(req: any, res: any) {
-  if (!applyCors(req, res)) {
+  if (!applyApiCors(req, res, ["POST"])) {
     return res.status(403).json({ error: "Origen no autorizado." });
   }
 
@@ -96,18 +18,9 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  let identity: { uid: string; role: "admin" | "scout" } | null = null;
-  try {
-    identity = await authorizeRequest(req);
-  } catch (error: any) {
-    if (error?.name === "AuthorizationDependencyError") {
-      console.error("Tactical advice authorization dependency failed.");
-      return res.status(503).json({ error: "No se pudo verificar la autorización. Inténtalo de nuevo." });
-    }
-    return res.status(401).json({ error: "Sesión no válida o caducada. Vuelve a iniciar sesión." });
-  }
-  if (!identity) {
-    return res.status(403).json({ error: "No tienes autorización para utilizar el asesor táctico." });
+  const authorization = await authorizeClubRequest(req.headers.authorization, ["gestion-equipo"]);
+  if (authorization.ok === false) {
+    return res.status(authorization.statusCode).json({ error: authorization.error });
   }
 
   try {
