@@ -2,7 +2,7 @@
 
 **Fecha:** 24-11-2026  
 **Rama:** `feat/fase-b-hardening-supabase`  
-**Estado:** cambios de autorización, validación RFFM y credenciales Firebase Admin preparados en rama de trabajo. CI superado para el commit `01fe40159479516a5767ab484810ef73c4c1f4a1` (24-11-2026). No desplegado.
+**Estado:** cambios de autorización, validación RFFM y credenciales Firebase Admin preparados en rama de trabajo. CI superado para el commit `377d2e0c88e4b72f39b649ebf420560e86ce92ca` (24-11-2026). No desplegado.
 
 ## Cambios realizados
 
@@ -18,6 +18,7 @@ Creado `src/server/clubAuth.ts`:
 
 ### 2. Express
 `server.ts` importa ahora las constantes, lectura Firestore y evaluación de token del módulo compartido. Se mantiene el middleware Express y la emisión de claims existente; no se ha cambiado la política funcional de usuarios.
+- En el commit `377d2e0c88e4b72f39b649ebf420560e86ce92ca` se eliminaron imports obsoletos de inicialización Firebase/Firestore que ya no se utilizaban en `server.ts`. No fue un cambio funcional.
 
 ### 3. Endpoint de asesoramiento táctico
 `api/tactical-advice.ts` también utiliza `authorizeClubRequest` y `applyApiCors` desde `src/server/clubAuth.ts`. Exige el módulo `gestion-equipo` y ya no mantiene inicialización Firebase ni comprobaciones de identidad duplicadas. Se conserva el método POST y la lógica de generación de asesoramiento.
@@ -53,9 +54,9 @@ En `sync-actas-detailed` se limita cada ejecución a 60 actas y se valida el có
 
 ## Validación CI de los cambios actuales
 
-El workflow `Fase B security checks` terminó correctamente para el commit `01fe40159479516a5767ab484810ef73c4c1f4a1`. Los pasos `Security unit tests`, `TypeScript validation` y `Production build` finalizaron con éxito. Las pruebas de seguridad registraron 24 casos superados y 0 fallidos. La ejecución valida la autorización compartida, el parser de credenciales, la validación RFFM y la compilación, incluido el endpoint de asesoramiento táctico.
+El workflow `Fase B security checks` terminó correctamente para el commit `377d2e0c88e4b72f39b649ebf420560e86ce92ca`. Los pasos `Security unit tests`, `TypeScript validation` y `Production build` finalizaron con éxito. La ejecución anterior del commit `01fe40159479516a5767ab484810ef73c4c1f4a1` registró 24 pruebas superadas y 0 fallidas; el commit `377d2e0` es una limpieza de imports sin cambios funcionales.
 
-[Consultar ejecución CI superada](https://github.com/angelsaguar/captacion-y-scouting/actions/runs/45397915781)
+[Consultar ejecución CI superada](https://github.com/angelsaguar/captacion-y-scouting/actions/runs/45398951365)
 
 CI verde no demuestra por sí solo que Firebase Admin disponga de credenciales funcionales en el runtime de Vercel; esa comprobación sigue pendiente.
 
