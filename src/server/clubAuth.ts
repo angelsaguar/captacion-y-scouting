@@ -161,7 +161,7 @@ export async function authorizeClubRequest(
   if (!evaluation.allowed || !evaluation.uid || !evaluation.email || !evaluation.role) {
     return {
       ok: false,
-      statusCode: evaluation.statusCode,
+      statusCode: evaluation.statusCode === 200 ? 403 : evaluation.statusCode,
       error: evaluation.error || "Acceso no autorizado.",
     };
   }
