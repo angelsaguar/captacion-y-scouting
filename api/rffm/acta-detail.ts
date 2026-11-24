@@ -1,5 +1,5 @@
 import { applyApiCors, authorizeClubRequest } from "../../src/server/clubAuth";
-import { validateRffmParams, validateRffmJornada, validateRffmActaCode, validateRffmTeamName, validateRffmCalendarUrl } from "../../src/server/rffmValidation";
+import { validateRffmActaCode } from "../../src/server/rffmValidation";
 
 const RFFM_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
