@@ -56,9 +56,17 @@ El workflow `Fase B security checks` terminó correctamente para el commit `3263
 
 CI verde no demuestra por sí solo que Firebase Admin disponga de credenciales funcionales en el runtime de Vercel; esa comprobación sigue pendiente.
 
+## Configuración de credenciales Firebase Admin para Vercel
+
+El módulo compartido admite ahora `FIREBASE_SERVICE_ACCOUNT_JSON`, una variable exclusivamente de servidor que contiene el JSON completo de una cuenta de servicio del proyecto Firebase esperado. El código valida `project_id`, `client_email` y el formato PEM de `private_key`, y normaliza los saltos de línea escapados. Si la variable no existe, conserva Application Default Credentials para entornos locales; esto no demuestra que Vercel disponga de ADC.
+
+La cuenta de servicio debe tener únicamente permisos de lectura necesarios para consultar el documento de acceso en Firestore (preferentemente un rol IAM de solo lectura, como Cloud Datastore Viewer, sujeto a validar las necesidades exactas del proyecto). No debe usarse una clave de propietario ni concederse Editor/Owner. La clave privada debe guardarse solo como variable cifrada de Vercel, nunca en Git, `.env.example`, el frontend o el chat. También será necesaria `CLUB_ADMIN_FIREBASE_UID` para autorizar al administrador; el valor debe obtenerse del UID real de Firebase Authentication y no inferirse del correo.
+
+La modificación añade pruebas unitarias del parser, pero no crea ni carga credenciales, no modifica Firebase, Vercel ni producción y no demuestra aún acceso real a Firestore.
+
 ## Riesgos y límites todavía abiertos
 
-1. **Credenciales Firebase en Vercel:** no se ha demostrado aún mediante una invocación autenticada que Firebase Admin pueda verificar tokens y leer Firestore en el runtime Vercel. La configuración debe comprobarse sin revelar secretos.
+1. **Credenciales Firebase en Vercel:** el código ya admite la variable de servicio, pero Vercel todavía no la tiene configurada según la revisión de variables compartida por el usuario. La lectura real de Firestore en runtime sigue sin estar probada.
 2. **Preview:** los dominios temporales de Preview no se permiten por defecto. Si se prueba desde Preview, habrá que añadir el origen concreto a `APP_ALLOWED_ORIGINS` solo después de verificarlo; no se recomienda permitir todos los dominios `*.vercel.app`.
 3. **Rate limiting:** esta primera implementación no añade un límite global para funciones serverless. El Map en memoria de Express no sería un límite global fiable en Vercel. Debe diseñarse un control adicional sin contratar servicios nuevos.
 4. **Rate limiting global:** sigue pendiente un límite global entre instancias serverless. No se ha añadido un proveedor externo ni se presenta el límite de 60 actas por petición como sustituto de ese control.
@@ -67,4 +75,4 @@ CI verde no demuestra por sí solo que Firebase Admin disponga de credenciales f
 
 ## Seguridad de cambios
 
-No se han modificado Supabase, RLS, grants, datos ni variables de entorno. No se ha añadido `SUPABASE_SERVICE_ROLE_KEY`. Los cambios están únicamente en la rama de trabajo.
+No se han modificado Supabase, RLS, grants, datos ni variables de entorno. No se ha añadido `SUPABASE_SERVICE_ROLE_KEY`. No se ha creado ni almacenado ninguna clave de servicio. Los cambios están únicamente en la rama de trabajo.
