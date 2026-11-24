@@ -19,6 +19,7 @@ import {
   ALEJANDRO_AUTHORIZED_EMAIL,
   readScoutAccessFromFirestore,
   evaluateDecodedClubToken,
+  verifyClubIdToken,
   type ServerScoutAccessState,
   type ClubApplicationRole,
 } from "./src/server/clubAuth";
@@ -133,7 +134,7 @@ function createRateLimiter(maxRequestsPerMinute: number) {
 
 /**
  * Cryptographic Firebase Admin SDK authentication & authorization middleware.
- * Uses getAuth().verifyIdToken(idToken) and enforces the two-account Zero-Trust policy.
+ * Verifies Firebase token revocation and enforces the two-account Zero-Trust policy.
  */
 function requireClubAuth(requiredModules: string[] = [], adminOnly = false) {
   return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -152,7 +153,7 @@ function requireClubAuth(requiredModules: string[] = [], adminOnly = false) {
         });
       }
 
-      const decoded = await getAuth().verifyIdToken(idToken);
+      const decoded = await verifyClubIdToken(idToken);
       let scoutAccess: ServerScoutAccessState | null = null;
       if ((decoded.email || "").trim().toLowerCase() === ALEJANDRO_AUTHORIZED_EMAIL) {
         try {
@@ -182,9 +183,10 @@ function requireClubAuth(requiredModules: string[] = [], adminOnly = false) {
 
       return next();
     } catch (err: any) {
-      return res.status(401).json({
-        error: "Token de sesión inválido o expirado. Vuelve a iniciar sesión con Google.",
-        details: err?.code || "auth/invalid-id-token",
+      const statusCode = err?.statusCode === 401 ? 401 : 503;
+      return res.status(statusCode).json({
+        error: err?.message || "No se pudo comprobar la sesión con Firebase. Inténtalo de nuevo.",
+        details: err?.code || "auth/verification-unavailable",
       });
     }
   };
