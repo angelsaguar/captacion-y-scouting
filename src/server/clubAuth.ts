@@ -175,6 +175,53 @@ export function evaluateDecodedClubToken(
  * Server-only authorization for Vercel API handlers.
  * Firestore failures fail closed and are reported as 503, not as an authenticated request.
  */
+
+export type FirebaseTokenVerificationFailure = {
+  statusCode: 401 | 503;
+  message: string;
+  code: string;
+};
+
+/** Maps definitive credential failures to 401 and infrastructure/verification outages to 503. */
+export function classifyFirebaseTokenVerificationError(error: unknown): FirebaseTokenVerificationFailure {
+  const code = typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code?: unknown }).code || "")
+    : "";
+  const invalidCredentialCodes = new Set([
+    "auth/argument-error",
+    "auth/invalid-id-token",
+    "auth/id-token-expired",
+    "auth/id-token-revoked",
+    "auth/user-disabled",
+    "auth/user-not-found",
+  ]);
+  if (invalidCredentialCodes.has(code)) {
+    return {
+      statusCode: 401,
+      message: "Sesión no válida, revocada o deshabilitada. Vuelve a iniciar sesión.",
+      code,
+    };
+  }
+  return {
+    statusCode: 503,
+    message: "No se pudo comprobar la sesión con Firebase. Inténtalo de nuevo.",
+    code: code || "auth/verification-unavailable",
+  };
+}
+
+/** Verifies signature, expiry, revocation and disabled-user status. Server-only. */
+export async function verifyClubIdToken(token: string): Promise<DecodedIdToken> {
+  try {
+    return await getAuth().verifyIdToken(token, true);
+  } catch (error) {
+    const failure = classifyFirebaseTokenVerificationError(error);
+    const wrapped = new Error(failure.message) as Error & { statusCode: 401 | 503; code: string };
+    wrapped.statusCode = failure.statusCode;
+    wrapped.code = failure.code;
+    throw wrapped;
+  }
+}
+
 export async function authorizeClubRequest(
   authorizationHeader: string | string[] | undefined,
   requiredModules: string[] = []
@@ -190,9 +237,10 @@ export async function authorizeClubRequest(
 
   let decoded: DecodedIdToken;
   try {
-    decoded = await getAuth().verifyIdToken(token);
-  } catch {
-    return { ok: false, statusCode: 401, error: "Sesión no válida o caducada. Vuelve a iniciar sesión." };
+    decoded = await verifyClubIdToken(token);
+  } catch (error) {
+    const failure = error as Error & { statusCode?: 401 | 503 };
+    return { ok: false, statusCode: failure.statusCode || 503, error: failure.message || "No se pudo comprobar la sesión con Firebase. Inténtalo de nuevo." };
   }
 
   let scoutAccess: ServerScoutAccessState | null = null;
