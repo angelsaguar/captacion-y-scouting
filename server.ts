@@ -4,9 +4,7 @@ import path from "path";
 import fs from "fs";
 import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { fileURLToPath } from "url";
-import { getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore } from "firebase-admin/firestore";
 import {
   extractCalendarData,
   fetchClasificacionData,
@@ -19,8 +17,6 @@ import {
   EXPECTED_FIREBASE_PROJECT_ID,
   ADMIN_AUTHORIZED_EMAIL,
   ALEJANDRO_AUTHORIZED_EMAIL,
-  FIRESTORE_DATABASE_ID,
-  SCOUT_ACCESS_DOCUMENT,
   readScoutAccessFromFirestore,
   evaluateDecodedClubToken,
   type ServerScoutAccessState,
