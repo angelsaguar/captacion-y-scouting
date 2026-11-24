@@ -185,7 +185,7 @@ export default async function handler(req: any, res: any) {
     req.headers?.authorization,
     ["estadisticas-rivales", "gestion-equipo"]
   );
-  if (!authorization.ok) {
+  if (authorization.ok === false) {
     return res.status(authorization.statusCode).json({ error: authorization.error });
   }
 
