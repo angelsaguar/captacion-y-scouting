@@ -1,5 +1,5 @@
-import { applyApiCors, authorizeClubRequest } from "../src/server/clubAuth";
-import { generateLocalTacticalAdvice } from "../src/lib/tacticalAdvisor";
+import { applyApiCors, authorizeClubRequest } from "../src/server/clubAuth.ts";
+import { generateLocalTacticalAdvice } from "../src/lib/tacticalAdvisor.ts";
 
 function boundedString(value: unknown, maxLength: number, fallback = ""): string {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : fallback;
