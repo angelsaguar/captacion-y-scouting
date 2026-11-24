@@ -2,7 +2,7 @@
 
 **Fecha:** 24-11-2026  
 **Rama:** `feat/fase-b-hardening-supabase`  
-**Estado:** cambios en rama de trabajo; CI en ejecución al redactar este informe. No desplegado.
+**Estado:** cambios en rama de trabajo; CI aprobado para el commit `d86f5d0b95304e15c41349fbf21d59e4908372ff`. No desplegado.
 
 ## Cambios realizados
 
@@ -37,9 +37,11 @@ Para el scout se exige al menos uno de los módulos `estadisticas-rivales` o `ge
 
 ## Pendiente de validación
 
-El workflow `Fase B security checks` se ha disparado para los commits de esta implementación. En el momento de redactar el informe, el run del último commit `bef42b9e0a1a05af773e887b771f2cdd56a1b606` seguía en ejecución; por tanto, no se declara todavía CI aprobado.
+El workflow `Fase B security checks` terminó correctamente para el commit `d86f5d0b95304e15c41349fbf21d59e4908372ff`. Los pasos `Security unit tests`, `TypeScript validation` y `Production build` finalizaron con éxito.
 
-[Consultar ejecución CI](https://github.com/angelsaguar/captacion-y-scouting/actions/runs/45386053393)
+[Consultar ejecución CI aprobada](https://github.com/angelsaguar/captacion-y-scouting/actions/runs/45386378298)
+
+Este resultado valida pruebas automatizadas y compilación, pero no demuestra que Firebase Admin disponga de credenciales funcionales en el runtime de Vercel.
 
 ## Riesgos y límites todavía abiertos
 
