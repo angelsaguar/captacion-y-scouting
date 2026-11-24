@@ -1,4 +1,4 @@
-import { getApps, initializeApp } from "firebase-admin/app";
+import { credential, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 
@@ -16,8 +16,59 @@ const VALID_MODULES = new Set([
   "estadisticas-rivales",
 ]);
 
+export interface FirebaseServiceAccountConfig {
+  projectId: string;
+  clientEmail: string;
+  privateKey: string;
+}
+
+/**
+ * Parses the optional server-only service account JSON used by Vercel.
+ * The private key is never logged or returned to client-facing code.
+ */
+export function parseFirebaseServiceAccount(raw: string): FirebaseServiceAccountConfig {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON debe contener JSON válido.");
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON no contiene una cuenta de servicio válida.");
+  }
+
+  const account = parsed as Record<string, unknown>;
+  const projectId = typeof account.project_id === "string" ? account.project_id.trim() : "";
+  const clientEmail = typeof account.client_email === "string" ? account.client_email.trim() : "";
+  const privateKey = typeof account.private_key === "string"
+    ? account.private_key.replace(/\\n/g, "\n").trim()
+    : "";
+
+  if (projectId !== EXPECTED_FIREBASE_PROJECT_ID) {
+    throw new Error("La cuenta de servicio no pertenece al proyecto Firebase esperado.");
+  }
+  if (!clientEmail || !privateKey.includes("-----BEGIN PRIVATE KEY-----") ||
+      !privateKey.includes("-----END PRIVATE KEY-----")) {
+    throw new Error("La cuenta de servicio no contiene client_email y private_key válidos.");
+  }
+
+  return { projectId, clientEmail, privateKey };
+}
+
 if (getApps().length === 0) {
-  initializeApp({ projectId: EXPECTED_FIREBASE_PROJECT_ID });
+  const serviceAccountJson = (process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "").trim();
+  if (serviceAccountJson) {
+    const serviceAccount = parseFirebaseServiceAccount(serviceAccountJson);
+    initializeApp({
+      projectId: EXPECTED_FIREBASE_PROJECT_ID,
+      credential: credential.cert(serviceAccount),
+    });
+  } else {
+    // Local environments may use Application Default Credentials.
+    // Vercel must provide FIREBASE_SERVICE_ACCOUNT_JSON for Firestore access.
+    initializeApp({ projectId: EXPECTED_FIREBASE_PROJECT_ID });
+  }
 }
 
 const adminDb = getFirestore(undefined, FIRESTORE_DATABASE_ID);
