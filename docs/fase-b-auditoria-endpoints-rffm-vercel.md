@@ -108,3 +108,28 @@ La verificación y autorización deben residir en cada función o en un módulo 
 Esta revisión es estática y se limita al código de la rama indicada. No se han ejecutado pruebas dinámicas, no se ha accedido a secretos de Vercel, no se ha modificado producción, no se han cambiado políticas RLS ni grants, y no se ha ejecutado SQL.
 
 **Decisión:** no desplegar correcciones todavía. Completar primero el inventario de llamadas del frontend y el diseño de autorización común; después preparar cambios en esta rama y validarlos mediante pruebas antes de cualquier despliegue.
+
+
+## 8. Revisión de llamadas desde el frontend
+
+Se inspeccionaron `src/lib/clubAccessAndSync.ts`, `src/services/rffmSyncService.ts` y `src/lib/actasArbitrales.ts`.
+
+### 8.1 Mecanismo común disponible
+
+`getAuthBearerHeaders()` obtiene el Firebase ID token del usuario actual mediante `auth.currentUser.getIdToken()` y lo incorpora como `Authorization: Bearer ...`. Si no hay usuario autenticado o falla la obtención del token, captura el error y devuelve igualmente los headers sin Authorization. Por ello, el helper no fuerza por sí mismo que la petición se cancele cuando no existe token.
+
+### 8.2 Llamadas identificadas
+
+- `src/services/rffmSyncService.ts` llama a `/api/rffm/clasificacion` y `/api/rffm/resultados` pasando los headers del helper.
+- `src/lib/actasArbitrales.ts` llama a `/api/rffm/sync-actas-detailed` mediante POST y pasa los headers del helper.
+
+Esto indica que el frontend ya intenta enviar el token en estas tres llamadas, pero los handlers correspondientes no lo verifican. Mientras el endpoint no lo compruebe, enviar el token no constituye una barrera de seguridad.
+
+En la revisión de los archivos y referencias inspeccionados no se localizó una llamada directa a `/api/rffm/extract-calendar` ni a `/api/rffm/acta-detail`. No se concluye que no existan en toda la aplicación: debe completarse la búsqueda global de referencias y comprobar posibles llamadas indirectas o dinámicas.
+
+### 8.3 Consecuencia para la corrección
+
+- Los tres flujos identificados pueden conservar el envío del token y añadir verificación obligatoria en el servidor.
+- El helper del frontend debería ofrecer un modo obligatorio que lance un error si no hay usuario/token, evitando llamadas sin credencial por error.
+- El control decisivo debe permanecer en el servidor: nunca confiar en que el frontend haya enviado un token.
+- Antes de proteger o retirar endpoints no localizados en el frontend, confirmar si los usa alguna pantalla, integración o cliente externo.
