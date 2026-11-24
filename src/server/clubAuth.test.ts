@@ -2,6 +2,7 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import {
   evaluateDecodedClubToken,
+  classifyFirebaseTokenVerificationError,
   parseFirebaseServiceAccount,
   EXPECTED_FIREBASE_PROJECT_ID,
   ADMIN_AUTHORIZED_EMAIL,
@@ -87,4 +88,19 @@ test("Firebase service account parser rejects missing private key material", () 
     project_id: EXPECTED_FIREBASE_PROJECT_ID,
     client_email: "firebase-admin@example.iam.gserviceaccount.com",
   })), /private_key válidos/);
+});
+
+
+test("Firebase token verification classifies revoked and disabled credentials as 401", () => {
+  for (const code of ["auth/id-token-revoked", "auth/user-disabled", "auth/user-not-found", "auth/id-token-expired"]) {
+    const failure = classifyFirebaseTokenVerificationError({ code });
+    assert.equal(failure.statusCode, 401);
+    assert.ok(failure.message.includes("Sesión"));
+  }
+});
+
+test("Firebase token verification classifies infrastructure failures as 503", () => {
+  for (const error of [{ code: "auth/internal-error" }, new Error("network unavailable"), {}]) {
+    assert.equal(classifyFirebaseTokenVerificationError(error).statusCode, 503);
+  }
 });
