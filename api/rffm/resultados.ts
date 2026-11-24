@@ -1,4 +1,5 @@
 import { applyApiCors, authorizeClubRequest } from "../../src/server/clubAuth";
+import { validateRffmParams, validateRffmJornada, validateRffmActaCode, validateRffmTeamName, validateRffmCalendarUrl } from "../../src/server/rffmValidation";
 
 const RFFM_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -28,7 +29,12 @@ export default async function handler(req: any, res: any) {
     const competicion = (q.competicion || '26738324').toString();
     const grupo = (q.grupo || '27306559').toString();
     const tipojuego = (q.tipojuego || '1').toString();
-    const jornadaQuery = q.jornada ? `&jornada=${q.jornada.toString()}` : '';
+    const paramsError = validateRffmParams({ temporada, competicion, grupo, tipojuego });
+    if (paramsError) return res.status(400).json({ error: paramsError });
+    const jornada = q.jornada ? q.jornada.toString() : '';
+    const jornadaError = jornada ? validateRffmJornada(jornada) : null;
+    if (jornadaError) return res.status(400).json({ error: jornadaError });
+    const jornadaQuery = jornada ? `&jornada=${jornada}` : '';
 
     const targetUrl = `https://www.rffm.es/competicion/resultados-y-jornadas?temporada=${temporada}&competicion=${competicion}&grupo=${grupo}${jornadaQuery}&tipojuego=${tipojuego}`;
     const response = await fetch(targetUrl, { headers: RFFM_HEADERS });
