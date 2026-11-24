@@ -40,7 +40,7 @@ export interface ClubIdentity {
 
 export interface ClubTokenVerificationResult {
   allowed: boolean;
-  statusCode: 401 | 403;
+  statusCode: 200 | 401 | 403;
   error?: string;
   role?: ClubApplicationRole;
   email?: string;
@@ -94,7 +94,7 @@ export function evaluateDecodedClubToken(
         error: "Identidad de administrador no vinculada al UID autorizado del entorno.",
       };
     }
-    return { allowed: true, statusCode: 200 as 200, role: "admin", email, uid: decoded.uid } as ClubTokenVerificationResult;
+    return { allowed: true, statusCode: 200, role: "admin", email, uid: decoded.uid };
   }
 
   if (email !== ALEJANDRO_AUTHORIZED_EMAIL) {
@@ -117,7 +117,7 @@ export function evaluateDecodedClubToken(
     };
   }
 
-  return { allowed: true, statusCode: 200 as 200, role: "scout", email, uid: decoded.uid } as ClubTokenVerificationResult;
+  return { allowed: true, statusCode: 200, role: "scout", email, uid: decoded.uid };
 }
 
 /**
