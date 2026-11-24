@@ -1,4 +1,5 @@
 import { applyApiCors, authorizeClubRequest } from "../../src/server/clubAuth";
+import { validateRffmParams, validateRffmJornada, validateRffmActaCode, validateRffmTeamName, validateRffmCalendarUrl } from "../../src/server/rffmValidation";
 
 const RFFM_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -27,6 +28,8 @@ export default async function handler(req: any, res: any) {
     if (!codacta) {
       return res.status(400).json({ error: 'Parámetro codacta requerido' });
     }
+    const codactaError = validateRffmActaCode(codacta);
+    if (codactaError) return res.status(400).json({ error: codactaError });
     const response = await fetch(`https://www.rffm.es/acta-partido/${codacta}`, { headers: RFFM_HEADERS });
     const html = await response.text();
     const match = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
