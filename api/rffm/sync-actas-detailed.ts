@@ -1,4 +1,5 @@
 import { applyApiCors, authorizeClubRequest } from "../../src/server/clubAuth";
+import { validateRffmParams, validateRffmJornada, validateRffmActaCode, validateRffmTeamName, validateRffmCalendarUrl } from "../../src/server/rffmValidation";
 
 const RFFM_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -193,6 +194,10 @@ export default async function handler(req: any, res: any) {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
     const query = req.query || {};
 
+    const calendarUrl = (body.calendarUrl || query.calendarUrl || body.url || query.url || '').toString();
+    const urlError = validateRffmCalendarUrl(calendarUrl);
+    if (urlError) return res.status(400).json({ error: urlError });
+
     const parsed = parseRffmUrlParams({
       calendarUrl: (body.calendarUrl || query.calendarUrl || body.url || query.url || '').toString(),
       temporada: (body.temporada || query.temporada || '').toString(),
@@ -203,7 +208,11 @@ export default async function handler(req: any, res: any) {
 
     const { temporada, competicion, grupo } = parsed;
     let tipojuego = parsed.tipojuego;
+    const paramsError = validateRffmParams(parsed);
+    if (paramsError) return res.status(400).json({ error: paramsError });
     const targetTeamName = (body.teamName || query.teamName || 'INFANTIL B').toString().trim();
+    const teamNameError = validateRffmTeamName(targetTeamName);
+    if (teamNameError) return res.status(400).json({ error: teamNameError });
 
     let calendar: any = null;
     const [calFirst, stFirst, resFirst] = await Promise.all([
@@ -296,6 +305,14 @@ export default async function handler(req: any, res: any) {
     const detailedActas: any[] = [];
 
     matchesToProcess.sort((a, b) => a.jornada - b.jornada);
+    if (matchesToProcess.length > 60) {
+      return res.status(400).json({ error: "La consulta supera el máximo de 60 actas por ejecución." });
+    }
+    for (const item of matchesToProcess) {
+      if (validateRffmActaCode(String(item.codacta))) {
+        return res.status(502).json({ error: "La Federación ha devuelto un código de acta con formato no válido." });
+      }
+    }
 
     const fetchedActas: Array<{ item: { codacta: string; jornada: number }; g: any }> = [];
     for (let i = 0; i < matchesToProcess.length; i += 6) {
