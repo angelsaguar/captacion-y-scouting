@@ -6,15 +6,15 @@ export type RffmParams = {
 };
 
 export function validateRffmParams(params: RffmParams): string | null {
-  if (!/^\\d{1,3}$/.test(params.temporada)) return "Parámetro temporada no válido.";
-  if (!/^\\d{1,12}$/.test(params.competicion)) return "Parámetro competicion no válido.";
-  if (!/^\\d{1,12}$/.test(params.grupo)) return "Parámetro grupo no válido.";
+  if (!/^\d{1,3}$/.test(params.temporada)) return "Parámetro temporada no válido.";
+  if (!/^\d{1,12}$/.test(params.competicion)) return "Parámetro competicion no válido.";
+  if (!/^\d{1,12}$/.test(params.grupo)) return "Parámetro grupo no válido.";
   if (!/^[123]$/.test(params.tipojuego)) return "Parámetro tipojuego no válido.";
   return null;
 }
 
 export function validateRffmJornada(value: string): string | null {
-  if (!/^\\d{1,2}$/.test(value) || Number(value) < 1 || Number(value) > 60) {
+  if (!/^\d{1,2}$/.test(value) || Number(value) < 1 || Number(value) > 60) {
     return "Parámetro jornada no válido.";
   }
   return null;
