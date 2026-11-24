@@ -17,7 +17,7 @@ const validParams = {
 
 test("RFFM accepts known numeric competition parameters", () => {
   assert.equal(validateRffmParams(validParams), null);
-  assert.equal(validateRffmParams({ ...validParams, temporada: "2026" }), null);
+  assert.equal(validateRffmParams({ ...validParams, temporada: "22" }), null);
   assert.equal(validateRffmParams({ ...validParams, tipojuego: "3" }), null);
 });
 
