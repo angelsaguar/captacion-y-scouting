@@ -2,7 +2,7 @@
 
 **Fecha:** 24-11-2026  
 **Rama:** `feat/fase-b-hardening-supabase`  
-**Estado:** cambios de autorización y validación en rama de trabajo. La implementación de validaciones RFFM está pendiente de CI tras los últimos commits. No desplegado.
+**Estado:** cambios de autorización y validación en rama de trabajo. CI superado para el commit `32639f6b38b616396a44cbc96a78fbcc4b15af70` (24-11-2026). No desplegado.
 
 ## Cambios realizados
 
@@ -48,13 +48,13 @@ En `sync-actas-detailed` se limita cada ejecución a 60 actas y se valida el có
 - Creado `src/server/rffmValidation.test.ts` para los formatos válidos e inválidos, los límites de jornada y longitudes.
 - Actualizado `test:security` para ejecutar las pruebas de autorización y validación.
 
-## Validación CI anterior y estado de los últimos cambios
+## Validación CI de los cambios actuales
 
-El workflow `Fase B security checks` terminó correctamente para el commit `d86f5d0b95304e15c41349fbf21d59e4908372ff`. Los pasos `Security unit tests`, `TypeScript validation` y `Production build` finalizaron con éxito.
+El workflow `Fase B security checks` terminó correctamente para el commit `32639f6b38b616396a44cbc96a78fbcc4b15af70`. Los pasos `Security unit tests`, `TypeScript validation` y `Production build` finalizaron con éxito. Esto valida las pruebas automatizadas, los tipos y la compilación de los cambios de autorización y validación RFFM.
 
-[Consultar ejecución CI anterior](https://github.com/angelsaguar/captacion-y-scouting/actions/runs/45386378298)
+[Consultar ejecución CI superada](https://github.com/angelsaguar/captacion-y-scouting/actions/runs/45387572241)
 
-Los cambios de validación RFFM se incorporaron después de esa ejecución; por tanto, no se consideran validados hasta que termine un nuevo CI. Incluso con CI verde, las pruebas automatizadas y compilación no demuestran que Firebase Admin disponga de credenciales funcionales en el runtime de Vercel.
+CI verde no demuestra por sí solo que Firebase Admin disponga de credenciales funcionales en el runtime de Vercel; esa comprobación sigue pendiente.
 
 ## Riesgos y límites todavía abiertos
 
