@@ -1,4 +1,4 @@
-import { credential, getApps, initializeApp } from "firebase-admin/app";
+import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 
@@ -62,7 +62,7 @@ if (getApps().length === 0) {
     const serviceAccount = parseFirebaseServiceAccount(serviceAccountJson);
     initializeApp({
       projectId: EXPECTED_FIREBASE_PROJECT_ID,
-      credential: credential.cert(serviceAccount),
+      credential: cert(serviceAccount),
     });
   } else {
     // Local environments may use Application Default Credentials.
