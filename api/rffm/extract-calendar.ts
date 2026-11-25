@@ -1,3 +1,6 @@
+import { applyApiCors, authorizeClubRequest } from "../../src/server/clubAuth.ts";
+import { validateRffmParams, validateRffmTeamName, validateRffmCalendarUrl } from "../../src/server/rffmValidation.ts";
+
 const RFFM_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 };
@@ -173,12 +176,21 @@ function prefixRffmImg(img?: string): string {
 }
 
 export default async function handler(req: any, res: any) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (!applyApiCors(req, res, ["GET", "POST"])) {
+    return res.status(403).json({ error: "Origen no autorizado." });
+  }
+  if (req.method === "OPTIONS") return res.status(204).end();
+  if (!["GET", "POST"].includes(req.method)) {
+    res.setHeader("Allow", "GET, POST, OPTIONS");
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+  const authorization = await authorizeClubRequest(
+    req.headers?.authorization,
+    ["estadisticas-rivales", "gestion-equipo"]
+  );
+  if (authorization.ok === false) {
+    return res.status(authorization.statusCode).json({ error: authorization.error });
   }
 
   try {
@@ -186,7 +198,11 @@ export default async function handler(req: any, res: any) {
     const query = req.query || {};
 
     const calendarUrl = (body.calendarUrl || query.calendarUrl || body.url || query.url || '').toString();
+    const urlError = validateRffmCalendarUrl(calendarUrl);
+    if (urlError) return res.status(400).json({ error: urlError });
     const targetTeamName = (body.teamName || query.teamName || '').toString().trim();
+    const teamNameError = validateRffmTeamName(targetTeamName);
+    if (teamNameError) return res.status(400).json({ error: teamNameError });
     const parsed = parseRffmUrlParams({
       calendarUrl,
       temporada: (body.temporada || query.temporada || '').toString(),
@@ -197,6 +213,8 @@ export default async function handler(req: any, res: any) {
 
     const { temporada, competicion, grupo } = parsed;
     let tipojuego = parsed.tipojuego;
+    const paramsError = validateRffmParams(parsed);
+    if (paramsError) return res.status(400).json({ error: paramsError });
 
     if (!competicion || !grupo) {
       return res.status(400).json({

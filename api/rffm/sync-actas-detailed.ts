@@ -1,3 +1,6 @@
+import { applyApiCors, authorizeClubRequest } from "../../src/server/clubAuth.ts";
+import { validateRffmParams, validateRffmActaCode, validateRffmTeamName, validateRffmCalendarUrl } from "../../src/server/rffmValidation.ts";
+
 const RFFM_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 };
@@ -170,17 +173,30 @@ function getDuration(teamOrCategory: string) {
 }
 
 export default async function handler(req: any, res: any) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (!applyApiCors(req, res, ["GET", "POST"])) {
+    return res.status(403).json({ error: "Origen no autorizado." });
+  }
+  if (req.method === "OPTIONS") return res.status(204).end();
+  if (!["GET", "POST"].includes(req.method)) {
+    res.setHeader("Allow", "GET, POST, OPTIONS");
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+  const authorization = await authorizeClubRequest(
+    req.headers?.authorization,
+    ["estadisticas-rivales", "gestion-equipo"]
+  );
+  if (authorization.ok === false) {
+    return res.status(authorization.statusCode).json({ error: authorization.error });
   }
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
     const query = req.query || {};
+
+    const calendarUrl = (body.calendarUrl || query.calendarUrl || body.url || query.url || '').toString();
+    const urlError = validateRffmCalendarUrl(calendarUrl);
+    if (urlError) return res.status(400).json({ error: urlError });
 
     const parsed = parseRffmUrlParams({
       calendarUrl: (body.calendarUrl || query.calendarUrl || body.url || query.url || '').toString(),
@@ -192,7 +208,11 @@ export default async function handler(req: any, res: any) {
 
     const { temporada, competicion, grupo } = parsed;
     let tipojuego = parsed.tipojuego;
+    const paramsError = validateRffmParams(parsed);
+    if (paramsError) return res.status(400).json({ error: paramsError });
     const targetTeamName = (body.teamName || query.teamName || 'INFANTIL B').toString().trim();
+    const teamNameError = validateRffmTeamName(targetTeamName);
+    if (teamNameError) return res.status(400).json({ error: teamNameError });
 
     let calendar: any = null;
     const [calFirst, stFirst, resFirst] = await Promise.all([
@@ -285,6 +305,14 @@ export default async function handler(req: any, res: any) {
     const detailedActas: any[] = [];
 
     matchesToProcess.sort((a, b) => a.jornada - b.jornada);
+    if (matchesToProcess.length > 60) {
+      return res.status(400).json({ error: "La consulta supera el máximo de 60 actas por ejecución." });
+    }
+    for (const item of matchesToProcess) {
+      if (validateRffmActaCode(String(item.codacta))) {
+        return res.status(502).json({ error: "La Federación ha devuelto un código de acta con formato no válido." });
+      }
+    }
 
     const fetchedActas: Array<{ item: { codacta: string; jornada: number }; g: any }> = [];
     for (let i = 0; i < matchesToProcess.length; i += 6) {
