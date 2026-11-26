@@ -611,16 +611,73 @@ export async function syncAllClubDataWithFirestore(options?: {
 
         if (data.category === 'scouting_players' && Array.isArray(items)) {
           const existingRaw = localStorage.getItem('ud_lapoveda_table_players');
-          const existing = existingRaw ? JSON.parse(existingRaw) : [];
-          if (items.length >= existing.length) {
-            localStorage.setItem('ud_lapoveda_table_players', JSON.stringify(items));
+          const existing: any[] = existingRaw ? JSON.parse(existingRaw) : [];
+          const localScoutingRaw = localStorage.getItem('scouting_local_players');
+          const localScouting: any[] = localScoutingRaw ? JSON.parse(localScoutingRaw) : [];
+          const byId = new Map<string, any>();
+          items.forEach((p: any) => {
+            if (p && p.id) byId.set(String(p.id), p);
+          });
+          existing.forEach((p: any) => {
+            if (p && p.id) {
+              const cloudP = byId.get(String(p.id));
+              byId.set(String(p.id), {
+                ...(cloudP || {}),
+                ...p,
+                attributes:
+                  Array.isArray(p.attributes) && p.attributes.length > 0
+                    ? p.attributes
+                    : cloudP?.attributes,
+              });
+            }
+          });
+          localScouting.forEach((lp: any) => {
+            if (lp && lp.id) {
+              const prevP = byId.get(String(lp.id));
+              byId.set(String(lp.id), {
+                ...(prevP || {}),
+                ...lp,
+                attributes:
+                  Array.isArray(lp.attributes) && lp.attributes.length > 0
+                    ? lp.attributes
+                    : prevP?.attributes,
+              });
+            }
+          });
+          const mergedPlayers = Array.from(byId.values());
+          if (mergedPlayers.length > 0) {
+            localStorage.setItem('ud_lapoveda_table_players', JSON.stringify(mergedPlayers));
             pulled++;
           }
         } else if (data.category === 'scouting_attributes' && Array.isArray(items)) {
           const existingRaw = localStorage.getItem('ud_lapoveda_table_player_attributes');
-          const existing = existingRaw ? JSON.parse(existingRaw) : [];
-          if (items.length >= existing.length) {
-            localStorage.setItem('ud_lapoveda_table_player_attributes', JSON.stringify(items));
+          const existing: any[] = existingRaw ? JSON.parse(existingRaw) : [];
+          const attrByKey = new Map<string, any>();
+          items.forEach((row: any) => {
+            if (row && row.player_id && row.atributo) {
+              attrByKey.set(`${row.player_id}::${row.atributo}`, row);
+            }
+          });
+          existing.forEach((localRow: any) => {
+            if (localRow && localRow.player_id && localRow.atributo) {
+              const key = `${localRow.player_id}::${localRow.atributo}`;
+              const cloudRow = attrByKey.get(key);
+              if (!cloudRow) {
+                attrByKey.set(key, localRow);
+              } else {
+                const localVal = Number(localRow.valor) || 0;
+                const cloudVal = Number(cloudRow.valor) || 0;
+                const localTs = localRow.updated_at ? Date.parse(localRow.updated_at) : 0;
+                const cloudTs = cloudRow.updated_at ? Date.parse(cloudRow.updated_at) : 0;
+                if (localTs >= cloudTs || (localVal > 0 && cloudVal === 0)) {
+                  attrByKey.set(key, localRow);
+                }
+              }
+            }
+          });
+          const mergedAttrs = Array.from(attrByKey.values());
+          if (mergedAttrs.length > 0) {
+            localStorage.setItem('ud_lapoveda_table_player_attributes', JSON.stringify(mergedAttrs));
             pulled++;
           }
         } else if (data.category === 'club_needs' && Array.isArray(items)) {
@@ -754,9 +811,26 @@ export async function syncAllClubDataWithFirestore(options?: {
     try {
       if ((direction === 'push' || direction === 'bidirectional') && allowedModules.includes('scouting')) {
         const { data: playersData } = await supabase.from('players').select('*');
-        if (Array.isArray(playersData) && playersData.length > 0) {
+        const localTablePlayersRaw = localStorage.getItem('ud_lapoveda_table_players');
+        const localTablePlayers: any[] = localTablePlayersRaw ? JSON.parse(localTablePlayersRaw) : [];
+        const localScoutingRaw = localStorage.getItem('scouting_local_players');
+        const localScoutingPlayers: any[] = localScoutingRaw ? JSON.parse(localScoutingRaw) : [];
+
+        const playersById = new Map<string, any>();
+        (Array.isArray(playersData) ? playersData : []).forEach((p: any) => {
+          if (p && p.id) playersById.set(String(p.id), p);
+        });
+        localTablePlayers.forEach((p: any) => {
+          if (p && p.id) playersById.set(String(p.id), { ...(playersById.get(String(p.id)) || {}), ...p });
+        });
+        localScoutingPlayers.forEach((p: any) => {
+          if (p && p.id) playersById.set(String(p.id), { ...(playersById.get(String(p.id)) || {}), ...p });
+        });
+
+        const combinedPlayers = Array.from(playersById.values());
+        if (combinedPlayers.length > 0) {
           // Strip base64 photos from cloud sync payload to stay well below 1MB Firestore limit
-          const lightPlayers = playersData.map((p: any) => {
+          const lightPlayers = combinedPlayers.map((p: any) => {
             const { foto_url, ...rest } = p;
             return typeof foto_url === 'string' && !foto_url.startsWith('data:')
               ? { ...rest, foto_url }
@@ -773,13 +847,27 @@ export async function syncAllClubDataWithFirestore(options?: {
         }
 
         const { data: attrData } = await supabase.from('player_attributes').select('*');
-        if (Array.isArray(attrData) && attrData.length > 0) {
+        const localAttrsRaw = localStorage.getItem('ud_lapoveda_table_player_attributes');
+        const localAttrs: any[] = localAttrsRaw ? JSON.parse(localAttrsRaw) : [];
+        const attrMap = new Map<string, any>();
+        (Array.isArray(attrData) ? attrData : []).forEach((row: any) => {
+          if (row && row.player_id && row.atributo) {
+            attrMap.set(`${row.player_id}::${row.atributo}`, row);
+          }
+        });
+        localAttrs.forEach((row: any) => {
+          if (row && row.player_id && row.atributo) {
+            attrMap.set(`${row.player_id}::${row.atributo}`, row);
+          }
+        });
+        const combinedAttrs = Array.from(attrMap.values());
+        if (combinedAttrs.length > 0) {
           await upsertClubSyncDoc({
             id: 'scouting_attributes_master',
             module: 'scouting',
             category: 'scouting_attributes',
             team: 'ALL',
-            items: attrData,
+            items: combinedAttrs,
           });
           pushed++;
         }

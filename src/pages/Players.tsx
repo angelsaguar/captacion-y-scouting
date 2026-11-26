@@ -145,9 +145,14 @@ export default function Players() {
           localScoutingList.forEach(lp => {
             const idx = rawList.findIndex(r => isPlayerMatch(r, lp));
             if (idx >= 0) {
+              const mergedAttributes =
+                Array.isArray(lp.attributes) && lp.attributes.length > 0
+                  ? lp.attributes
+                  : rawList[idx].attributes;
               rawList[idx] = { 
                 ...rawList[idx], 
                 ...lp,
+                attributes: mergedAttributes,
                 foto_url: lp.foto_url ? cleanPhotoUrl(lp.foto_url) : cleanPhotoUrl(rawList[idx].foto_url)
               };
             } else {
@@ -157,7 +162,7 @@ export default function Players() {
         } catch {}
       }
 
-      // Check team rosters for any updated photo
+      // Check team rosters for any updated photo or attributes
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         if (k && k.startsWith('team_roster_')) {
@@ -168,6 +173,13 @@ export default function Players() {
               if (idx >= 0) {
                 if (rp.foto_url && !rawList[idx].foto_url) {
                   rawList[idx].foto_url = cleanPhotoUrl(rp.foto_url);
+                }
+                if (
+                  (!rawList[idx].attributes || rawList[idx].attributes!.length === 0) &&
+                  Array.isArray(rp.attributes) &&
+                  rp.attributes.length > 0
+                ) {
+                  rawList[idx].attributes = rp.attributes;
                 }
               }
             });
@@ -235,6 +247,44 @@ export default function Players() {
           }
         }
       });
+
+      // Hydrate attributes from ud_lapoveda_table_player_attributes for any player in currentList
+      try {
+        const rawAttrTable = localStorage.getItem('ud_lapoveda_table_player_attributes');
+        if (rawAttrTable) {
+          const parsedAttrTable = JSON.parse(rawAttrTable);
+          if (Array.isArray(parsedAttrTable) && parsedAttrTable.length > 0) {
+            currentList = currentList.map((player) => {
+              const tableAttrs = parsedAttrTable.filter(
+                (a: any) =>
+                  a &&
+                  String(a.player_id ?? '') === String(player.id ?? '') &&
+                  a.atributo &&
+                  !String(a.atributo).includes(':')
+              );
+              if (tableAttrs.length === 0) return player;
+              const attrMap = new Map<string, any>();
+              (player.attributes || []).forEach((a: any) => {
+                if (a && a.atributo && !String(a.atributo).includes(':')) {
+                  attrMap.set(a.atributo, a);
+                }
+              });
+              tableAttrs.forEach((a: any) => {
+                attrMap.set(a.atributo, {
+                  id: a.id || `attr_${player.id}_${a.atributo}`,
+                  player_id: player.id,
+                  atributo: a.atributo,
+                  valor: typeof a.valor === 'number' ? a.valor : Number(a.valor) || 0,
+                });
+              });
+              return {
+                ...player,
+                attributes: Array.from(attrMap.values()),
+              };
+            });
+          }
+        }
+      } catch {}
 
       // Apply robust client-side search filtering (name, nickname, club)
       if (search.trim()) {

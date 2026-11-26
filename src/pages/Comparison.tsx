@@ -25,7 +25,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Star, Swords, TrendingUp, Users, Filter, RotateCcw } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, isPlayerMatch } from '@/lib/utils';
 
 export default function Comparison() {
   const [players, setPlayers] = useState<Player[]>([]);
@@ -41,10 +41,66 @@ export default function Comparison() {
   useEffect(() => {
     async function fetchPlayers() {
       const { data } = await supabase.from('players').select('*, attributes:player_attributes(*)');
-      if (data) {
-        const scoutingOnly = data.filter(p => !(p as any).es_plantilla && (p as any).origen !== 'plantilla');
-        setPlayers(scoutingOnly);
+      let list: Player[] = data || [];
+
+      const localScoutingSaved = localStorage.getItem('scouting_local_players');
+      if (localScoutingSaved) {
+        try {
+          const localList: Player[] = JSON.parse(localScoutingSaved);
+          localList.forEach((lp) => {
+            const idx = list.findIndex((r) => isPlayerMatch(r, lp));
+            if (idx >= 0) {
+              list[idx] = {
+                ...list[idx],
+                ...lp,
+                attributes:
+                  Array.isArray(lp.attributes) && lp.attributes.length > 0
+                    ? lp.attributes
+                    : list[idx].attributes,
+              };
+            } else {
+              list.push(lp);
+            }
+          });
+        } catch {}
       }
+
+      try {
+        const rawAttrTable = localStorage.getItem('ud_lapoveda_table_player_attributes');
+        if (rawAttrTable) {
+          const parsedAttrTable = JSON.parse(rawAttrTable);
+          if (Array.isArray(parsedAttrTable)) {
+            list = list.map((p) => {
+              const tableAttrs = parsedAttrTable.filter(
+                (a: any) =>
+                  a &&
+                  String(a.player_id ?? '') === String(p.id ?? '') &&
+                  a.atributo &&
+                  !String(a.atributo).includes(':')
+              );
+              if (tableAttrs.length === 0) return p;
+              const attrMap = new Map<string, any>();
+              (p.attributes || []).forEach((a: any) => {
+                if (a && a.atributo && !String(a.atributo).includes(':')) {
+                  attrMap.set(a.atributo, a);
+                }
+              });
+              tableAttrs.forEach((a: any) => {
+                attrMap.set(a.atributo, {
+                  id: a.id || `attr_${p.id}_${a.atributo}`,
+                  player_id: p.id,
+                  atributo: a.atributo,
+                  valor: typeof a.valor === 'number' ? a.valor : Number(a.valor) || 0,
+                });
+              });
+              return { ...p, attributes: Array.from(attrMap.values()) };
+            });
+          }
+        }
+      } catch {}
+
+      const scoutingOnly = list.filter(p => !(p as any).es_plantilla && (p as any).origen !== 'plantilla');
+      setPlayers(scoutingOnly);
       setLoading(false);
     }
     fetchPlayers();

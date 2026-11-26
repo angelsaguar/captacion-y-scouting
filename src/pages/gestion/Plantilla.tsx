@@ -682,14 +682,51 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
   useEffect(() => {
     const loadAttrs = async () => {
       try {
+        const attrMap = new Map<string, { atributo: string; valor: number }>();
+        const addAttrList = (list?: any[]) => {
+          if (!Array.isArray(list)) return;
+          list.forEach((item: any) => {
+            if (item && item.atributo && !String(item.atributo).includes(':')) {
+              const numVal = typeof item.valor === 'number' ? item.valor : Number(item.valor);
+              if (!Number.isNaN(numVal)) {
+                attrMap.set(item.atributo, { atributo: item.atributo, valor: numVal });
+              }
+            }
+          });
+        };
+
+        // 1. Embedded attributes on roster player if present
+        addAttrList((player as any).attributes);
+
+        // 2. Match in scouting_local_players by ID or normalized name
+        const candidateIds = new Set<string>([String(player.id)]);
+        const normTarget = normalizePlayerNameKey(player.nombre, player.apellidos);
+        try {
+          const rawScouting = localStorage.getItem('scouting_local_players');
+          if (rawScouting) {
+            const scoutingList = JSON.parse(rawScouting);
+            if (Array.isArray(scoutingList)) {
+              const matchedScouting = scoutingList.find(
+                (sp: any) =>
+                  String(sp?.id ?? '') === String(player.id) ||
+                  normalizePlayerNameKey(sp?.nombre, sp?.apellidos) === normTarget
+              );
+              if (matchedScouting) {
+                if (matchedScouting.id) candidateIds.add(String(matchedScouting.id));
+                addAttrList(matchedScouting.attributes);
+              }
+            }
+          }
+        } catch {}
+
+        // 3. Query Supabase player_attributes
         const { data, error } = await supabase
           .from('player_attributes')
           .select('atributo, valor')
           .eq('player_id', player.id);
         if (!error && data && data.length > 0) {
-          setAttributes(data);
+          addAttrList(data);
         } else {
-          // Fallback: query players table by first name & last name to get UUID
           const { data: pData } = await supabase
             .from('players')
             .select('id')
@@ -697,14 +734,33 @@ function DetailedPerformanceDossier({ player, stats, allPlayers = [] }: { player
             .ilike('apellidos', player.apellidos)
             .limit(1);
           if (pData && pData.length > 0) {
+            candidateIds.add(String(pData[0].id));
             const { data: attrData } = await supabase
               .from('player_attributes')
               .select('atributo, valor')
               .eq('player_id', pData[0].id);
             if (attrData) {
-              setAttributes(attrData);
+              addAttrList(attrData);
             }
           }
+        }
+
+        // 4. Direct check in ud_lapoveda_table_player_attributes for all candidate IDs
+        try {
+          const rawLocalAttrs = localStorage.getItem('ud_lapoveda_table_player_attributes');
+          if (rawLocalAttrs) {
+            const parsedLocalAttrs = JSON.parse(rawLocalAttrs);
+            if (Array.isArray(parsedLocalAttrs)) {
+              const matchingRows = parsedLocalAttrs.filter(
+                (r: any) => r && candidateIds.has(String(r.player_id ?? ''))
+              );
+              addAttrList(matchingRows);
+            }
+          }
+        } catch {}
+
+        if (attrMap.size > 0) {
+          setAttributes(Array.from(attrMap.values()));
         }
       } catch (err) {
         console.error("Error loading attributes for dossier", err);
@@ -3485,26 +3541,86 @@ export default function Plantilla() {
       setStatsForm(getPlayerStats(selectedPlayerProfile));
       setIsEditingStats(false);
 
-      // Fetch scouting attributes from the database for the selected player
+      // Fetch scouting attributes from the database and local scouting storage for the selected player
       const fetchProfileAttributes = async () => {
         try {
-          // Find the player in scoutingSignedPlayers by ID or name to get the correct player_id in scouting database
           let dbPlayerId = selectedPlayerProfile.id;
+          const candidateIds = new Set<string>([String(selectedPlayerProfile.id)]);
+          const targetNorm = normalizePlayerNameKey(selectedPlayerProfile.nombre, selectedPlayerProfile.apellidos);
+
           const match = scoutingSignedPlayers.find(p => 
             p.id === selectedPlayerProfile.id || 
-            `${p.nombre.trim()} ${p.apellidos.trim()}`.toLowerCase() === `${selectedPlayerProfile.nombre.trim()} ${selectedPlayerProfile.apellidos.trim()}`.toLowerCase()
+            normalizePlayerNameKey(p.nombre, p.apellidos) === targetNorm
           );
           if (match) {
             dbPlayerId = match.id;
+            candidateIds.add(String(match.id));
           }
+
+          let localScoutingAttrs: any[] = [];
+          try {
+            const rawScouting = localStorage.getItem('scouting_local_players');
+            if (rawScouting) {
+              const scoutingList = JSON.parse(rawScouting);
+              if (Array.isArray(scoutingList)) {
+                const matchedLocal = scoutingList.find(
+                  (sp: any) =>
+                    String(sp?.id ?? '') === String(selectedPlayerProfile.id) ||
+                    String(sp?.id ?? '') === String(dbPlayerId) ||
+                    normalizePlayerNameKey(sp?.nombre, sp?.apellidos) === targetNorm
+                );
+                if (matchedLocal) {
+                  if (matchedLocal.id) candidateIds.add(String(matchedLocal.id));
+                  if (Array.isArray(matchedLocal.attributes)) {
+                    localScoutingAttrs = matchedLocal.attributes;
+                  }
+                }
+              }
+            }
+          } catch {}
 
           const { data, error } = await supabase
             .from('player_attributes')
             .select('atributo, valor')
             .eq('player_id', dbPlayerId);
 
-          if (!error && data) {
-            setProfileAttributes(data);
+          let localTableAttrs: any[] = [];
+          try {
+            const rawAttrTable = localStorage.getItem('ud_lapoveda_table_player_attributes');
+            if (rawAttrTable) {
+              const parsedAttrTable = JSON.parse(rawAttrTable);
+              if (Array.isArray(parsedAttrTable)) {
+                localTableAttrs = parsedAttrTable.filter(
+                  (a: any) => a && candidateIds.has(String(a.player_id ?? ''))
+                );
+              }
+            }
+          } catch {}
+
+          const combinedAttrMap = new Map<string, { atributo: string; valor: number }>();
+          const pushAttrs = (arr?: any[]) => {
+            if (!Array.isArray(arr)) return;
+            arr.forEach((item: any) => {
+              if (item && item.atributo) {
+                const numVal = typeof item.valor === 'number' ? item.valor : Number(item.valor);
+                if (!Number.isNaN(numVal)) {
+                  combinedAttrMap.set(item.atributo, { atributo: item.atributo, valor: numVal });
+                }
+              }
+            });
+          };
+
+          pushAttrs((selectedPlayerProfile as any).attributes);
+          pushAttrs(localScoutingAttrs);
+          if (!error && Array.isArray(data)) {
+            pushAttrs(data);
+          }
+          pushAttrs(localTableAttrs);
+
+          const combinedData = Array.from(combinedAttrMap.values());
+
+          if (combinedData.length > 0) {
+            setProfileAttributes(combinedData);
             
             // Reconstruct evaluations from prefixed attributes in Supabase
             const baseAttrMap: Record<string, number> = {};
@@ -3517,7 +3633,7 @@ export default function Plantilla() {
               };
             }
 
-            data.forEach(item => {
+            combinedData.forEach(item => {
               const name = item.atributo;
               const val = item.valor;
 

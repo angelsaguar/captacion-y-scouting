@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { Player, PlayerAttribute, PlayerStatus, POSITION_ATTRIBUTES, POSITION_STRUCTURED_ATTRIBUTES, COMMON_ATTRIBUTES, Observer } from '@/types';
+import { Player, PlayerAttribute, PlayerStatus, POSITION_ATTRIBUTES, POSITION_STRUCTURED_ATTRIBUTES, COMMON_ATTRIBUTES, Observer, getPositionStructuredAttributes } from '@/types';
 import { getObservers } from '@/lib/observers';
 import { 
   Card, 
@@ -56,6 +56,7 @@ import * as XLSX from 'xlsx';
 import { cn, normalizePlayerNameKey, cleanPhotoUrl, isPlayerMatch } from '@/lib/utils';
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
 import { useAuthStore } from '@/store/useAuthStore';
+import { syncAllClubDataWithFirestore } from '@/lib/clubAccessAndSync';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -134,7 +135,11 @@ export default function PlayerDetail() {
       );
 
       if (localIdx >= 0) {
-        localScoutingList[localIdx] = { ...localScoutingList[localIdx], estado: newStatus };
+        localScoutingList[localIdx] = {
+          ...localScoutingList[localIdx],
+          estado: newStatus,
+          attributes: updatedObj.attributes || localScoutingList[localIdx].attributes,
+        };
       } else {
         localScoutingList.push(updatedObj);
       }
@@ -149,7 +154,7 @@ export default function PlayerDetail() {
           const rosterArr = JSON.parse(savedRoster);
           const updatedRoster = rosterArr.map((p: any) => {
             if (p.id === updatedObj.id || (p.nombre.trim().toLowerCase() === player.nombre.trim().toLowerCase() && p.apellidos.trim().toLowerCase() === player.apellidos.trim().toLowerCase())) {
-              return { ...p, estado: newStatus };
+              return { ...p, estado: newStatus, attributes: updatedObj.attributes || p.attributes };
             }
             return p;
           });
@@ -157,6 +162,7 @@ export default function PlayerDetail() {
         } catch {}
       }
 
+      syncAllClubDataWithFirestore({ direction: 'push' }).catch(() => {});
       toast.success(`Estado actualizado a "${newStatus}"`);
     } catch (err: any) {
       toast.error('Error al actualizar estado');
@@ -239,7 +245,8 @@ export default function PlayerDetail() {
         localScoutingList[localIdx] = { 
           ...localScoutingList[localIdx], 
           ...updatedObj, 
-          foto_url: payload.foto_url || '' 
+          foto_url: payload.foto_url || '',
+          attributes: updatedObj.attributes || localScoutingList[localIdx].attributes,
         };
       } else {
         localScoutingList.push(updatedObj);
@@ -269,6 +276,7 @@ export default function PlayerDetail() {
                     telefono: updatedObj.telefono || p.telefono,
                     email: updatedObj.email || p.email,
                     estado: updatedObj.estado,
+                    attributes: updatedObj.attributes || p.attributes,
                     anio_nacimiento: updatedObj.anio_nacimiento || p.anio_nacimiento,
                     fecha_nacimiento: updatedObj.fecha_nacimiento || p.fecha_nacimiento
                   };
@@ -285,6 +293,7 @@ export default function PlayerDetail() {
 
       window.dispatchEvent(new CustomEvent('player-updated', { detail: updatedObj }));
       window.dispatchEvent(new Event('storage'));
+      syncAllClubDataWithFirestore({ direction: 'push' }).catch(() => {});
 
       toast.success('¡Datos personales guardados y sincronizados correctamente!');
       setShowEditPersonalModal(false);
@@ -298,9 +307,10 @@ export default function PlayerDetail() {
     async function fetchPlayer() {
       try {
         let loaded: any = null;
+        let dbAttributes: any[] = [];
 
         try {
-          const { data, error } = await supabase
+          const { data } = await supabase
             .from('players')
             .select('*, attributes:player_attributes(*)')
             .eq('id', id)
@@ -308,6 +318,9 @@ export default function PlayerDetail() {
 
           if (data) {
             loaded = data;
+            if (Array.isArray(data.attributes)) {
+              dbAttributes = [...data.attributes];
+            }
           }
         } catch (e) {
           console.warn('Supabase fetch error:', e);
@@ -322,7 +335,7 @@ export default function PlayerDetail() {
             const loadedKey = loaded ? normalizePlayerNameKey(loaded.nombre, loaded.apellidos) : '';
             localPlayerRecord = list.find((p: any) => 
               p.id === id || 
-              (p.id && id && p.id.toLowerCase() === id.toLowerCase()) ||
+              (p.id && id && String(p.id).toLowerCase() === String(id).toLowerCase()) ||
               (loadedKey && normalizePlayerNameKey(p.nombre, p.apellidos) === loadedKey) ||
               normalizePlayerNameKey(p.nombre, p.apellidos) === normalizePlayerNameKey(id, '')
             );
@@ -330,26 +343,36 @@ export default function PlayerDetail() {
         }
 
         if (localPlayerRecord) {
-          loaded = loaded ? { ...loaded, ...localPlayerRecord } : localPlayerRecord;
+          const mergedAttrs =
+            Array.isArray(localPlayerRecord.attributes) && localPlayerRecord.attributes.length > 0
+              ? localPlayerRecord.attributes
+              : dbAttributes;
+          loaded = loaded
+            ? { ...loaded, ...localPlayerRecord, attributes: mergedAttrs }
+            : { ...localPlayerRecord, attributes: mergedAttrs };
         }
 
-        // Check team rosters if not found
-        if (!loaded) {
-          for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
-            if (k && k.startsWith('team_roster_')) {
-              try {
-                const r = JSON.parse(localStorage.getItem(k) || '[]');
-                const match = r.find((p: any) => 
-                  p.id === id || 
-                  normalizePlayerNameKey(p.nombre, p.apellidos) === normalizePlayerNameKey(id, '')
-                );
-                if (match) {
+        // Check team rosters if not found or to recover attributes
+        let rosterMatchRecord: any = null;
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('team_roster_')) {
+            try {
+              const r = JSON.parse(localStorage.getItem(k) || '[]');
+              const loadedKey = loaded ? normalizePlayerNameKey(loaded.nombre, loaded.apellidos) : '';
+              const match = r.find((p: any) => 
+                p.id === id || 
+                (loadedKey && normalizePlayerNameKey(p.nombre, p.apellidos) === loadedKey) ||
+                normalizePlayerNameKey(p.nombre, p.apellidos) === normalizePlayerNameKey(id, '')
+              );
+              if (match) {
+                rosterMatchRecord = match;
+                if (!loaded) {
                   loaded = { ...match, estado: 'Fichado' };
-                  break;
                 }
-              } catch {}
-            }
+                break;
+              }
+            } catch {}
           }
         }
 
@@ -365,8 +388,65 @@ export default function PlayerDetail() {
         }
 
         if (loaded) {
+          const candidateIds = new Set<string>([String(id)]);
+          if (loaded.id) candidateIds.add(String(loaded.id));
+          if (localPlayerRecord?.id) candidateIds.add(String(localPlayerRecord.id));
+          if (rosterMatchRecord?.id) candidateIds.add(String(rosterMatchRecord.id));
+
+          let remoteTableAttrRows: any[] = [];
+          try {
+            const { data: directAttrs } = await supabase
+              .from('player_attributes')
+              .select('*')
+              .eq('player_id', id);
+            if (Array.isArray(directAttrs) && directAttrs.length > 0) {
+              remoteTableAttrRows = [...directAttrs];
+            }
+          } catch {}
+
+          let localTableAttrRows: any[] = [];
+          try {
+            const rawLocalAttrTable = localStorage.getItem('ud_lapoveda_table_player_attributes');
+            if (rawLocalAttrTable) {
+              const parsedAttrTable = JSON.parse(rawLocalAttrTable);
+              if (Array.isArray(parsedAttrTable)) {
+                localTableAttrRows = parsedAttrTable.filter(
+                  (a: any) => a && candidateIds.has(String(a.player_id ?? ''))
+                );
+              }
+            }
+          } catch {}
+
+          const attrMap = new Map<string, PlayerAttribute>();
+          const applyAttrList = (arr?: any[], allowZeroOverwrite = true) => {
+            if (!Array.isArray(arr)) return;
+            arr.forEach((a: any) => {
+              if (a && a.atributo && !String(a.atributo).includes(':')) {
+                const numVal = typeof a.valor === 'number' ? a.valor : Number(a.valor);
+                if (!Number.isNaN(numVal)) {
+                  const prev = attrMap.get(a.atributo);
+                  if (allowZeroOverwrite || numVal > 0 || !prev || prev.valor === 0) {
+                    attrMap.set(a.atributo, {
+                      player_id: String(loaded.id || id),
+                      atributo: a.atributo,
+                      valor: numVal,
+                    });
+                  }
+                }
+              }
+            });
+          };
+
+          applyAttrList(dbAttributes, false);
+          applyAttrList(remoteTableAttrRows, false);
+          applyAttrList(rosterMatchRecord?.attributes, true);
+          applyAttrList(localPlayerRecord?.attributes, true);
+          applyAttrList(localTableAttrRows, true);
+
+          const finalAttributes = Array.from(attrMap.values());
           setPlayer({
             ...loaded,
+            attributes: finalAttributes,
             foto_url: cleanPhotoUrl(loaded.foto_url)
           });
         } else {
@@ -675,7 +755,7 @@ export default function PlayerDetail() {
   if (loading) return <div className="flex justify-center py-20 animate-pulse font-bold">CARGANDO JUGADOR...</div>;
   if (!player) return <div className="text-center py-20">Jugador no encontrado</div>;
 
-  const positionGroups = POSITION_STRUCTURED_ATTRIBUTES[player.posicion] || [];
+  const positionGroups = getPositionStructuredAttributes(player.posicion);
   const specificAttrNames = positionGroups.flatMap(g => g.items);
   const radarData = player.attributes
     ?.filter(attr => specificAttrNames.includes(attr.atributo))
@@ -841,7 +921,7 @@ export default function PlayerDetail() {
                  {/* Specific attributes */}
                  <div className="space-y-4">
                    <p className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">Específicos ({player.posicion})</p>
-                   {(POSITION_STRUCTURED_ATTRIBUTES[player.posicion] || []).map(group => {
+                   {getPositionStructuredAttributes(player.posicion).map(group => {
                      const groupAttrs = player.attributes?.filter(a => group.items.includes(a.atributo)) || [];
                      if (groupAttrs.length === 0) return null;
                      return (

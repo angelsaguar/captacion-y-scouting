@@ -80,6 +80,7 @@ function createLocalStorageSupabaseClient(): any {
 
   class LocalQueryBuilder {
     private tableName: string;
+    private selectColumns: string = '*';
     private filters: ((item: any) => boolean)[] = [];
     private sortFn: ((a: any, b: any) => number) | null = null;
     private limitCount: number | null = null;
@@ -95,6 +96,9 @@ function createLocalStorageSupabaseClient(): any {
     }
 
     select(columns?: string) {
+      if (columns) {
+        this.selectColumns = columns;
+      }
       if (this.operation !== 'select') {
         this.returnRows = true;
       } else {
@@ -112,7 +116,9 @@ function createLocalStorageSupabaseClient(): any {
     upsert(values: any | any[], options?: { onConflict?: string }) {
       this.operation = 'upsert';
       this.mutationPayload = values;
-      this.upsertConflictField = options?.onConflict || 'id';
+      this.upsertConflictField =
+        options?.onConflict ||
+        (this.tableName === 'player_attributes' ? 'player_id,atributo' : 'id');
       return this;
     }
 
@@ -178,6 +184,28 @@ function createLocalStorageSupabaseClient(): any {
       return this;
     }
 
+    or(filtersStr: string) {
+      if (!filtersStr) return this;
+      const clauses = filtersStr.split(',').map((c) => c.trim()).filter(Boolean);
+      this.filters.push((item) =>
+        clauses.some((clause) => {
+          const isNullMatch = clause.match(/^([^.]+)\.is\.null$/i);
+          if (isNullMatch) {
+            const col = isNullMatch[1];
+            return item?.[col] === null || item?.[col] === undefined;
+          }
+          const eqMatch = clause.match(/^([^.]+)\.eq\.(.*)$/i);
+          if (eqMatch) {
+            const col = eqMatch[1];
+            const rawVal = eqMatch[2].replace(/^["']|["']$/g, '');
+            return String(item?.[col] ?? '') === rawVal;
+          }
+          return false;
+        })
+      );
+      return this;
+    }
+
     order(column: string, options?: { ascending?: boolean }) {
       const asc = options?.ascending !== false;
       this.sortFn = (a, b) => {
@@ -213,7 +241,13 @@ function createLocalStorageSupabaseClient(): any {
           ? this.mutationPayload
           : [this.mutationPayload];
         const stamped = rowsToAdd.map((r) => ({
-          id: r.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'rec_' + Math.random().toString(36).substr(2, 9)),
+          id:
+            r.id ||
+            (this.tableName === 'player_attributes' && r.player_id && r.atributo
+              ? `attr_${r.player_id}_${r.atributo}`
+              : typeof crypto !== 'undefined' && crypto.randomUUID
+                ? crypto.randomUUID()
+                : 'rec_' + Math.random().toString(36).substr(2, 9)),
           created_at: r.created_at || new Date().toISOString(),
           ...r,
         }));
@@ -230,20 +264,49 @@ function createLocalStorageSupabaseClient(): any {
           ? this.mutationPayload
           : [this.mutationPayload];
 
-        const conflictKeys = (this.upsertConflictField || 'id')
+        const conflictKeys = (
+          this.upsertConflictField ||
+          (this.tableName === 'player_attributes' ? 'player_id,atributo' : 'id')
+        )
           .split(',')
           .map((k) => k.trim());
 
         const nextTable = [...currentTable];
         const savedRows: any[] = [];
         for (const row of rowsToUpsert) {
-          const matchIndex = nextTable.findIndex((existing) =>
-            conflictKeys.every((k) => String(existing[k] ?? '') === String(row[k] ?? ''))
-          );
+          const matchIndex = nextTable.findIndex((existing) => {
+            if (this.tableName === 'player_attributes' && row.player_id !== undefined && row.atributo !== undefined) {
+              return (
+                String(existing.player_id ?? '') === String(row.player_id ?? '') &&
+                String(existing.atributo ?? '') === String(row.atributo ?? '')
+              );
+            }
+            return conflictKeys.every(
+              (k) =>
+                row[k] !== undefined &&
+                existing[k] !== undefined &&
+                String(existing[k]) === String(row[k])
+            );
+          });
+
+          const deterministicId =
+            this.tableName === 'player_attributes' && row.player_id && row.atributo
+              ? `attr_${row.player_id}_${row.atributo}`
+              : undefined;
 
           const entry = {
-            id: row.id || (matchIndex >= 0 ? nextTable[matchIndex].id : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'rec_' + Math.random().toString(36).substr(2, 9))),
-            created_at: matchIndex >= 0 ? nextTable[matchIndex].created_at : (row.created_at || new Date().toISOString()),
+            id:
+              row.id ||
+              (matchIndex >= 0
+                ? nextTable[matchIndex].id || deterministicId
+                : deterministicId ||
+                  (typeof crypto !== 'undefined' && crypto.randomUUID
+                    ? crypto.randomUUID()
+                    : 'rec_' + Math.random().toString(36).substr(2, 9))),
+            created_at:
+              matchIndex >= 0
+                ? nextTable[matchIndex].created_at
+                : row.created_at || new Date().toISOString(),
             updated_at: new Date().toISOString(),
             ...row,
           };
@@ -291,6 +354,40 @@ function createLocalStorageSupabaseClient(): any {
 
       // SELECT OPERATION
       let results = currentTable.filter((item) => this.filters.every((f) => f(item)));
+
+      // Relational join for players -> player_attributes when requested in select()
+      if (this.tableName === 'players' && this.selectColumns.includes('player_attributes')) {
+        const allAttrs = getTableData('player_attributes');
+        results = results.map((player) => {
+          const tableAttrs = allAttrs.filter(
+            (a) => String(a?.player_id ?? '') === String(player?.id ?? '')
+          );
+          const embeddedAttrs = Array.isArray(player?.attributes) ? player.attributes : [];
+          const mergedMap = new Map<string, any>();
+          embeddedAttrs.forEach((a: any) => {
+            if (a && a.atributo) {
+              mergedMap.set(a.atributo, {
+                ...a,
+                player_id: a.player_id || player.id,
+                valor: typeof a.valor === 'number' ? a.valor : Number(a.valor) || 0,
+              });
+            }
+          });
+          tableAttrs.forEach((a: any) => {
+            if (a && a.atributo && !String(a.atributo).includes(':')) {
+              mergedMap.set(a.atributo, {
+                ...a,
+                player_id: a.player_id || player.id,
+                valor: typeof a.valor === 'number' ? a.valor : Number(a.valor) || 0,
+              });
+            }
+          });
+          return {
+            ...player,
+            attributes: Array.from(mergedMap.values()),
+          };
+        });
+      }
 
       if (this.sortFn) {
         results.sort(this.sortFn);

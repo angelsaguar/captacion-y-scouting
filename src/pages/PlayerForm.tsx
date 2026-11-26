@@ -13,7 +13,9 @@ import {
   Observer,
   CLUB_TEAMS,
   POSITION_STRUCTURED_ATTRIBUTES,
-  COMMON_ATTRIBUTES
+  COMMON_ATTRIBUTES,
+  getPositionAttributes,
+  getPositionStructuredAttributes
 } from '@/types';
 import { 
   Card, 
@@ -49,10 +51,11 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { cn, normalizePlayerNameKey, cleanPhotoUrl, isPlayerMatch } from '@/lib/utils';
 import { getObservers, addObserver } from '@/lib/observers';
 import { JUGADORAS_ADJUNTAS } from '@/data/jugadorasData';
+import { syncAllClubDataWithFirestore } from '@/lib/clubAccessAndSync';
 
 const playerSchema = z.object({
   nombre: z.string().min(1, 'Nombre requerido'),
-  apellidos: z.string().min(1, 'Apellidos requeridos'),
+  apellidos: z.string().nullable().optional(),
   apodo: z.string().nullable().optional(),
   telefono: z.string().nullable().optional(),
   email: z.string().nullable().optional(),
@@ -147,9 +150,10 @@ export default function PlayerForm() {
       async function fetchPlayer() {
         try {
           let loadedPlayer: any = null;
-          
+          let dbAttributes: any[] = [];
+
           try {
-            const { data: player, error } = await supabase
+            const { data: player } = await supabase
               .from('players')
               .select('*, attributes:player_attributes(*)')
               .eq('id', id)
@@ -157,6 +161,9 @@ export default function PlayerForm() {
 
             if (player) {
               loadedPlayer = player;
+              if (Array.isArray(player.attributes)) {
+                dbAttributes = [...player.attributes];
+              }
             }
           } catch (e) {
             console.warn('Could not fetch player from remote Supabase:', e);
@@ -171,7 +178,7 @@ export default function PlayerForm() {
               const loadedKey = loadedPlayer ? normalizePlayerNameKey(loadedPlayer.nombre, loadedPlayer.apellidos) : '';
               localPlayerRecord = list.find((p: any) => 
                 p.id === id || 
-                (p.id && id && p.id.toLowerCase() === id.toLowerCase()) ||
+                (p.id && id && String(p.id).toLowerCase() === String(id).toLowerCase()) ||
                 (loadedKey && normalizePlayerNameKey(p.nombre, p.apellidos) === loadedKey) ||
                 normalizePlayerNameKey(p.nombre, p.apellidos) === normalizePlayerNameKey(id, '')
               );
@@ -179,26 +186,36 @@ export default function PlayerForm() {
           }
 
           if (localPlayerRecord) {
-            loadedPlayer = loadedPlayer ? { ...loadedPlayer, ...localPlayerRecord } : localPlayerRecord;
+            const mergedAttrs =
+              Array.isArray(localPlayerRecord.attributes) && localPlayerRecord.attributes.length > 0
+                ? localPlayerRecord.attributes
+                : dbAttributes;
+            loadedPlayer = loadedPlayer
+              ? { ...loadedPlayer, ...localPlayerRecord, attributes: mergedAttrs }
+              : { ...localPlayerRecord, attributes: mergedAttrs };
           }
 
-          // Check team rosters if not found yet
-          if (!loadedPlayer) {
-            for (let i = 0; i < localStorage.length; i++) {
-              const k = localStorage.key(i);
-              if (k && k.startsWith('team_roster_')) {
-                try {
-                  const r = JSON.parse(localStorage.getItem(k) || '[]');
-                  const match = r.find((p: any) => 
-                    p.id === id || 
-                    normalizePlayerNameKey(p.nombre, p.apellidos) === normalizePlayerNameKey(id, '')
-                  );
-                  if (match) {
+          // Check team rosters if not found yet or to recover attributes
+          let rosterMatchRecord: any = null;
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith('team_roster_')) {
+              try {
+                const r = JSON.parse(localStorage.getItem(k) || '[]');
+                const loadedKey = loadedPlayer ? normalizePlayerNameKey(loadedPlayer.nombre, loadedPlayer.apellidos) : '';
+                const match = r.find((p: any) => 
+                  p.id === id || 
+                  (loadedKey && normalizePlayerNameKey(p.nombre, p.apellidos) === loadedKey) ||
+                  normalizePlayerNameKey(p.nombre, p.apellidos) === normalizePlayerNameKey(id, '')
+                );
+                if (match) {
+                  rosterMatchRecord = match;
+                  if (!loadedPlayer) {
                     loadedPlayer = { ...match, estado: 'Fichado' };
-                    break;
                   }
-                } catch {}
-              }
+                  break;
+                }
+              } catch {}
             }
           }
 
@@ -214,10 +231,68 @@ export default function PlayerForm() {
           }
 
           if (loadedPlayer) {
+            // Collect attributes from all available persistence layers
+            const candidateIds = new Set<string>([String(id)]);
+            if (loadedPlayer.id) candidateIds.add(String(loadedPlayer.id));
+            if (localPlayerRecord?.id) candidateIds.add(String(localPlayerRecord.id));
+            if (rosterMatchRecord?.id) candidateIds.add(String(rosterMatchRecord.id));
+
+            let remoteTableAttrRows: any[] = [];
+            try {
+              const { data: directAttrs } = await supabase
+                .from('player_attributes')
+                .select('*')
+                .eq('player_id', id);
+              if (Array.isArray(directAttrs) && directAttrs.length > 0) {
+                remoteTableAttrRows = [...directAttrs];
+              }
+            } catch {}
+
+            let localTableAttrRows: any[] = [];
+            try {
+              const rawLocalAttrTable = localStorage.getItem('ud_lapoveda_table_player_attributes');
+              if (rawLocalAttrTable) {
+                const parsedAttrTable = JSON.parse(rawLocalAttrTable);
+                if (Array.isArray(parsedAttrTable)) {
+                  localTableAttrRows = parsedAttrTable.filter(
+                    (a: any) => a && candidateIds.has(String(a.player_id ?? ''))
+                  );
+                }
+              }
+            } catch {}
+
+            const pos = loadedPlayer.posicion || 'CENTRAL';
+            const posAttributes = getPositionAttributes(pos);
+            const attrs: Record<string, number> = {};
+            posAttributes.forEach((attrName) => {
+              attrs[attrName] = 0;
+            });
+
+            const applyAttrArray = (arr?: any[], allowZeroOverwrite = true) => {
+              if (!Array.isArray(arr)) return;
+              arr.forEach((a: any) => {
+                if (a && a.atributo && !String(a.atributo).includes(':')) {
+                  const numVal = typeof a.valor === 'number' ? a.valor : Number(a.valor);
+                  if (!Number.isNaN(numVal)) {
+                    if (allowZeroOverwrite || numVal > 0 || !(attrs[a.atributo] > 0)) {
+                      attrs[a.atributo] = numVal;
+                    }
+                  }
+                }
+              });
+            };
+
+            // Remote Supabase layers first, then local storage layers with highest priority
+            applyAttrArray(dbAttributes, false);
+            applyAttrArray(remoteTableAttrRows, false);
+            applyAttrArray(rosterMatchRecord?.attributes, true);
+            applyAttrArray(localPlayerRecord?.attributes, true);
+            applyAttrArray(localTableAttrRows, true);
+
             const sanitizedFotoUrl = cleanPhotoUrl(loadedPlayer.foto_url);
             form.reset({
               nombre: loadedPlayer.nombre,
-              apellidos: loadedPlayer.apellidos,
+              apellidos: loadedPlayer.apellidos || '',
               apodo: loadedPlayer.apodo || '',
               telefono: loadedPlayer.telefono || '',
               email: loadedPlayer.email || '',
@@ -225,7 +300,7 @@ export default function PlayerForm() {
               equipo_actual: loadedPlayer.equipo_actual || '',
               equipo_asignado: loadedPlayer.equipo_asignado || '',
               dorsal: loadedPlayer.dorsal || '',
-              posicion: loadedPlayer.posicion,
+              posicion: pos,
               posicion_secundaria: loadedPlayer.posicion_secundaria || '',
               lateralidad: loadedPlayer.lateralidad as any || 'Derecho',
               anio_nacimiento: loadedPlayer.anio_nacimiento,
@@ -238,10 +313,6 @@ export default function PlayerForm() {
               observador: loadedPlayer.observador || '',
             });
 
-            const attrs: Record<string, number> = {};
-            loadedPlayer.attributes?.forEach((a: any) => {
-              attrs[a.atributo] = a.valor;
-            });
             setAttributes(attrs);
             form.setValue('motivos_rechazo', loadedPlayer.motivos_rechazo || '');
           } else {
@@ -258,19 +329,21 @@ export default function PlayerForm() {
   }, [id]);
 
   useEffect(() => {
-    // Reset attributes if position changes and they are not set
-    const currentAttrs = POSITION_ATTRIBUTES[selectedPosition] || [];
-    const newAttributes = { ...attributes };
-    currentAttrs.forEach(attr => {
-      if (newAttributes[attr] === undefined) {
-        newAttributes[attr] = 0;
-      }
+    // Ensure attributes for the selected position exist without overwriting already loaded values
+    const currentAttrs = getPositionAttributes(selectedPosition);
+    setAttributes((prev) => {
+      const next = { ...prev };
+      currentAttrs.forEach((attr) => {
+        if (next[attr] === undefined) {
+          next[attr] = 0;
+        }
+      });
+      return next;
     });
-    setAttributes(newAttributes);
   }, [selectedPosition]);
 
   useEffect(() => {
-    const currentAttrs = POSITION_ATTRIBUTES[selectedPosition] || [];
+    const currentAttrs = getPositionAttributes(selectedPosition);
     const ratedVals = currentAttrs
       .map(attr => attributes[attr])
       .filter(val => val !== undefined && val !== null && val > 0);
@@ -356,7 +429,6 @@ export default function PlayerForm() {
 
         if (uploadError) {
           console.warn('Storage Upload Error, using Base64 local fallback:', uploadError);
-          // If storage upload fails, we fall back to storing the compressed base64 string securely in the DB!
           finalFotoUrl = values.foto_url?.trim() || null;
           toast.success('Imagen guardada en formato optimizado local');
         } else {
@@ -368,12 +440,30 @@ export default function PlayerForm() {
           toast.success('Imagen subida al servidor correctamente');
         }
       } else {
-        // If user cleared the URL or typed a new one without uploading file
         finalFotoUrl = values.foto_url?.trim() ? values.foto_url.trim() : null;
       }
 
+      const activePosition = values.posicion || selectedPosition || 'CENTRAL';
+      const currentAttrs = Array.from(
+        new Set([
+          ...getPositionAttributes(activePosition),
+          ...COMMON_ATTRIBUTES.flatMap((g) => g.items),
+          ...Object.keys(attributes),
+        ])
+      );
+      const ratedVals = currentAttrs
+        .map((attr) => (typeof attributes[attr] === 'number' ? attributes[attr] : Number(attributes[attr]) || 0))
+        .filter((val) => val > 0);
+      const calculatedPotential =
+        ratedVals.length > 0
+          ? Math.max(1, Math.min(5, Math.round(ratedVals.reduce((acc, v) => acc + v, 0) / ratedVals.length)))
+          : Number(values.potencial) || 3;
+
       const playerPayload = {
         ...values,
+        apellidos: (values.apellidos || '').trim(),
+        posicion: activePosition,
+        potencial: calculatedPotential,
         apodo: values.apodo?.trim() || null,
         posicion_secundaria: values.posicion_secundaria?.trim() || null,
         foto_url: finalFotoUrl,
@@ -384,7 +474,7 @@ export default function PlayerForm() {
         dorsal: values.dorsal?.trim() || null,
         observaciones: values.observaciones || null,
         motivos_rechazo: values.motivos_rechazo || null,
-        anio_nacimiento: values.anio_nacimiento || null,
+        anio_nacimiento: values.anio_nacimiento ? Number(values.anio_nacimiento) || null : null,
         fecha_nacimiento: values.fecha_nacimiento?.trim() || null,
         observador: values.observador?.trim() || null,
         es_plantilla: false,
@@ -411,7 +501,6 @@ export default function PlayerForm() {
       } catch (dbError: any) {
         console.warn('Database insert/update error in PlayerForm, using fallback strategy:', dbError);
         
-        // Strip out optional fields that might cause schema or FK issues
         const { 
           fecha_nacimiento, 
           apodo, 
@@ -438,12 +527,22 @@ export default function PlayerForm() {
         }
       }
 
-      // Ensure local scouting storage includes this player so it is always present
       const targetId = id || playerId || crypto.randomUUID();
+      const effectiveDbPlayerId = playerId || targetId;
+
+      const attributePayloads = currentAttrs.map((attr) => ({
+        id: `attr_${targetId}_${attr}`,
+        player_id: targetId,
+        atributo: attr,
+        valor: typeof attributes[attr] === 'number' ? attributes[attr] : Number(attributes[attr]) || 0,
+      }));
+
+      // Ensure local scouting storage includes this player AND its 0-5 technical/tactical attributes
       const finalPlayerRecord = {
         id: targetId,
         ...playerPayload,
         foto_url: finalFotoUrl || '',
+        attributes: attributePayloads,
         created_at: new Date().toISOString()
       };
       
@@ -456,15 +555,44 @@ export default function PlayerForm() {
         normalizePlayerNameKey(p.nombre, p.apellidos) === normKey
       );
       if (localIdx >= 0) {
+        const preservedId = localScoutingList[localIdx].id || targetId;
+        const normalizedAttrs = attributePayloads.map((a) => ({
+          ...a,
+          id: `attr_${preservedId}_${a.atributo}`,
+          player_id: preservedId,
+        }));
         localScoutingList[localIdx] = { 
           ...localScoutingList[localIdx], 
           ...finalPlayerRecord, 
-          id: localScoutingList[localIdx].id || targetId 
+          id: preservedId,
+          attributes: normalizedAttrs,
         };
       } else {
         localScoutingList.push(finalPlayerRecord);
       }
       localStorage.setItem('scouting_local_players', JSON.stringify(localScoutingList));
+
+      // Mirror player record into local fallback table ud_lapoveda_table_players
+      try {
+        const rawLocalPlayers = localStorage.getItem('ud_lapoveda_table_players');
+        const localPlayersTable: any[] = rawLocalPlayers ? JSON.parse(rawLocalPlayers) : [];
+        const pIdx = localPlayersTable.findIndex(
+          (p: any) =>
+            String(p?.id ?? '') === String(targetId) ||
+            String(p?.id ?? '') === String(effectiveDbPlayerId) ||
+            normalizePlayerNameKey(p?.nombre, p?.apellidos) === normKey
+        );
+        if (pIdx >= 0) {
+          localPlayersTable[pIdx] = {
+            ...localPlayersTable[pIdx],
+            ...finalPlayerRecord,
+            id: localPlayersTable[pIdx].id || targetId,
+          };
+        } else {
+          localPlayersTable.push(finalPlayerRecord);
+        }
+        localStorage.setItem('ud_lapoveda_table_players', JSON.stringify(localPlayersTable));
+      } catch {}
 
       // Remove any scouting deletion flags for this player
       const scoutingDelSaved = localStorage.getItem('scouting_deleted_players');
@@ -476,27 +604,30 @@ export default function PlayerForm() {
         } catch {}
       }
 
-      // Upsert attributes
-      if (playerId) {
+      // Upsert attributes into Supabase (remote or local client)
+      if (effectiveDbPlayerId) {
         try {
-          const currentAttrs = POSITION_ATTRIBUTES[selectedPosition] || [];
-          const attributePayloads = currentAttrs.map(attr => ({
-            player_id: playerId,
+          const dbAttrPayloads = currentAttrs.map((attr) => ({
+            player_id: effectiveDbPlayerId,
             atributo: attr,
-            valor: attributes[attr] || 0
+            valor: typeof attributes[attr] === 'number' ? attributes[attr] : Number(attributes[attr]) || 0,
           }));
 
           if (id) {
             await supabase.from('player_attributes').delete().eq('player_id', id);
           }
-          await supabase.from('player_attributes').upsert(attributePayloads);
+          if (effectiveDbPlayerId !== id) {
+            await supabase.from('player_attributes').delete().eq('player_id', effectiveDbPlayerId);
+          }
+          await supabase.from('player_attributes').upsert(dbAttrPayloads);
         } catch (attrErr) {
           console.warn('Could not save player attributes to remote DB:', attrErr);
         }
       }
 
-      // Sync to ALL local team rosters
-      const pId = playerId || id || finalPlayerRecord.id;
+      // Sync to ALL local team rosters and collect any roster player IDs
+      const pId = targetId;
+      const allPlayerIdsForAttrs = new Set<string>([String(targetId), String(effectiveDbPlayerId)]);
       const isMatchingPlayer = (p: any) => 
         isPlayerMatch(p, { id: pId, nombre: playerPayload.nombre, apellidos: playerPayload.apellidos });
 
@@ -511,6 +642,7 @@ export default function PlayerForm() {
               const mappedR = currentR.map((p: any) => {
                 if (isMatchingPlayer(p)) {
                   rChanged = true;
+                  if (p.id) allPlayerIdsForAttrs.add(String(p.id));
                   return {
                     ...p,
                     nombre: playerPayload.nombre,
@@ -522,6 +654,8 @@ export default function PlayerForm() {
                     telefono: playerPayload.telefono || p.telefono,
                     email: playerPayload.email || p.email,
                     estado: playerPayload.estado,
+                    potencial: calculatedPotential,
+                    attributes: attributePayloads,
                     anio_nacimiento: playerPayload.anio_nacimiento || p.anio_nacimiento,
                     fecha_nacimiento: playerPayload.fecha_nacimiento || p.fecha_nacimiento
                   };
@@ -543,7 +677,6 @@ export default function PlayerForm() {
       let rosterArr: any[] = savedRoster ? JSON.parse(savedRoster) : [];
 
       if (playerPayload.estado === 'Fichado') {
-        // Clear any previous deletion record for this player in the team's roster deletion list
         const deletedKey = `team_deleted_players_${targetTeam}`;
         const deletedSaved = localStorage.getItem(deletedKey);
         if (deletedSaved) {
@@ -561,9 +694,11 @@ export default function PlayerForm() {
         if (exists) {
           rosterArr = rosterArr.map((p: any) => {
             if (isMatchingPlayer(p)) {
+              const rId = p.id || pId;
+              allPlayerIdsForAttrs.add(String(rId));
               return {
                 ...p,
-                id: p.id || pId,
+                id: rId,
                 nombre: playerPayload.nombre,
                 apellidos: playerPayload.apellidos,
                 posicion: playerPayload.posicion || p.posicion,
@@ -572,14 +707,18 @@ export default function PlayerForm() {
                 foto_url: finalFotoUrl || '',
                 telefono: playerPayload.telefono || p.telefono,
                 email: playerPayload.email || p.email,
+                potencial: calculatedPotential,
+                attributes: attributePayloads,
                 origen: (p as any).origen || 'scouting'
               };
             }
             return p;
           });
         } else {
+          const newRosterId = pId || crypto.randomUUID();
+          allPlayerIdsForAttrs.add(String(newRosterId));
           rosterArr.push({
-            id: pId || crypto.randomUUID(),
+            id: newRosterId,
             nombre: playerPayload.nombre,
             apellidos: playerPayload.apellidos,
             dorsal: playerPayload.dorsal || (rosterArr.length + 1).toString(),
@@ -590,19 +729,59 @@ export default function PlayerForm() {
             lateralidad: playerPayload.lateralidad || 'Derecho',
             telefono: playerPayload.telefono || '',
             email: playerPayload.email || '',
+            potencial: calculatedPotential,
+            attributes: attributePayloads,
             estado_fisico: 'Disponible',
             origen: 'scouting'
           });
         }
         localStorage.setItem(rosterKey, JSON.stringify(rosterArr));
       } else {
-        // If status is NOT 'Fichado', ensure player is removed from team roster if originated from scouting
         const filteredRoster = rosterArr.filter((p: any) => !(isMatchingPlayer(p) && p.origen === 'scouting'));
         localStorage.setItem(rosterKey, JSON.stringify(filteredRoster));
       }
 
+      // Explicitly persist 0-5 technical/tactical attributes in ud_lapoveda_table_player_attributes for all matching IDs
+      try {
+        const rawAttrTable = localStorage.getItem('ud_lapoveda_table_player_attributes');
+        const currentAttrTable: any[] = rawAttrTable ? JSON.parse(rawAttrTable) : [];
+        // Keep period-prefixed evaluations (e.g., Septiembre:...) and attributes for other players
+        const retainedAttrs = currentAttrTable.filter((row: any) => {
+          if (!row) return false;
+          const isThisPlayer = allPlayerIdsForAttrs.has(String(row.player_id ?? ''));
+          if (!isThisPlayer) return true;
+          // Retain period-prefixed stats/attributes from Plantilla evaluations
+          return String(row.atributo ?? '').includes(':');
+        });
+
+        const newAttrEntries: any[] = [];
+        allPlayerIdsForAttrs.forEach((pid) => {
+          currentAttrs.forEach((attr) => {
+            newAttrEntries.push({
+              id: `attr_${pid}_${attr}`,
+              player_id: pid,
+              atributo: attr,
+              valor: typeof attributes[attr] === 'number' ? attributes[attr] : Number(attributes[attr]) || 0,
+              updated_at: new Date().toISOString(),
+            });
+          });
+        });
+
+        localStorage.setItem(
+          'ud_lapoveda_table_player_attributes',
+          JSON.stringify([...retainedAttrs, ...newAttrEntries])
+        );
+      } catch (e) {
+        console.warn('Error syncing local player_attributes table:', e);
+      }
+
       window.dispatchEvent(new CustomEvent('player-updated', { detail: finalPlayerRecord }));
       window.dispatchEvent(new Event('storage'));
+
+      // Push updated player, attributes, and roster data to Firestore cloud sync
+      syncAllClubDataWithFirestore({ direction: 'push' }).catch((err) => {
+        console.warn('Background Firestore sync after player update:', err);
+      });
 
       toast.success(id ? 'Jugador actualizado' : 'Jugador registrado');
       navigate('/players');
@@ -744,7 +923,7 @@ export default function PlayerForm() {
                   <Label>Año de Nacimiento</Label>
                   <Input 
                     type="number" 
-                    {...form.register('anio_nacimiento', { valueAsNumber: true })} 
+                    {...form.register('anio_nacimiento')} 
                   />
                 </div>
               </div>
@@ -1023,7 +1202,7 @@ export default function PlayerForm() {
                   Aspectos Específicos de la Demarcación ({selectedPosition})
                 </h3>
                 <div className="space-y-8">
-                  {(POSITION_STRUCTURED_ATTRIBUTES[selectedPosition] || []).map((group) => (
+                  {getPositionStructuredAttributes(selectedPosition).map((group) => (
                     <div key={group.category} className="space-y-4">
                       <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-850 inline-block">
                         {group.category}

@@ -226,6 +226,20 @@ export const POSITION_STRUCTURED_ATTRIBUTES: Record<string, AttributeGroup[]> = 
     { category: 'Físico', items: ['Velocidad', 'Resistencia', 'Aceleración', 'Capacidad de repetir esfuerzos'] },
     { category: 'Mental', items: ['Intensidad', 'Competitividad', 'Concentración'] }
   ],
+  'LATERAL DERECHO': [
+    { category: 'Defensa', items: ['1 vs 1 defensivo', 'Entradas', 'Anticipación', 'Coberturas', 'Defensa del segundo palo'] },
+    { category: 'Ataque', items: ['Incorporación ofensiva', 'Centros', 'Pase', 'Conducción', 'Regate', 'Asociación'] },
+    { category: 'Táctica', items: ['Ocupación de espacios', 'Temporización', 'Lectura ofensiva', 'Lectura defensiva'] },
+    { category: 'Físico', items: ['Velocidad', 'Resistencia', 'Aceleración', 'Capacidad de repetir esfuerzos'] },
+    { category: 'Mental', items: ['Intensidad', 'Competitividad', 'Concentración'] }
+  ],
+  'LATERAL IZQUIERDO': [
+    { category: 'Defensa', items: ['1 vs 1 defensivo', 'Entradas', 'Anticipación', 'Coberturas', 'Defensa del segundo palo'] },
+    { category: 'Ataque', items: ['Incorporación ofensiva', 'Centros', 'Pase', 'Conducción', 'Regate', 'Asociación'] },
+    { category: 'Táctica', items: ['Ocupación de espacios', 'Temporización', 'Lectura ofensiva', 'Lectura defensiva'] },
+    { category: 'Físico', items: ['Velocidad', 'Resistencia', 'Aceleración', 'Capacidad de repetir esfuerzos'] },
+    { category: 'Mental', items: ['Intensidad', 'Competitividad', 'Concentración'] }
+  ],
   'MEDIO CENTRO DEFENSIVO': [
     { category: 'Defensa', items: ['Recuperación', 'Interceptaciones', 'Duelos', 'Coberturas', 'Presión tras pérdida'] },
     { category: 'Organización', items: ['Primer pase', 'Cambios de orientación', 'Juego entre líneas', 'Ritmo del juego', 'Conservación del balón'] },
@@ -233,7 +247,21 @@ export const POSITION_STRUCTURED_ATTRIBUTES: Record<string, AttributeGroup[]> = 
     { category: 'Físico', items: ['Resistencia', 'Fuerza', 'Movilidad'] },
     { category: 'Mental', items: ['Toma de decisiones', 'Inteligencia táctica', 'Personalidad', 'Serenidad'] }
   ],
+  PIVOTE: [
+    { category: 'Defensa', items: ['Recuperación', 'Interceptaciones', 'Duelos', 'Coberturas', 'Presión tras pérdida'] },
+    { category: 'Organización', items: ['Primer pase', 'Cambios de orientación', 'Juego entre líneas', 'Ritmo del juego', 'Conservación del balón'] },
+    { category: 'Táctica', items: ['Posicionamiento', 'Lectura del juego', 'Equilibrio del equipo', 'Ayudas defensivas'] },
+    { category: 'Físico', items: ['Resistencia', 'Fuerza', 'Movilidad'] },
+    { category: 'Mental', items: ['Toma de decisiones', 'Inteligencia táctica', 'Personalidad', 'Serenidad'] }
+  ],
   INTERIOR: [
+    { category: 'Ataque', items: ['Pase', 'Pase filtrado', 'Conducción', 'Regate', 'Llegada al área', 'Disparo'] },
+    { category: 'Defensa', items: ['Presión', 'Recuperación', 'Ayudas'] },
+    { category: 'Táctica', items: ['Movilidad', 'Ocupación de espacios', 'Juego entre líneas', 'Interpretación del juego'] },
+    { category: 'Físico', items: ['Resistencia', 'Dinamismo', 'Intensidad'] },
+    { category: 'Mental', items: ['Creatividad', 'Decisión', 'Competitividad'] }
+  ],
+  MEDIOCAMPISTA: [
     { category: 'Ataque', items: ['Pase', 'Pase filtrado', 'Conducción', 'Regate', 'Llegada al área', 'Disparo'] },
     { category: 'Defensa', items: ['Presión', 'Recuperación', 'Ayudas'] },
     { category: 'Táctica', items: ['Movilidad', 'Ocupación de espacios', 'Juego entre líneas', 'Interpretación del juego'] },
@@ -248,6 +276,22 @@ export const POSITION_STRUCTURED_ATTRIBUTES: Record<string, AttributeGroup[]> = 
     { category: 'Mental', items: ['Imaginación', 'Toma de decisiones', 'Personalidad'] }
   ],
   EXTREMO: [
+    { category: 'Desequilibrio', items: ['Regate', 'Uno contra uno', 'Cambios de ritmo', 'Velocidad'] },
+    { category: 'Producción ofensiva', items: ['Centro', 'Pase atrás', 'Asistencia'] },
+    { category: 'Definición', items: ['Disparo'] },
+    { category: 'Táctica', items: ['Desmarques', 'Ataque al espacio', 'Amplitud', 'Juego interior'] },
+    { category: 'Defensa', items: ['Repliegue', 'Presión'] },
+    { category: 'Mental', items: ['Atrevimiento', 'Confianza', 'Capacidad competitiva'] }
+  ],
+  'EXTREMO DERECHO': [
+    { category: 'Desequilibrio', items: ['Regate', 'Uno contra uno', 'Cambios de ritmo', 'Velocidad'] },
+    { category: 'Producción ofensiva', items: ['Centro', 'Pase atrás', 'Asistencia'] },
+    { category: 'Definición', items: ['Disparo'] },
+    { category: 'Táctica', items: ['Desmarques', 'Ataque al espacio', 'Amplitud', 'Juego interior'] },
+    { category: 'Defensa', items: ['Repliegue', 'Presión'] },
+    { category: 'Mental', items: ['Atrevimiento', 'Confianza', 'Capacidad competitiva'] }
+  ],
+  'EXTREMO IZQUIERDO': [
     { category: 'Desequilibrio', items: ['Regate', 'Uno contra uno', 'Cambios de ritmo', 'Velocidad'] },
     { category: 'Producción ofensiva', items: ['Centro', 'Pase atrás', 'Asistencia'] },
     { category: 'Definición', items: ['Disparo'] },
@@ -277,3 +321,30 @@ Object.entries(POSITION_STRUCTURED_ATTRIBUTES).forEach(([pos, groups]) => {
   const common = COMMON_ATTRIBUTES.flatMap(g => g.items);
   POSITION_ATTRIBUTES[pos] = Array.from(new Set([...specific, ...common]));
 });
+
+export function resolveCanonicalPositionKey(rawPos?: string | null): string {
+  const upper = (rawPos || '').trim().toUpperCase();
+  if (!upper) return 'CENTRAL';
+  if (POSITION_STRUCTURED_ATTRIBUTES[upper]) return upper;
+  if (upper.includes('PORTER')) return 'PORTERO';
+  if (upper.includes('LATERAL') || upper.includes('CARRILER')) return 'LATERAL';
+  if (upper.includes('CENTRAL') || upper.includes('DEFENSA')) return 'CENTRAL';
+  if (upper.includes('PIVOTE') || upper.includes('DEFENSIVO') || upper === 'MCD') return 'MEDIO CENTRO DEFENSIVO';
+  if (upper.includes('MEDIA PUNTA') || upper.includes('MEDIAPUNTA') || upper === 'MP') return 'MEDIA PUNTA';
+  if (upper.includes('EXTREMO') || upper.includes('BANDA')) return 'EXTREMO';
+  if (upper.includes('DELANTER') || upper.includes('PUNTA') || upper === 'DC') return 'DELANTERO';
+  if (upper.includes('INTERIOR') || upper.includes('MEDIO') || upper.includes('VOLANTE')) return 'INTERIOR';
+  return 'CENTRAL';
+}
+
+export function getPositionStructuredAttributes(rawPos?: string | null): AttributeGroup[] {
+  const key = resolveCanonicalPositionKey(rawPos);
+  return POSITION_STRUCTURED_ATTRIBUTES[key] || POSITION_STRUCTURED_ATTRIBUTES.CENTRAL;
+}
+
+export function getPositionAttributes(rawPos?: string | null): string[] {
+  const key = resolveCanonicalPositionKey(rawPos);
+  const common = COMMON_ATTRIBUTES.flatMap((g) => g.items);
+  const specific = (POSITION_STRUCTURED_ATTRIBUTES[key] || []).flatMap((g) => g.items);
+  return Array.from(new Set([...specific, ...common]));
+}
